@@ -1,12 +1,9 @@
 name: Stardust control regression
 on:
   push:
-    branches:
-      - feature/stardust-3-control-and-mechanics
-      - v5
-      - 'pro/**'
+    branches: [beta]
   pull_request:
-    branches: [v5]
+    branches: [beta]
 permissions:
   contents: read
 concurrency:
