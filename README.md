@@ -16,6 +16,6 @@ Stardust is a Rocket League bot built on the [RLBot](http://www.rlbot.org/) fram
 
 ## Stardust 3.0 history
 
-The original Stardust 3.0 was optimized for 2v2 and 3v3 and was redeveloped for the RLBot Championship finals. The repository records a fourth-place finish in the **RLBot Championship 2023**; the original finals video is [here](https://www.youtube.com/watch?v=6A8_6RR4vR0&t=305s).
+The original Stardust 2.0 was optimized for 2v2 and 3v3 and was redeveloped for the RLBot Championship finals. The repository records a fourth-place finish in the **RLBot Championship 2023**; the original finals video is [here](https://www.youtube.com/watch?v=6A8_6RR4vR0&t=305s).
 
 The 3.0 beta retains the existing shot solvers, kickoff routines, and drive subactions while iterating on the control lifecycle, possession controllers, team behavior, defensive anticipation, and mechanics. The [evaluation guide](docs/STARDUST_3.md#promotion-criteria-run-these-in-rocket-league-before-a-release) separates software checks from the in-game evidence needed to establish playing strength.
