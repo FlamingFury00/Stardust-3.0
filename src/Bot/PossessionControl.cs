@@ -88,7 +88,11 @@ namespace Bot
             if (HasControlledPossession(car, ball))
                 return true;
 
-            bool safeGeometry = Defense.IsGoalSide(car.Location, ball.location, ownGoal, -40f);
+            float side = ownGoal.y < 0 ? -1f : 1f;
+            float ownDepth = ball.location.y * side;
+            float requiredProgress = ownDepth > 3800f ? 35f : -40f;
+            bool safeGeometry = Defense.IsGoalSide(
+                car.Location, ball.location, ownGoal, requiredProgress);
             return safeGeometry && frame.FreeTime >= -0.10f;
         }
 
@@ -108,7 +112,11 @@ namespace Bot
         /// Goal-directed lane with a bounded lateral cut away from the strongest defender blocking
         /// the next ~2200 uu. This creates useful cuts without turning possession into random weaving.
         /// </summary>
-        public static Vec3 AttackingLane(Car car, Ball ball, IEnumerable<Car> opponents, Vec3 goal)
+        public static Vec3 AttackingLane(Car car, Ball ball, IEnumerable<Car> opponents, Vec3 goal) =>
+            AttackingLane(car, ball, opponents, goal, Vec3.Zero);
+
+        public static Vec3 AttackingLane(Car car, Ball ball, IEnumerable<Car> opponents,
+            Vec3 goal, Vec3 ownGoal)
         {
             Vec3 fallback = car?.Forward ?? Vec3.X;
             if (ball == null || !ControlMath.Finite(ball.location) || !ControlMath.Finite(goal))
@@ -158,19 +166,57 @@ namespace Bot
                 lane = ControlMath.FlatUnit(lane + new Vec3(inward * 0.45f, 0, 0), direct);
             }
 
+            // Deep in our own end, ordinary opponent evasion can accidentally turn into a lateral
+            // dribble across the goal face. Bias strongly toward an inward/upfield escape corridor.
+            if (ControlMath.Finite(ownGoal) && MathF.Abs(ownGoal.y) > 1000f)
+            {
+                float side = ownGoal.y < 0 ? -1f : 1f;
+                float ownDepth = ball.location.y * side;
+                float danger = System.Math.Clamp((ownDepth - 3300f) / 1450f, 0f, 1f);
+                if (danger > 0f)
+                {
+                    Vec3 escape = ControlMath.FlatUnit(
+                        new Vec3(-ball.location.x * 0.60f, -side * 1800f, 0f), direct);
+                    lane = ControlMath.FlatUnit(lane * (1f - danger) + escape * (1.55f * danger), escape);
+                }
+            }
+
             return lane;
         }
 
         public static bool ShouldFlick(Car car, Ball ball, Vec3 lane,
-            float pressureTime, float opponentDistance)
+            float pressureTime, float opponentDistance) =>
+            ShouldFlick(car, ball, lane, pressureTime, opponentDistance, Vec3.Zero);
+
+        public static bool ShouldFlick(Car car, Ball ball, Vec3 lane,
+            float pressureTime, float opponentDistance, Vec3 ownGoal)
         {
             if (!HasControlledPossession(car, ball))
                 return false;
 
+            Vec3 flatLane = ControlMath.FlatUnit(lane, car.Forward);
             float speed = car.Velocity.Dot(car.Forward);
-            float alignment = car.Forward.FlatNorm().Dot(ControlMath.FlatUnit(lane, car.Forward));
+            float alignment = car.Forward.FlatNorm().Dot(flatLane);
             bool imminent = (float.IsFinite(pressureTime) && pressureTime < 0.85f) ||
                 (float.IsFinite(opponentDistance) && opponentDistance < 720f);
+
+            if (ControlMath.Finite(ownGoal) && MathF.Abs(ownGoal.y) > 1000f)
+            {
+                float side = ownGoal.y < 0 ? -1f : 1f;
+                float ownDepth = ball.location.y * side;
+                Vec3 fieldward = new Vec3(0f, -side, 0f);
+
+                // Never flick from the back-wall/goal-line pocket. Carry the ball into a safe
+                // upfield lane first; a lateral flick here can center the ball for the opponent.
+                if (ownDepth > 4200f)
+                    return false;
+
+                if (ownDepth > 3400f &&
+                    (flatLane.Dot(fieldward) < 0.70f ||
+                     car.Forward.FlatNorm().Dot(fieldward) < 0.72f ||
+                     car.Velocity.Dot(fieldward) < 450f))
+                    return false;
+            }
 
             return imminent && speed > 250f && alignment > 0.72f;
         }
