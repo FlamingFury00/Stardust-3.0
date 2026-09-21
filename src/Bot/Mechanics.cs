@@ -13,30 +13,45 @@ namespace Bot
         public float ClaimTime => Game.Time + 0.25f;
         public static bool CanStart(Car car, Ball ball, float freeTime)
         {
+            if (car == null || ball == null || !car.IsGrounded || car.Up.z <= 0.9f)
+                return false;
+
             Vec3 local = car.Local(ball.location - car.Location);
-            return car.IsGrounded && car.Up.z > 0.9f && freeTime > 0.55f && ball.location.z < 280 &&
-                local.x > -70 && local.x < 550 && MathF.Abs(local.y) < 160 &&
-                (ball.velocity - car.Velocity).Length() < 1000;
+            float relativeSpeed = (ball.velocity - car.Velocity).Length();
+            bool alreadyControlled = PossessionControl.HasControlledPossession(car, ball);
+            return ball.location.z < 300f &&
+                local.x > -105f && local.x < 590f && MathF.Abs(local.y) < 195f &&
+                relativeSpeed < 1100f && (alreadyControlled || freeTime > 0.10f);
         }
         public void Run(RUBot bot)
         {
             Car car = bot.Me;
             Vec3 offset = Ball.Location - car.Location;
-            if (!car.IsGrounded || offset.Length() > 750 || Game.Time - started > 5 || Ball.Location.z > 340)
+            if (!car.IsGrounded || offset.Length() > 850f || Game.Time - started > 8f || Ball.Location.z > 365f)
             { Finished = true; return; }
-            Vec3 lane = ControlMath.FlatUnit(bot.TheirGoal.Location - Ball.Location, car.Forward);
-            Vec3 local = car.Local(offset);
-            Vec3 relativeVelocity = car.Local(Ball.Velocity - car.Velocity);
-            bool carried = local.z > 100 && local.z < 215 && MathF.Abs(local.x) < 105 &&
-                MathF.Abs(local.y) < 65 && relativeVelocity.Length() < 400;
+
+            Vec3 lane = PossessionControl.AttackingLane(
+                car, Ball.MainBall, bot.LivingOpponents, bot.TheirGoal.Location);
+            bool carried = PossessionControl.HasControlledPossession(car, Ball.MainBall);
             stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
+
             float pressure = bot is Stardust stardust
                 ? MathF.Min(stardust.Situation.OpponentEta, stardust.Situation.PressureTime)
                 : 6f;
-            if (carried && Game.Time - stableSince > 0.25f && pressure < 0.75f && local.x > 10 &&
-                car.Velocity.Dot(car.Forward) > 500 && car.Forward.Dot(lane) > 0.9f)
-            { bot.Action = new ControlledFlick(car, lane); return; }
-            // The same pure control law is exercised by the deterministic regression suite.
+            float opponentDistance = float.PositiveInfinity;
+            foreach (Car opponent in bot.LivingOpponents)
+                opponentDistance = MathF.Min(opponentDistance, opponent.Location.Dist(Ball.Location));
+
+            float requiredStable = pressure < 0.40f || opponentDistance < 450f ? 0.06f : 0.13f;
+            if (carried && Game.Time - stableSince >= requiredStable &&
+                PossessionControl.ShouldFlick(car, Ball.MainBall, lane, pressure, opponentDistance))
+            {
+                bot.Action = new ControlledFlick(car, lane);
+                return;
+            }
+
+            // Stay on the ball under pressure. The pressure response is the flick above, not abandoning
+            // possession and driving back into a shadow lane.
             bot.Controller = PossessionControl.GroundCarry(car, Ball.MainBall, lane);
         }
     }
@@ -127,24 +142,32 @@ namespace Bot
         {
             Vec3 delta = ball.location - car.Location;
             return !car.IsGrounded && car.Location.z > 180 && ball.location.z > 300 && car.Boost > 8 &&
-                delta.z > 25 && delta.z < 420 && delta.Length() < 650 &&
-                (car.Velocity - ball.velocity).Length() < 1000 && opponentEta > 0.6f;
+                delta.z > 20 && delta.z < 440 && delta.Length() < 690 &&
+                (car.Velocity - ball.velocity).Length() < 1100 && opponentEta > 0.18f;
         }
         public void Run(RUBot bot)
         {
             Car car = bot.Me;
             Vec3 delta = Ball.Location - car.Location;
-            if (car.IsGrounded || delta.Length() > 850 || Ball.Location.z < 180 || Game.Time - started > 3 ||
-                (car.Boost <= 0 && delta.Length() > 200)) { Finished = true; return; }
+            if (car.IsGrounded || delta.Length() > 900 || Ball.Location.z < 180 || Game.Time - started > 4 ||
+                (car.Boost <= 0 && delta.Length() > 220)) { Finished = true; return; }
             if (bot is Stardust stardust && stardust.Options.FlipResets &&
                 stardust.Situation.OpponentEta > 1.2f && FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
             { bot.Action = new FlipReset(bot.Jump); return; }
             const float horizon = 0.12f;
             Ball prediction = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
-            Vec3 lane = ControlMath.FlatUnit(bot.TheirGoal.Location - prediction.location, car.Forward);
-            Vec3 contactNormal = ControlMath.Unit(lane * 0.48f + Vec3.Up * 0.88f, Vec3.Up);
+            Vec3 lane = PossessionControl.AttackingLane(
+                car, prediction, bot.LivingOpponents, bot.TheirGoal.Location);
+            float pressure = bot is Stardust stardustPressure
+                ? MathF.Min(stardustPressure.Situation.OpponentEta, stardustPressure.Situation.PressureTime)
+                : float.PositiveInfinity;
+            bool challenged = float.IsFinite(pressure) && pressure < 0.65f;
+            float forwardPush = challenged ? 190f : 90f;
+            float lift = pressure < 0.40f ? 35f : 80f;
+            Vec3 contactNormal = ControlMath.Unit(
+                lane * (challenged ? 0.62f : 0.48f) + Vec3.Up * 0.88f, Vec3.Up);
             Vec3 target = prediction.location - contactNormal * (Ball.Radius + 40);
-            Vec3 targetVelocity = prediction.velocity + lane * 80 + Vec3.Up * 80;
+            Vec3 targetVelocity = prediction.velocity + lane * forwardPush + Vec3.Up * lift;
             Vec3 acceleration = PossessionControl.FlightAtHorizon(car, target, targetVelocity, horizon);
             Vec3 nose = ControlMath.Unit(acceleration, car.Forward);
             ControlMath.Aim(car, bot.Controller, nose, Vec3.Up);
