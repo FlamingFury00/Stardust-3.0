@@ -3,6 +3,7 @@ using Bot;
 using RedUtils;
 using RedUtils.Math;
 using RLBot.Flat;
+using BallPrediction = RedUtils.BallPrediction;
 
 internal static class DefenseRegression
 {
@@ -15,7 +16,7 @@ internal static class DefenseRegression
             .SetValue(instance, value);
     private static Car CarAt(float x, float y, int index = 0, int team = 0) => new()
     {
-        Index = index, Team = team, Location = new Vec3(x, y, 17), Velocity = Vec3.Zero,
+        Index = index, Team = (uint)team, Location = new Vec3(x, y, 17), Velocity = Vec3.Zero,
         Orientation = new Mat3x3(new Vec3(0, MathF.PI / 2, 0)), IsGrounded = true, Boost = 30
     };
     private static Stardust World(Vec3 ball, params Car[] cars)
@@ -24,9 +25,9 @@ internal static class DefenseRegression
         Set(typeof(Ball), "Location", null, ball);
         Set(typeof(Ball), "Velocity", null, Vec3.Zero);
         Set(typeof(Ball), "Prediction", null, new BallPrediction { Slices = Array.Empty<BallSlice>() });
-        var bot = new Stardust();
+        var bot = new Stardust("defense-regression");
         Set(typeof(RLBot.Manager.Bot), "Index", bot, 0);
-        Set(typeof(RLBot.Manager.Bot), "Team", bot, cars[0].Team);
+        Set(typeof(RLBot.Manager.Bot), "Team", bot, (int)cars[0].Team);
         return bot;
     }
 
@@ -205,8 +206,8 @@ internal static class DefenseRegression
         {
             var bot = World(new Vec3(400, -4400, 100), CarAt(0, -2500), CarAt(400, -4150, 1, 1));
             bot.Run();
-            Check(bot.Action is DefensiveDrive, $"wrong action: {bot.Action?.GetType().Name}");
-            Check(Defense.IsGoalSide(((DefensiveDrive)bot.Action).Target, Ball.Location, goal), "planner chose upfield guard");
+            var guard = bot.Action as DefensiveDrive ?? throw new Exception($"wrong action: {bot.Action?.GetType().Name}");
+            Check(Defense.IsGoalSide(guard.Target, Ball.Location, goal), "planner chose upfield guard");
             Check(bot.Decision == "defend / recover goal-side", bot.Decision);
         });
         test("defense-v2: elected owner cannot preserve an upfield possession controller", () =>
