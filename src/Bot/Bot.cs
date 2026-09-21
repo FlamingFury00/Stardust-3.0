@@ -214,7 +214,7 @@ namespace Bot
                             MathF.Min(pressureTime, 0.35f))
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     GuardTo(Tactics.GoalReturnTarget(Me, route, OurGoal.Location),
-                        2250f, 650f, false);
+                        2250f, 650f, false, allowDodges: !counterGoalSide);
                     SetDecision(counterGoalSide
                         ? "defend / counter shadow"
                         : "defend / counter recover");
@@ -429,7 +429,8 @@ namespace Bot
                 hold = true;
             }
 
-            GuardTo(support, cruise, terminal, hold);
+            GuardTo(support, cruise, terminal, hold,
+                allowDodges: recoveringGoalSide && !exitingGoal);
 
             if (exitingGoal)
                 SetDecision("defend / exit net");
@@ -462,7 +463,8 @@ namespace Bot
             return true;
         }
 
-        private void GuardTo(Vec3 destination, float cruiseSpeed, float terminalSpeed, bool holdPosition)
+        private void GuardTo(Vec3 destination, float cruiseSpeed, float terminalSpeed,
+            bool holdPosition, bool allowDodges = false)
         {
             if (!ControlMath.Finite(destination))
                 destination = OurGoal.Location;
@@ -473,11 +475,12 @@ namespace Bot
                 guard.CruiseSpeed = cruiseSpeed;
                 guard.TerminalSpeed = terminalSpeed;
                 guard.HoldPosition = holdPosition;
+                guard.AllowDodges = allowDodges;
             }
             else
             {
                 Action = new DefensiveDrive(Me, destination, cruiseSpeed,
-                    terminalSpeed, holdPosition);
+                    terminalSpeed, holdPosition, allowDodges);
             }
         }
 
