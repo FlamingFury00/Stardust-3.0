@@ -13,7 +13,7 @@ namespace Bot
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
     }
 
-    /// <summary>Threat-first planning around persistent closed-loop mechanics; a 3.0 evaluation candidate.</summary>
+    /// <summary>Threat-first planning with explicit goal coverage and persistent closed-loop mechanics.</summary>
     public class Stardust : RUBot
     {
         public StardustOptions Options { get; } = new();
@@ -52,96 +52,85 @@ namespace Bot
                 return;
             }
 
-            float threat = Tactics.GoalThreat(Ball.Prediction.Slices, OurGoal.Location, Game.Time);
+            float threat = Defense.GoalThreat(Ball.Prediction.Slices, OurGoal.Location, Game.Time, 2.5f, out Vec3 crossing);
             float pressureTime = Tactics.OpponentPressure(LivingOpponents, Ball.MainBall, OurGoal.Location);
-            bool emergency = float.IsFinite(threat);
-            bool underPressure = float.IsFinite(pressureTime);
-            bool risingThreat = emergency && !defending;
-            bool pressureEdge = underPressure != pressured;
-            if (pressureEdge) nextPlan = float.NegativeInfinity;
+            bool emergency = float.IsFinite(threat), underPressure = float.IsFinite(pressureTime);
+            bool threatEdge = emergency != defending, pressureEdge = underPressure != pressured;
+            if (threatEdge || pressureEdge) nextPlan = float.NegativeInfinity;
 
-            // Leave threat changes pending while a physically committed dodge/flip finishes.
-            if (Action != null && !Action.Interruptible)
-            {
-                defending = emergency;
-                pressured = underPressure;
-                return;
-            }
-
+            // Do not acknowledge a threat transition until it can actually be handled. Otherwise a
+            // threat arriving during a flip is consumed and the old attack survives after landing.
+            if (Action != null && !Action.Interruptible) return;
             defending = emergency;
             pressured = underPressure;
             if (Action is Shot oldShot && !oldShot.IsPredictionValid()) Action = null;
-            if (risingThreat) { Action = null; nextPlan = float.NegativeInfinity; }
+            if (threatEdge) { Action = null; defensiveShot = null; }
             if (Action == null) nextPlan = MathF.Min(nextPlan, Game.Time);
             if (Game.Time < nextPlan) return;
             Situation = Tactics.Evaluate(this);
             Situation.PressureTime = pressureTime;
-            nextPlan = Game.Time + (underPressure ? 0.05f : 0.12f);
+            nextPlan = Game.Time + (underPressure || emergency ? 0.05f : 0.12f);
 
             if (emergency)
             {
-                // An attacking shot must not masquerade as an already planned defensive clear.
-                if (!(Action is Shot) || !ReferenceEquals(Action, defensiveShot))
+                float deadline = MathF.Max(0, threat - 0.015f);
+                if (!(Action is Shot current) || !ReferenceEquals(Action, defensiveShot) ||
+                    current.Slice.Time - Game.Time > deadline)
                 {
-                    defensiveShot = Tactics.SelectShot(this, true, Situation.OpponentEta, _ => false);
+                    defensiveShot = Tactics.SelectShot(this, true, Situation.OpponentEta, _ => false, deadline);
                     Action = defensiveShot;
                 }
                 if (Action == null)
                 {
-                    Vec3 rawGuard = Tactics.ShadowTarget(Ball.Location, OurGoal.Location, true);
-                    Vec3 guard = Tactics.GoalReturnTarget(Me, rawGuard, OurGoal.Location);
-                    DriveTo(guard, Tactics.GuardSpeed(Me, guard, 2300), false, allowHandbrake: false);
+                    Vec3 guard = Tactics.GoalReturnTarget(Me, Defense.EmergencyTarget(crossing, OurGoal.Location), OurGoal.Location);
+                    GuardTo(guard, Car.MaxSpeed);
                 }
                 SetDecision("defend / predicted goal");
                 return;
             }
 
+            bool canChallenge = Defense.CanChallenge(Situation, Me, Ball.Location, OurGoal.Location);
+            float attackDeadline = Defense.AttackDeadline(Situation);
             if (Action is IPossessionAction)
             {
-                // A support/anchor car must not preserve an offensive possession controller into
-                // an anticipated opponent contact. The elected challenger may still finish its play.
-                if (underPressure && Situation.TeamRank > 0) Action = null;
-                else return;
+                if (canChallenge) return;
+                Action = null;
             }
-            if (Action is Shot shot && shot.IsPredictionValid() && !HasTeammateEarlierShot(shot.Slice.Time))
+            if (Action is Shot shot)
             {
-                if (!underPressure || Situation.TeamRank == 0) return;
+                if (canChallenge && shot.IsPredictionValid() && shot.Slice.Time - Game.Time <= attackDeadline &&
+                    !HasTeammateEarlierShot(shot.Slice.Time)) return;
                 Action = null;
             }
             if (Action is GetBoost refill)
             {
-                // Preserve a selected refill across tactical replans. Abort it immediately when
-                // pressure arrives or this car becomes the elected challenger.
-                if (underPressure || Situation.TeamRank == 0)
+                if (!Defense.CanRefill(Situation, Ball.Location, OurGoal.Location, underPressure) || Situation.TeamRank == 0)
                     Action = null;
                 else if (!refill.Finished)
                 {
                     SetDecision(refill.ChosenBoost?.IsLarge == true ? "support / full-pad refill" : "support / pad refill");
                     return;
                 }
-                else
-                    Action = null;
+                else Action = null;
             }
-            if (!(Action is Drive)) Action = null;
-            bool owner = Situation.TeamRank == 0;
-            bool goalSide = Me.Location.y * Field.Side(Team) >= Ball.Location.y * Field.Side(Team) - 150;
+            if (!(Action is Drive) && !(Action is DefensiveDrive)) Action = null;
             if (!Me.IsGrounded)
             {
-                if (owner && Options.AerialCarry && AerialCarry.CanStart(Me, Ball.MainBall, Situation.OpponentEta))
+                if (canChallenge && Options.AerialCarry && AerialCarry.CanStart(Me, Ball.MainBall, Situation.OpponentEta))
                 { Action = new AerialCarry(); SetDecision("mechanic / aerial carry"); return; }
-                Shot aerial = owner ? Tactics.SelectShot(this, false, Situation.OpponentEta, HasClaim) : null;
+                Shot aerial = canChallenge ? Tactics.SelectShot(this, false, Situation.OpponentEta, HasClaim, attackDeadline) : null;
                 Action = aerial ?? (IAction)new Recover();
                 SetDecision(aerial == null ? "recover / landing surface" : "attack / airborne intercept");
                 return;
             }
 
-            if (owner && goalSide)
+            if (canChallenge)
             {
                 if (!underPressure && Options.GroundControl && GroundDribble.CanStart(Me, Ball.MainBall, Situation.FreeTime))
                 { Action = new GroundDribble(); SetDecision("mechanic / ground carry"); return; }
                 if (!underPressure && Options.GroundControl && Situation.FreeTime > 0.7f && Ball.Location.z > 200 && GroundCatch.FindCatch(Me) != null)
                 { Action = new GroundCatch(); SetDecision("mechanic / cushion catch"); return; }
-                Shot attack = Tactics.SelectShot(this, false, Situation.OpponentEta, HasClaim);
+                Shot attack = Tactics.SelectShot(this, false, Situation.OpponentEta, HasClaim, attackDeadline);
                 if (attack != null) { Action = attack; SetDecision("attack / economical intercept"); return; }
                 if (Situation.FreeTime > 0.25f)
                 {
@@ -151,25 +140,18 @@ namespace Bot
                     return;
                 }
             }
-            bool anchor = Situation.TeamCount <= 2 ? Situation.TeamRank > 0 : Situation.TeamRank >= 2;
-            Vec3 rawSupport = Tactics.ShadowTarget(Ball.Location, OurGoal.Location, anchor);
+            bool anchor = Defense.ShouldAnchor(Situation) || !Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location);
+            Vec3 reference = Defense.ReferenceBall(Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
+            Vec3 rawSupport = Tactics.ShadowTarget(reference, OurGoal.Location, anchor);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1;
-
-            if (!underPressure && !exitingGoal && TryBoostDetour(support)) return;
-
-            if (anchor || exitingGoal)
-                DriveTo(support, Tactics.GuardSpeed(Me, support, anchor ? 1800 : 2100),
-                    allowDodges: false, allowHandbrake: false);
-            else
-                DriveTo(support, 2100, !underPressure, allowHandbrake: true);
-
-            if (exitingGoal)
-                SetDecision("defend / exit net");
-            else if (underPressure && Situation.TeamRank > 0)
-                SetDecision(anchor ? "defend / anticipated-contact anchor" : "defend / anticipated-contact support");
-            else
-                SetDecision(owner ? "defend / shadow challenge" : anchor ? "support / deep anchor" : "support / wide lane");
+            if (!exitingGoal && Defense.CanRefill(Situation, Ball.Location, OurGoal.Location, underPressure) &&
+                TryBoostDetour(support)) return;
+            GuardTo(support, anchor ? 1800 : 2100);
+            if (exitingGoal) SetDecision("defend / exit net");
+            else if (!Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)) SetDecision("defend / recover goal-side");
+            else if (anchor) SetDecision(underPressure ? "defend / ball-goal anchor" : "support / goal-cover anchor");
+            else SetDecision("support / wide lane");
         }
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
@@ -178,11 +160,16 @@ namespace Bot
             if (Ball.Location.y * Field.Side(Team) > 2500) return false;
             Boost pad = RoutePlanner.SelectBoost(Me, Field.Boosts, Ball.Location, destination, Team, Situation.OpponentEta);
             if (pad == null) return false;
-
-            // Use the existing persistent pickup action instead of recreating a Drive every plan tick.
             Action = new GetBoost(Me, pad.Index, interruptible: true);
             SetDecision(pad.IsLarge ? "support / full-pad refill" : "support / small-pad route");
             return true;
+        }
+
+        private void GuardTo(Vec3 destination, float cruiseSpeed)
+        {
+            if (Action is DefensiveDrive guard)
+            { guard.Target = destination; guard.CruiseSpeed = cruiseSpeed; }
+            else Action = new DefensiveDrive(Me, destination, cruiseSpeed);
         }
 
         private void DriveTo(Vec3 destination, float speed, bool allowDodges, bool allowHandbrake = true)
@@ -196,21 +183,15 @@ namespace Bot
                 drive.AllowHandbrake = allowHandbrake;
                 drive.WasteBoost = false;
             }
-            else
-            {
-                var newDrive = new Drive(Me, destination, speed, allowDodges, wasteBoost: false)
-                {
-                    AllowHandbrake = allowHandbrake
-                };
-                Action = newDrive;
-            }
+            else Action = new Drive(Me, destination, speed, allowDodges, wasteBoost: false)
+            { AllowHandbrake = allowHandbrake };
         }
         private void SetDecision(string decision)
         {
             if (Decision == decision) return;
             Decision = decision;
             if (Options.Trace) Console.WriteLine(FormattableString.Invariant(
-                $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2}"));
+                $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2} last_back={Situation.LastBack} cover={Situation.HasCover} goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
         }
         // Retained for compatibility with the original Shadow action.
         public bool IsBack() => CanDefend(Me, OurGoal.Location) || Situation.FirstMan == Index;

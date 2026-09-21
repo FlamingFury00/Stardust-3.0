@@ -1,0 +1,14 @@
+{
+  "blinding_checked": false,
+  "pairs": [
+    {
+      "scenario": "solo-deep-central-dribble-blue-seed-001",
+      "candidate": "clips/candidate-seed-001.mp4",
+      "reference": "clips/reference-seed-001.mp4",
+      "reference_kind": "replace with baseline or verified professional reference",
+      "provenance": "replace with replay ID, player identity, recording date and scenario match details",
+      "candidate_revision": "replace with the exact tested Git commit SHA",
+      "seconds": 10
+    }
+  ]
+}
