@@ -302,6 +302,79 @@ namespace Bot
         }
 
         /// <summary>
+        /// Hysteresis gate for a challenge that has already been selected. ETA estimates can jump by
+        /// several tenths after a touch or prediction resample; do not abandon a committed approach
+        /// unless the geometry becomes genuinely unsafe or the race becomes clearly lost.
+        /// </summary>
+        public static bool CanContinueChallenge(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal)
+        {
+            if (frame == null || car == null || car.IsDemolished || frame.TeamRank != 0 ||
+                !float.IsFinite(frame.MyEta) || !float.IsFinite(frame.OpponentEta) ||
+                !IsGoalSide(car.Location, ball, goal, -120f))
+                return false;
+
+            float distance = car.Location.Dist(ball);
+            if (distance < 430f)
+                return true;
+
+            float goalDistance = ball.FlatDist(goal);
+            float allowedDeficit = goalDistance < 3300f ? 0.38f : 0.28f;
+            if (frame.TeamCount > 1 && frame.LastBack && !frame.HasCover)
+                allowedDeficit -= 0.08f;
+
+            return frame.MyEta <= frame.OpponentEta + allowedDeficit;
+        }
+
+        /// <summary>
+        /// Find an early reachable low-ball block before a predicted goal crossing. This is a
+        /// fallback when a full scripted shot is unavailable; it intentionally prefers contact with
+        /// the ball over retreating to the final goal-line crossing point.
+        /// </summary>
+        public static bool TryDefensiveIntercept(Car car, BallPrediction prediction, Vec3 goal,
+            float now, float deadline, out Vec3 target)
+        {
+            target = goal;
+            if (car == null || car.IsDemolished || !float.IsFinite(now) ||
+                !float.IsFinite(deadline) || deadline <= 0f || !ControlMath.Finite(goal))
+                return false;
+
+            BallSlice[] slices = prediction.Slices;
+            if (slices == null)
+                return false;
+
+            float next = now + 0.06f;
+            foreach (BallSlice slice in slices)
+            {
+                if (slice == null || !float.IsFinite(slice.Time) ||
+                    !ControlMath.Finite(slice.Location) || slice.Time < next)
+                    continue;
+
+                float time = slice.Time - now;
+                if (time > deadline)
+                    break;
+                next = slice.Time + 0.05f;
+
+                // The fallback controller is a ground drive. Leave elevated contacts to SelectShot.
+                if (slice.Location.z > 185f)
+                    continue;
+
+                // Never approach an emergency ball from substantially upfield: this is exactly the
+                // geometry which can turn a "clear" into an own-goal acceleration.
+                if (!IsGoalSide(car.Location, slice.Location, goal, -100f))
+                    continue;
+
+                float eta = Drive.GetEta(car, slice.Location);
+                if (!float.IsFinite(eta) || eta > time + 0.07f)
+                    continue;
+
+                target = Field.LimitToNearestSurface(slice.Location);
+                return ControlMath.Finite(target);
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Offensive contact horizon. Opponent ETA is a loose-ball estimate, so it is used as a
         /// pressure reference rather than a hard possession-killing deadline. Controlled possession
         /// receives a larger continuation window; emergency saves bypass this function entirely.
@@ -329,17 +402,28 @@ namespace Bot
 
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
         {
-            if (frame == null || car == null || pressure || frame.TeamRank == 0 ||
+            if (frame == null || car == null || pressure ||
                 !IsGoalSide(car.Location, ball, goal, 20f))
                 return false;
 
+            float side = Side(goal);
+            float defensiveDepth = ball.y * side;
+
+            // In 1v1 there is no second man, so forbidding rank zero refills means the bot has no
+            // intentional boost economy at all. Allow only goal-side, low-risk refills while the
+            // opponent is not about to touch and the ball is outside the dangerous own-box depth.
+            if (frame.TeamCount <= 1)
+                return defensiveDepth < 2500f && frame.OpponentEta > 1.35f &&
+                    (frame.FreeTime > 0.30f || defensiveDepth < 300f);
+
+            if (frame.TeamRank == 0)
+                return false;
             if (frame.HasCover)
                 return true;
 
             // Without explicit cover, only a non-first-man may refill when the ball is clearly
             // out of our half and the opponent contact window is long.
-            float side = Side(goal);
-            bool ballSafelyUpfield = ball.y * side < -900f;
+            bool ballSafelyUpfield = defensiveDepth < -900f;
             return ballSafelyUpfield && frame.OpponentEta > 2.5f;
         }
 

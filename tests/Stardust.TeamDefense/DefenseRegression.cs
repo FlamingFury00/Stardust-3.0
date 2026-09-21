@@ -451,6 +451,92 @@ internal static class DefenseRegression
                 $"challenge approached from the wrong side of the ball: {target}");
         });
 
+        test("log-v5: challenge continuation survives ETA jitter but not a clearly lost race", () =>
+        {
+            Car car = CarAt(0, -3000);
+            Vec3 ball = new(0, -2200, 100);
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.95f,
+                OpponentEta = 0.70f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true,
+                PressureTime = 0.20f
+            };
+
+            Check(Defense.CanContinueChallenge(frame, car, ball, blueGoal),
+                "small ETA reversal cancelled an already-committed challenge");
+
+            frame.OpponentEta = 0.40f;
+            Check(!Defense.CanContinueChallenge(frame, car, ball, blueGoal),
+                "clearly lost race was preserved by hysteresis");
+        });
+
+        test("log-v5: reachable emergency block is preferred from goal-side geometry", () =>
+        {
+            Car car = CarAt(0, -4550);
+            car.Orientation = new Mat3x3(new Vec3(0, MathF.PI / 2, 0));
+            car.Velocity = new Vec3(0, 900, 0);
+            var prediction = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(10.90f, new Vec3(0, -4100, 100), new Vec3(0, -1500, 0)),
+                    new BallSlice(11.20f, new Vec3(0, -4550, 100), new Vec3(0, -1500, 0))
+                }
+            };
+
+            Check(Defense.TryDefensiveIntercept(
+                    car, prediction, blueGoal, 10f, 1.15f, out Vec3 block),
+                "reachable low-ball emergency intercept was missed");
+            Check(block.y < -3950f && block.y > -4650f,
+                $"unexpected emergency block point: {block}");
+
+            car.Location = new Vec3(0, -3500, 17);
+            Check(!Defense.TryDefensiveIntercept(
+                    car, prediction, blueGoal, 10f, 1.15f, out _),
+                "wrong-side car was allowed to attack an emergency ball");
+        });
+
+        test("log-v5: solo shadow may take a safe refill but never in the deep box", () =>
+        {
+            Car car = CarAt(0, -2400);
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.8f,
+                OpponentEta = 2.0f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true
+            };
+
+            Check(Defense.CanRefill(frame, car, new Vec3(0, 300, 100), blueGoal, false),
+                "1v1 rank-zero rule still disabled all intentional boost economy");
+            Check(!Defense.CanRefill(frame, car, new Vec3(0, -3300, 100), blueGoal, false),
+                "deep own-box ball allowed a solo refill");
+            Check(!Defense.CanRefill(frame, car, new Vec3(0, 300, 100), blueGoal, true),
+                "opponent pressure did not cancel solo refill");
+        });
+
+        test("log-v5: deep corner possession exits inward and suppresses goal-line flick", () =>
+        {
+            Car car = CarAt(1950, -4900);
+            car.Velocity = new Vec3(-450, 850, 0);
+            Ball ball = new(new Vec3(1950, -4900, 170), car.Velocity);
+
+            Vec3 lane = PossessionControl.AttackingLane(
+                car, ball, Array.Empty<Car>(), new Vec3(0, 5120, 0), blueGoal);
+
+            Check(lane.y > 0.55f,
+                $"deep defensive possession did not escape upfield: {lane}");
+            Check(lane.x < -0.10f,
+                $"deep right-corner possession did not cut inward: {lane}");
+            Check(!PossessionControl.ShouldFlick(
+                    car, ball, lane, 0.20f, 300f, blueGoal),
+                "goal-line possession was allowed to flick across the box");
+        });
+
         test("telemetry: file JSONL is rate-limited and includes actual control/target", () =>
         {
             string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
@@ -486,15 +572,20 @@ internal static class DefenseRegression
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
                 var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 2, "telemetry schema missing");
+                Check(root.GetProperty("schema").GetInt32() == 3, "telemetry schema missing");
+                Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
                 Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
                     "telemetry did not capture actual sanitized controller output");
                 Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
                     "telemetry did not capture defensive action target");
                 Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
                     "telemetry omitted possession state");
+                Check(root.GetProperty("car_state").TryGetProperty("forward", out _),
+                    "telemetry omitted car orientation");
+                Check(root.GetProperty("tactics").TryGetProperty("raw_can_challenge", out _),
+                    "telemetry omitted raw challenge state");
                 Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
-                    "telemetry omitted challenge decision state");
+                    "telemetry omitted committed challenge state");
             }
             finally
             {

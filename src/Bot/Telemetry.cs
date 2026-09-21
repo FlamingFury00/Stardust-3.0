@@ -195,7 +195,6 @@ namespace Bot
             float threat = Defense.GoalThreat(
                 Ball.Prediction.Slices, goal, Game.Time, 2.5f, out Vec3 crossing);
             float goalProgress = Defense.GoalSideProgress(me.Location, ball.location, goal);
-            bool canChallenge = Defense.CanChallenge(frame, me, ball.location, goal);
 
             bool hasTarget = TryActionTarget(bot.Action, out Vec3 target);
             float targetProgress = hasTarget
@@ -234,9 +233,25 @@ namespace Bot
             Vec3 reference = Defense.ReferenceBall(
                 Ball.Prediction, ball.location, goal, Game.Time);
 
+            object touchData = null;
+            BallTouch touch = Ball.LatestTouch;
+            if (touch != null)
+            {
+                touchData = new Dictionary<string, object>
+                {
+                    ["t"] = Num(touch.Time, 3),
+                    ["player"] = touch.PlayerIndex,
+                    ["team"] = touch.Team,
+                    ["name"] = touch.PlayerName,
+                    ["ball"] = touch.BallIndex,
+                    ["p"] = Vec(touch.Location)
+                };
+            }
+
             var output = new Dictionary<string, object>
             {
-                ["schema"] = 2,
+                ["schema"] = 3,
+                ["build"] = typeof(Stardust).Assembly.ManifestModule.ModuleVersionId.ToString("N"),
                 ["seq"] = sequence++,
                 ["kind"] = kind,
                 ["t"] = Num(Game.Time, 3),
@@ -261,6 +276,9 @@ namespace Bot
                 {
                     ["p"] = Vec(me.Location),
                     ["v"] = Vec(me.Velocity),
+                    ["forward"] = Vec(me.Forward),
+                    ["up"] = Vec(me.Up),
+                    ["angular_v"] = Vec(me.AngularVelocity),
                     ["speed"] = Num(me.Velocity.Length()),
                     ["forward_speed"] = Num(me.Velocity.Dot(me.Forward)),
                     ["boost"] = Num(me.Boost),
@@ -274,7 +292,9 @@ namespace Bot
                     ["v"] = Vec(ball.velocity),
                     ["speed"] = Num(ball.velocity.Length()),
                     ["goal_dist"] = Num(ball.location.FlatDist(goal)),
-                    ["reference_p"] = Vec(reference)
+                    ["reference_p"] = Vec(reference),
+                    ["latest_touch"] = touchData,
+                    ["own_touch_this_tick"] = bot.OwnTouchThisTick
                 },
                 ["target"] = targetData,
                 ["attacker"] = attackerData,
@@ -286,13 +306,15 @@ namespace Bot
                     ["free_time"] = Num(frame.FreeTime),
                     ["pressure_time"] = Num(frame.PressureTime),
                     ["goal_threat_time"] = Num(threat),
+                    ["counter_threat_time"] = Num(bot.CounterThreatTime),
                     ["goal_crossing"] = float.IsFinite(threat) ? Vec(crossing) : null,
                     ["rank"] = frame.TeamRank,
                     ["team_count"] = frame.TeamCount,
                     ["first_man"] = frame.FirstMan,
                     ["last_back"] = frame.LastBack,
                     ["has_cover"] = frame.HasCover,
-                    ["can_challenge"] = canChallenge
+                    ["raw_can_challenge"] = bot.RawCanChallenge,
+                    ["can_challenge"] = bot.ChallengeCommitted
                 },
                 ["controller"] = new Dictionary<string, object>
                 {
@@ -376,6 +398,15 @@ namespace Bot
                     {
                         ["pad_index"] = boost.BoostIndex,
                         ["large"] = boost.ChosenBoost?.IsLarge
+                    };
+                case Shot shot:
+                    return new Dictionary<string, object>
+                    {
+                        ["slice_time"] = shot.Slice == null ? null : Num(shot.Slice.Time, 3),
+                        ["contact_p"] = shot.Slice == null ? null : Vec(shot.Slice.Location),
+                        ["shot_target"] = Vec(shot.ShotTarget),
+                        ["target_p"] = Vec(shot.TargetLocation),
+                        ["shot_dir"] = Vec(shot.ShotDirection)
                     };
                 default:
                     return null;

@@ -31,7 +31,8 @@ namespace Bot
             { Finished = true; return; }
 
             Vec3 lane = PossessionControl.AttackingLane(
-                car, Ball.MainBall, bot.LivingOpponents, bot.TheirGoal.Location);
+                car, Ball.MainBall, bot.LivingOpponents,
+                bot.TheirGoal.Location, bot.OurGoal.Location);
             bool carried = PossessionControl.HasControlledPossession(car, Ball.MainBall);
             stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
 
@@ -44,7 +45,8 @@ namespace Bot
 
             float requiredStable = pressure < 0.40f || opponentDistance < 450f ? 0.06f : 0.13f;
             if (carried && Game.Time - stableSince >= requiredStable &&
-                PossessionControl.ShouldFlick(car, Ball.MainBall, lane, pressure, opponentDistance))
+                PossessionControl.ShouldFlick(
+                    car, Ball.MainBall, lane, pressure, opponentDistance, bot.OurGoal.Location))
             {
                 bot.Action = new ControlledFlick(car, lane);
                 return;
@@ -140,24 +142,50 @@ namespace Bot
         public float ClaimTime => Game.Time + 0.3f;
         public static bool CanStart(Car car, Ball ball, float opponentEta)
         {
+            if (car == null || ball == null || car.IsGrounded || car.Location.z <= 180f ||
+                ball.location.z <= 300f || car.Boost <= 8f || opponentEta <= 0.18f)
+                return false;
+
             Vec3 delta = ball.location - car.Location;
-            return !car.IsGrounded && car.Location.z > 180 && ball.location.z > 300 && car.Boost > 8 &&
-                delta.z > 20 && delta.z < 440 && delta.Length() < 690 &&
-                (car.Velocity - ball.velocity).Length() < 1100 && opponentEta > 0.18f;
+            float distance = delta.Length();
+            if (delta.z <= 20f || delta.z >= 440f || distance >= 690f)
+                return false;
+
+            Vec3 relativeVelocity = car.Velocity - ball.velocity;
+            float relativeSpeed = relativeVelocity.Length();
+            if (relativeSpeed >= 1100f)
+                return false;
+
+            // A close, already-controlled air dribble may tolerate a small temporary separation.
+            // A distant ball that is rapidly moving away is not a carry start; boosting after it
+            // just burns the recovery budget.
+            float closing = relativeVelocity.Dot(ControlMath.Unit(delta, Vec3.Up));
+            float allowedSeparation = distance < 220f ? -420f : -220f;
+            return closing >= allowedSeparation;
         }
         public void Run(RUBot bot)
         {
             Car car = bot.Me;
             Vec3 delta = Ball.Location - car.Location;
-            if (car.IsGrounded || delta.Length() > 900 || Ball.Location.z < 180 || Game.Time - started > 4 ||
-                (car.Boost <= 0 && delta.Length() > 220)) { Finished = true; return; }
+            float distance = delta.Length();
+            float separationClosing = (car.Velocity - Ball.Velocity)
+                .Dot(ControlMath.Unit(delta, Vec3.Up));
+            if (car.IsGrounded || distance > 900f || Ball.Location.z < 180f ||
+                Game.Time - started > 4f ||
+                (car.Boost <= 0f && distance > 220f) ||
+                (distance > 360f && separationClosing < -360f))
+            {
+                Finished = true;
+                return;
+            }
             if (bot is Stardust stardust && stardust.Options.FlipResets &&
                 stardust.Situation.OpponentEta > 1.2f && FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
             { bot.Action = new FlipReset(bot.Jump); return; }
             const float horizon = 0.12f;
             Ball prediction = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
             Vec3 lane = PossessionControl.AttackingLane(
-                car, prediction, bot.LivingOpponents, bot.TheirGoal.Location);
+                car, prediction, bot.LivingOpponents,
+                bot.TheirGoal.Location, bot.OurGoal.Location);
             float pressure = bot is Stardust stardustPressure
                 ? MathF.Min(stardustPressure.Situation.OpponentEta, stardustPressure.Situation.PressureTime)
                 : float.PositiveInfinity;

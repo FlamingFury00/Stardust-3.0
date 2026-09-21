@@ -324,12 +324,19 @@ Test("ground carry: throttle corrects forward error in both directions", () =>
     Check(PossessionControl.GroundCarry(car, new Ball(new Vec3(80, 0, 150), Vec3.Zero), car.Forward).Throttle > 0);
     Check(PossessionControl.GroundCarry(car, new Ball(new Vec3(0, 0, 150), Vec3.Zero), car.Forward).Throttle < 0);
 });
-Test("aerial carry: availability respects boost and relative speed", () =>
+Test("aerial carry: availability respects boost, relative speed, and separation", () =>
 {
     var car = AirCar(); var ball = new Ball(new Vec3(100, 0, 650), car.Velocity);
     Check(AerialCarry.CanStart(car, ball, 2));
     car.Boost = 0; Check(!AerialCarry.CanStart(car, ball, 2));
-    car.Boost = 40; ball.velocity = new Vec3(-2000, 0, 0); Check(!AerialCarry.CanStart(car, ball, 2));
+    car.Boost = 40; ball.velocity = new Vec3(-2000, 0, 0);
+    Check(!AerialCarry.CanStart(car, ball, 2));
+
+    car.Velocity = new Vec3(-600, 0, 0);
+    ball.location = new Vec3(300, 0, 650);
+    ball.velocity = new Vec3(300, 0, 0);
+    Check(!AerialCarry.CanStart(car, ball, 2),
+        "rapidly separating ball was accepted as an aerial carry");
 });
 Test("reset: entry requires an already spent flip", () =>
 {

@@ -35,9 +35,15 @@ namespace Bot
         public bool Shooting { get; set; }
 
         private float nextPlan = float.NegativeInfinity;
-        private bool defending, pressured;
+        private float challengeCommitUntil = float.NegativeInfinity;
+        private bool defending, countering, pressured;
         private Shot defensiveShot;
         private readonly StardustTelemetry telemetry;
+
+        public bool RawCanChallenge { get; private set; }
+        public bool ChallengeCommitted { get; private set; }
+        public float EmergencyThreatTime { get; private set; } = float.PositiveInfinity;
+        public float CounterThreatTime { get; private set; } = float.PositiveInfinity;
 
         public Stardust(string defaultAgentId = null) : base(defaultAgentId)
         {
@@ -55,9 +61,15 @@ namespace Bot
             if (ClockReset)
             {
                 nextPlan = float.NegativeInfinity;
+                challengeCommitUntil = float.NegativeInfinity;
                 defending = false;
+                countering = false;
                 pressured = false;
                 defensiveShot = null;
+                RawCanChallenge = false;
+                ChallengeCommitted = false;
+                EmergencyThreatTime = float.PositiveInfinity;
+                CounterThreatTime = float.PositiveInfinity;
                 telemetry.Reset();
             }
 
@@ -91,11 +103,20 @@ namespace Bot
 
             float threat = Defense.GoalThreat(Ball.Prediction.Slices, OurGoal.Location,
                 Game.Time, 2.5f, out Vec3 crossing);
+            float counterThreat = threat;
+            if (!float.IsFinite(counterThreat))
+                counterThreat = Defense.GoalThreat(Ball.Prediction.Slices, OurGoal.Location,
+                    Game.Time, 4.5f, out _);
+
+            EmergencyThreatTime = threat;
+            CounterThreatTime = counterThreat;
+
             float pressureTime = Tactics.OpponentPressure(LivingOpponents,
                 Ball.MainBall, OurGoal.Location);
             bool emergency = float.IsFinite(threat);
+            bool counterDanger = !emergency && float.IsFinite(counterThreat);
             bool underPressure = float.IsFinite(pressureTime);
-            bool threatEdge = emergency != defending;
+            bool threatEdge = emergency != defending || counterDanger != countering;
             bool pressureEdge = underPressure != pressured;
 
             if (threatEdge || pressureEdge)
@@ -107,6 +128,7 @@ namespace Bot
                 return;
 
             defending = emergency;
+            countering = counterDanger;
             pressured = underPressure;
 
             if (Action is Shot oldShot && !oldShot.IsPredictionValid())
@@ -123,34 +145,93 @@ namespace Bot
 
             Situation = Tactics.Evaluate(this);
             Situation.PressureTime = pressureTime;
-            nextPlan = Game.Time + (underPressure || emergency ? 0.05f : 0.12f);
+            nextPlan = Game.Time + (underPressure || emergency || counterDanger ? 0.05f : 0.12f);
 
-            if (emergency)
+            RawCanChallenge = Defense.CanChallenge(
+                Situation, Me, Ball.Location, OurGoal.Location);
+            bool challengeSafe = Defense.CanContinueChallenge(
+                Situation, Me, Ball.Location, OurGoal.Location);
+            if (RawCanChallenge)
+                challengeCommitUntil = Game.Time + (underPressure ? 0.36f : 0.27f);
+            else if (Game.Time >= challengeCommitUntil || !challengeSafe)
+                challengeCommitUntil = float.NegativeInfinity;
+            ChallengeCommitted = RawCanChallenge ||
+                (Game.Time < challengeCommitUntil && challengeSafe);
+
+            if (emergency || counterDanger)
             {
-                float deadline = MathF.Max(0f, threat - 0.015f);
-                if (!(Action is Shot current) || !ReferenceEquals(Action, defensiveShot) ||
-                    current.Slice.Time - Game.Time > deadline)
+                float dangerTime = emergency ? threat : counterThreat;
+                float deadline = MathF.Max(0.05f, dangerTime - 0.025f);
+                bool clearSide = Defense.IsGoalSide(
+                    Me.Location, Ball.Location, OurGoal.Location, -100f);
+
+                // A formal clear is only legal from approximately goal-side geometry. The uploaded
+                // match contained a probable own-goal acceleration from a wrong-side emergency dodge.
+                if (clearSide)
                 {
-                    defensiveShot = Tactics.SelectShot(this, true, Situation.OpponentEta,
-                        _ => false, deadline);
-                    Action = defensiveShot;
+                    if (!(Action is Shot current) || !ReferenceEquals(Action, defensiveShot) ||
+                        current.Slice.Time - Game.Time > deadline)
+                    {
+                        defensiveShot = Tactics.SelectShot(this, true, Situation.OpponentEta,
+                            _ => false, deadline);
+                        Action = defensiveShot;
+                    }
+                }
+                else if (Action is Shot)
+                {
+                    Action = null;
+                    defensiveShot = null;
                 }
 
-                if (Action == null)
+                if (Action != null)
                 {
-                    Vec3 rawGuard = Defense.EmergencyTarget(crossing, OurGoal.Location);
-                    Vec3 guard = Tactics.GoalReturnTarget(Me, rawGuard, OurGoal.Location);
-                    GuardTo(guard, Car.MaxSpeed, 0f, true);
+                    SetDecision(emergency
+                        ? "defend / emergency clear"
+                        : "defend / counter clear");
+                    return;
                 }
 
-                SetDecision("defend / predicted goal");
+                if (Defense.TryDefensiveIntercept(
+                    Me, Ball.Prediction, OurGoal.Location, Game.Time, deadline,
+                    out Vec3 block))
+                {
+                    DriveTo(block, Car.MaxSpeed, false, false);
+                    SetDecision(emergency
+                        ? "defend / emergency intercept"
+                        : "defend / counter intercept");
+                    return;
+                }
+
+                if (!emergency)
+                {
+                    Vec3 counterReference = Defense.ReferenceBall(
+                        Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
+                    bool counterGoalSide = Defense.IsGoalSide(
+                        Me.Location, Ball.Location, OurGoal.Location, 20f);
+                    Vec3 route = counterGoalSide
+                        ? Defense.ShadowTarget(
+                            counterReference, OurGoal.Location, DefensiveRole.Shadow,
+                            MathF.Min(pressureTime, 0.35f))
+                        : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
+                    GuardTo(Tactics.GoalReturnTarget(Me, route, OurGoal.Location),
+                        2250f, 650f, false);
+                    SetDecision(counterGoalSide
+                        ? "defend / counter shadow"
+                        : "defend / counter recover");
+                    return;
+                }
+
+                Vec3 rawGuard = Defense.EmergencyTarget(crossing, OurGoal.Location);
+                Vec3 guard = Tactics.GoalReturnTarget(Me, rawGuard, OurGoal.Location);
+                GuardTo(guard, Car.MaxSpeed, 0f, true);
+                SetDecision("defend / goal-line block");
                 return;
             }
 
             bool controlledPossession =
                 PossessionControl.HasControlledPossession(Me, Ball.MainBall) ||
                 PossessionControl.HasAirControl(Me, Ball.MainBall);
-            bool canChallenge = Defense.CanChallenge(Situation, Me, Ball.Location, OurGoal.Location);
+            bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
             if (Action is IPossessionAction possession)
@@ -290,7 +371,8 @@ namespace Bot
                 }
 
                 Vec3 lane = PossessionControl.AttackingLane(
-                    Me, Ball.MainBall, LivingOpponents, TheirGoal.Location);
+                    Me, Ball.MainBall, LivingOpponents,
+                    TheirGoal.Location, OurGoal.Location);
                 DriveTo(Field.LimitToNearestSurface(Ball.Location - lane * 300f),
                     1750f, false);
                 SetDecision("possess / approach behind ball");
@@ -314,7 +396,7 @@ namespace Bot
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
-            if (!recoveringGoalSide && !exitingGoal && role != DefensiveRole.Shadow &&
+            if (!recoveringGoalSide && !exitingGoal &&
                 Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure) &&
                 TryBoostDetour(support))
                 return;
