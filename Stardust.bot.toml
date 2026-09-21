@@ -3,7 +3,7 @@
 # VVVVV CHANGE THIS VVVVV
 agent_id = "flamingfury00/stardust"
 # The name that will be displayed in game
-name = "Stardust-2.0"
+name = "Stardust-3.0"
 # Path to loadout config from runner
 loadout_file = "loadout.toml"
 # (OPTIONAL) - what you want the working directory set to
