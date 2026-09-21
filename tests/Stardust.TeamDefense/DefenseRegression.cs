@@ -20,7 +20,7 @@ internal static class DefenseRegression
             $"expected {expected}, got {actual}");
     }
 
-    private static void Set(Type type, string property, object instance, object value) =>
+    private static void Set(Type type, string property, object? instance, object value) =>
         type.GetProperty(property,
                 BindingFlags.Public | BindingFlags.NonPublic |
                 BindingFlags.Static | BindingFlags.Instance)!
