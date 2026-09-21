@@ -58,6 +58,11 @@ namespace Bot
                 !IsGoalSide(car.Location, ball, goal))
                 return false;
 
+            Vec3 goalward = ControlMath.FlatUnit(goal - ball, new Vec3(0, Side(goal), 0));
+            float outboundSpeed = -car.Velocity.Dot(goalward);
+            if (outboundSpeed > 900f)
+                return false;
+
             Vec3 future = car.Location + car.Velocity * 0.22f;
             if (!IsGoalSide(future, ball, goal))
                 return false;
