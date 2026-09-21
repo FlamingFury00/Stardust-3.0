@@ -475,8 +475,9 @@ internal static class DefenseRegression
 
         test("log-v5: reachable emergency block is preferred from goal-side geometry", () =>
         {
-            Car car = CarAt(0, -3500);
-            car.Velocity = new Vec3(0, -900, 0);
+            Car car = CarAt(0, -4550);
+            car.Orientation = new Mat3x3(new Vec3(0, MathF.PI / 2, 0));
+            car.Velocity = new Vec3(0, 900, 0);
             var prediction = new RedUtils.BallPrediction
             {
                 Slices = new[]
@@ -492,7 +493,7 @@ internal static class DefenseRegression
             Check(block.y < -3950f && block.y > -4650f,
                 $"unexpected emergency block point: {block}");
 
-            car.Location = new Vec3(0, -3000, 17);
+            car.Location = new Vec3(0, -3500, 17);
             Check(!Defense.TryDefensiveIntercept(
                     car, prediction, blueGoal, 10f, 1.15f, out _),
                 "wrong-side car was allowed to attack an emergency ball");
