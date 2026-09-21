@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RedUtils;
@@ -8,41 +9,64 @@ using RedUtils.Math;
 namespace Bot
 {
     /// <summary>
-    /// Low-rate, structured in-game telemetry intended for replaying tactical decisions from logs.
-    /// It is deliberately observational: no telemetry value feeds back into planning or controls.
+    /// Low-rate structured in-game telemetry for reconstructing tactical decisions from a real match.
+    /// Diagnostics are observational only: telemetry never feeds back into planning or controls.
     /// </summary>
     internal sealed class StardustTelemetry
     {
         public const string Prefix = "STARDUST_JSON ";
+        private const long MaxFileBytes = 64L * 1024L * 1024L;
 
         private readonly bool enabled;
+        private readonly bool console;
         private readonly float interval;
+        private readonly string requestedPath;
+        private readonly string defaultPath;
         private readonly JsonSerializerOptions json = new()
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             WriteIndented = false
         };
 
+        private StreamWriter file;
+        private string activePath;
         private float nextSample = float.NegativeInfinity;
         private long sequence;
-        private bool faulted;
+        private int rotation;
+        private bool serializationFaulted;
 
-        public StardustTelemetry(bool enabled, float hz)
+        public string ActivePath => activePath;
+
+        public StardustTelemetry(bool enabled, float hz, bool console = false, string requestedPath = null)
         {
             this.enabled = enabled;
+            this.console = console;
+            this.requestedPath = string.IsNullOrWhiteSpace(requestedPath) ? null : requestedPath.Trim();
             float safeHz = float.IsFinite(hz) ? System.Math.Clamp(hz, 1f, 30f) : 10f;
             interval = 1f / safeHz;
+
+            string stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+            defaultPath = Path.Combine(
+                AppContext.BaseDirectory,
+                "logs",
+                $"stardust-telemetry-{stamp}-pid{Environment.ProcessId}.jsonl");
+
+            if (!enabled)
+                return;
+
+            EnsureFile();
+            string destination = activePath ?? "console-fallback";
+            Console.WriteLine($"STARDUST_TELEMETRY_READY hz={safeHz:0.#} file=\"{destination}\"");
         }
 
         public void Reset()
         {
             nextSample = float.NegativeInfinity;
-            sequence = 0;
         }
 
         public void Sample(Stardust bot)
         {
-            if (!enabled || faulted || bot == null || !float.IsFinite(Game.Time))
+            if (!enabled || serializationFaulted || bot == null || !float.IsFinite(Game.Time))
                 return;
             if (Game.Time + 0.0001f < nextSample)
                 return;
@@ -53,26 +77,112 @@ namespace Bot
 
         public void Decision(Stardust bot, string previous)
         {
-            if (!enabled || faulted || bot == null)
+            if (!enabled || serializationFaulted || bot == null)
                 return;
             Write(bot, "decision", previous);
         }
 
         private void Write(Stardust bot, string kind, string previousDecision)
         {
+            string line;
             try
             {
                 var data = Build(bot, kind, previousDecision);
-                Console.WriteLine(Prefix + JsonSerializer.Serialize(data, json));
+                line = JsonSerializer.Serialize(data, json);
             }
             catch (Exception error)
             {
-                // Telemetry is diagnostic only. Disable it after one fault so logging can never
-                // destabilize control or flood the console with repeated serialization failures.
-                faulted = true;
+                serializationFaulted = true;
                 Console.Error.WriteLine(
-                    $"STARDUST_TELEMETRY_ERROR {error.GetType().Name}: {error.Message}");
+                    $"STARDUST_TELEMETRY_ERROR serialize {error.GetType().Name}: {error.Message}");
+                return;
             }
+
+            bool persisted = false;
+            try
+            {
+                EnsureFile();
+                if (file != null)
+                {
+                    RotateIfNeeded();
+                    file.WriteLine(line);
+                    persisted = true;
+                }
+            }
+            catch (Exception error)
+            {
+                CloseFile();
+                Console.Error.WriteLine(
+                    $"STARDUST_TELEMETRY_ERROR file {error.GetType().Name}: {error.Message}");
+            }
+
+            if (console || !persisted)
+                Console.WriteLine(Prefix + line);
+        }
+
+        private void EnsureFile()
+        {
+            if (!enabled || file != null)
+                return;
+
+            string primary = requestedPath ?? defaultPath;
+            if (TryOpen(primary))
+                return;
+
+            string fallback = Path.Combine(
+                Path.GetTempPath(),
+                "stardust",
+                Path.GetFileName(defaultPath));
+            TryOpen(fallback);
+        }
+
+        private bool TryOpen(string path)
+        {
+            try
+            {
+                string full = Path.GetFullPath(path);
+                string directory = Path.GetDirectoryName(full);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+
+                file = new StreamWriter(new FileStream(
+                    full, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                {
+                    AutoFlush = true
+                };
+                activePath = full;
+                return true;
+            }
+            catch
+            {
+                file = null;
+                activePath = null;
+                return false;
+            }
+        }
+
+        private void RotateIfNeeded()
+        {
+            if (file == null || file.BaseStream.Length < MaxFileBytes)
+                return;
+
+            string previous = activePath;
+            CloseFile();
+            rotation++;
+
+            string directory = Path.GetDirectoryName(previous) ?? AppContext.BaseDirectory;
+            string stem = Path.GetFileNameWithoutExtension(previous);
+            string extension = Path.GetExtension(previous);
+            string rotated = Path.Combine(directory, $"{stem}.{rotation}{extension}");
+            if (!TryOpen(rotated))
+                EnsureFile();
+        }
+
+        private void CloseFile()
+        {
+            try { file?.Dispose(); }
+            catch { }
+            file = null;
         }
 
         private Dictionary<string, object> Build(Stardust bot, string kind, string previousDecision)
@@ -121,13 +231,12 @@ namespace Bot
             }
 
             object actionDetail = ActionDetail(bot.Action);
-
             Vec3 reference = Defense.ReferenceBall(
                 Ball.Prediction, ball.location, goal, Game.Time);
 
             var output = new Dictionary<string, object>
             {
-                ["schema"] = 1,
+                ["schema"] = 2,
                 ["seq"] = sequence++,
                 ["kind"] = kind,
                 ["t"] = Num(Game.Time, 3),
@@ -142,6 +251,12 @@ namespace Bot
                 ["action_interruptible"] = bot.Action?.Interruptible,
                 ["action_finished"] = bot.Action?.Finished,
                 ["role"] = Role(bot.Decision),
+                ["possession"] = new Dictionary<string, object>
+                {
+                    ["roof_quality"] = Num(PossessionControl.RoofControlQuality(me, ball), 3),
+                    ["controlled"] = PossessionControl.HasControlledPossession(me, ball),
+                    ["retain"] = PossessionControl.ShouldRetainPossession(frame, me, ball, goal)
+                },
                 ["car_state"] = new Dictionary<string, object>
                 {
                     ["p"] = Vec(me.Location),
