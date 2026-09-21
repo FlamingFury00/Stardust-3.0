@@ -114,6 +114,7 @@ namespace RedUtils
                     }
                     UpdateShotClaimState();
                     Controller = ControlRuntime.Sanitize(Controller, Me.IsDemolished, Me.Boost);
+                    OnOutputReady();
                     return Controller;
                 }
                 finally { base.Renderer.End(); }
@@ -147,6 +148,12 @@ namespace RedUtils
                 shotClaimActive = false;
             }
         }
+        /// <summary>
+        /// Optional post-action hook. At this point Controller has been sanitized and is the command
+        /// that will be returned for the frame. Instrumentation must never mutate gameplay state.
+        /// </summary>
+        protected virtual void OnOutputReady() { }
+
         public abstract void Run();
         internal BallPrediction GetBallPrediction() => new(base.BallPrediction);
     }
