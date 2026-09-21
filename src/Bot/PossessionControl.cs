@@ -1,12 +1,180 @@
 using System;
+using System.Collections.Generic;
 using RedUtils;
 using RedUtils.Math;
 using RLBot.Flat;
 
 namespace Bot
 {
+    /// <summary>
+    /// Deterministic possession geometry shared by the supervisor and mechanical controllers.
+    /// "Possession" is intentionally distinct from winning a race to a loose ball.
+    /// </summary>
     public static class PossessionControl
     {
+        /// <summary>
+        /// Continuous estimate of how securely the ball is balanced over the car. A nearby opponent
+        /// must not erase this state: pressure should normally trigger an outplay, not a retreat.
+        /// </summary>
+        public static float RoofControlQuality(Car car, Ball ball)
+        {
+            if (car == null || ball == null || !ControlMath.Finite(car.Location) ||
+                !ControlMath.Finite(car.Velocity) || !ControlMath.Finite(ball.location) ||
+                !ControlMath.Finite(ball.velocity))
+                return 0f;
+
+            Vec3 local = car.Local(ball.location - car.Location);
+            if (local.z < 85f || local.z > 245f)
+                return 0f;
+
+            Vec3 relativeVelocity = car.Local(ball.velocity - car.Velocity);
+            float planar = MathF.Sqrt(
+                (local.x / 175f) * (local.x / 175f) +
+                (local.y / 125f) * (local.y / 125f));
+
+            float centered = 1f - System.Math.Clamp(planar, 0f, 1f);
+            float height = 1f - System.Math.Clamp(MathF.Abs(local.z - 155f) / 90f, 0f, 1f);
+            float matched = 1f - System.Math.Clamp(relativeVelocity.Length() / 900f, 0f, 1f);
+            return System.Math.Clamp(centered * 0.50f + height * 0.20f + matched * 0.30f, 0f, 1f);
+        }
+
+        public static bool HasControlledPossession(Car car, Ball ball) =>
+            RoofControlQuality(car, ball) >= 0.48f;
+
+        public static bool HasAirControl(Car car, Ball ball)
+        {
+            if (car == null || ball == null || car.IsGrounded ||
+                !ControlMath.Finite(car.Location) || !ControlMath.Finite(car.Velocity) ||
+                !ControlMath.Finite(ball.location) || !ControlMath.Finite(ball.velocity))
+                return false;
+
+            Vec3 local = car.Local(ball.location - car.Location);
+            float relativeSpeed = (ball.velocity - car.Velocity).Length();
+            return ball.location.z > 240f && local.z > -80f && local.x > -220f &&
+                local.Length() < 720f && relativeSpeed < 1250f;
+        }
+
+        /// <summary>
+        /// Whether an existing possession mechanic deserves continuity even when a loose-ball race
+        /// estimator briefly says the opponent is earlier.
+        /// </summary>
+        public static bool ShouldRetainPossession(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
+        {
+            if (frame == null || car == null || ball == null || car.IsDemolished)
+                return false;
+
+            if (HasControlledPossession(car, ball))
+                return true;
+            if (HasAirControl(car, ball) && (car.Boost > 0f || car.Location.Dist(ball.location) < 230f))
+                return true;
+
+            if (frame.TeamRank != 0 || !Defense.IsGoalSide(car.Location, ball.location, ownGoal, -80f))
+                return false;
+
+            Vec3 local = car.Local(ball.location - car.Location);
+            float relativeSpeed = (ball.velocity - car.Velocity).Length();
+            bool closeControl = ball.location.z < 360f && local.x > -140f && local.x < 560f &&
+                MathF.Abs(local.y) < 240f && local.Length() < 620f && relativeSpeed < 1050f;
+
+            return closeControl && frame.FreeTime >= -0.16f;
+        }
+
+        public static bool CanAcquireGround(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
+        {
+            if (frame == null || car == null || ball == null || frame.TeamRank != 0 ||
+                car.IsDemolished || !car.IsGrounded)
+                return false;
+
+            if (HasControlledPossession(car, ball))
+                return true;
+
+            bool safeGeometry = Defense.IsGoalSide(car.Location, ball.location, ownGoal, -40f);
+            return safeGeometry && frame.FreeTime >= -0.10f;
+        }
+
+        public static bool CanAcquireAir(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
+        {
+            if (frame == null || car == null || ball == null || frame.TeamRank != 0 || car.IsDemolished)
+                return false;
+
+            if (HasAirControl(car, ball))
+                return true;
+
+            return Defense.IsGoalSide(car.Location, ball.location, ownGoal, -100f) &&
+                frame.FreeTime >= -0.08f;
+        }
+
+        /// <summary>
+        /// Goal-directed lane with a bounded lateral cut away from the strongest defender blocking
+        /// the next ~2200 uu. This creates useful cuts without turning possession into random weaving.
+        /// </summary>
+        public static Vec3 AttackingLane(Car car, Ball ball, IEnumerable<Car> opponents, Vec3 goal)
+        {
+            Vec3 fallback = car?.Forward ?? Vec3.X;
+            if (ball == null || !ControlMath.Finite(ball.location) || !ControlMath.Finite(goal))
+                return ControlMath.FlatUnit(fallback, Vec3.X);
+
+            Vec3 direct = ControlMath.FlatUnit(goal - ball.location, fallback);
+            Vec3 right = new Vec3(-direct.y, direct.x, 0);
+            float strongest = 0f;
+            float evadeSign = 0f;
+
+            if (opponents != null)
+            {
+                foreach (Car opponent in opponents)
+                {
+                    if (opponent == null || opponent.IsDemolished ||
+                        !ControlMath.Finite(opponent.Location))
+                        continue;
+
+                    Vec3 rel = (opponent.Location - ball.location).Flatten();
+                    float ahead = rel.Dot(direct);
+                    float lateral = rel.Dot(right);
+                    if (ahead < 80f || ahead > 2200f || MathF.Abs(lateral) > 1050f)
+                        continue;
+
+                    float strength =
+                        (1f - System.Math.Clamp((ahead - 80f) / 2120f, 0f, 1f)) *
+                        (1f - System.Math.Clamp(MathF.Abs(lateral) / 1050f, 0f, 1f));
+                    if (strength <= strongest)
+                        continue;
+
+                    strongest = strength;
+                    // Cut to the open side of the blocker.
+                    evadeSign = lateral >= 0f ? -1f : 1f;
+                }
+            }
+
+            Vec3 lane = direct;
+            if (strongest > 0f)
+                lane = ControlMath.FlatUnit(direct + right * evadeSign * (0.58f * strongest), direct);
+
+            // Do not choose a cut that drives the dribble directly into a side wall.
+            float projectedX = ball.location.x + lane.x * 1450f;
+            float wall = Field.Width * 0.5f - 350f;
+            if (MathF.Abs(projectedX) > wall)
+            {
+                float inward = projectedX > 0f ? -1f : 1f;
+                lane = ControlMath.FlatUnit(lane + new Vec3(inward * 0.45f, 0, 0), direct);
+            }
+
+            return lane;
+        }
+
+        public static bool ShouldFlick(Car car, Ball ball, Vec3 lane,
+            float pressureTime, float opponentDistance)
+        {
+            if (!HasControlledPossession(car, ball))
+                return false;
+
+            float speed = car.Velocity.Dot(car.Forward);
+            float alignment = car.Forward.FlatNorm().Dot(ControlMath.FlatUnit(lane, car.Forward));
+            bool imminent = (float.IsFinite(pressureTime) && pressureTime < 0.85f) ||
+                (float.IsFinite(opponentDistance) && opponentDistance < 720f);
+
+            return imminent && speed > 250f && alignment > 0.72f;
+        }
+
         /// <summary>Predict RELATIVE motion: equal world velocity must not create a fictitious hood error.</summary>
         public static ControllerStateT GroundCarry(Car car, Ball ball, Vec3 lane)
         {
