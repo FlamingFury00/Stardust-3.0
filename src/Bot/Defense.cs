@@ -161,9 +161,9 @@ namespace Bot
                     break;
                 default:
                     // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
-                    desiredGap = Lerp(1500f, 1125f, danger) - 360f * urgency;
-                    desiredGap = System.Math.Clamp(desiredGap, 820f, 1550f);
-                    minimumProgress = 600f - 120f * urgency;
+                    desiredGap = Lerp(1425f, 900f, danger) - 420f * urgency;
+                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1450f);
+                    minimumProgress = 460f - 120f * urgency;
                     lateralBias = 260f;
                     break;
             }
@@ -265,34 +265,66 @@ namespace Bot
         public static bool CanChallenge(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal)
         {
             if (frame == null || car == null || car.IsDemolished || frame.TeamRank != 0 ||
-                !IsGoalSide(car.Location, ball, goal, 30f) ||
+                !IsGoalSide(car.Location, ball, goal, 10f) ||
                 !float.IsFinite(frame.MyEta) || !float.IsFinite(frame.OpponentEta))
                 return false;
 
-            bool immediate = car.Location.Dist(ball) < 275f && frame.MyEta <= 0.22f;
+            float ballDistance = car.Location.Dist(ball);
+            bool immediate = ballDistance < 360f && frame.MyEta <= 0.30f;
             if (immediate)
                 return true;
 
+            float goalDistance = ball.FlatDist(goal);
+            bool imminentPressure = frame.UnderPressure && frame.PressureTime < 0.75f;
+
+            // Deep defense cannot concede the whole box because an ETA estimate is a few frames
+            // pessimistic. A goal-side first defender may force a challenge on a near-tie when the
+            // attacker is about to touch the ball. Clearly lost races still remain blocked.
+            if (imminentPressure && goalDistance < 3300f && ballDistance < 1850f)
+            {
+                float allowedDeficit = frame.TeamCount <= 1 ? 0.22f : 0.15f;
+                if (frame.MyEta <= frame.OpponentEta + allowedDeficit)
+                    return true;
+            }
+
             float requiredMargin;
             if (frame.HasCover)
-                requiredMargin = -0.05f;
+                requiredMargin = -0.12f;
             else if (frame.UnderPressure)
-                requiredMargin = 0.07f;
+                requiredMargin = frame.TeamCount <= 1 ? -0.10f : -0.05f;
             else
-                requiredMargin = 0.16f;
+                requiredMargin = frame.TeamCount <= 1 ? 0.05f : 0.10f;
 
-            if (frame.LastBack && !frame.HasCover)
+            if (frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
                 requiredMargin += 0.04f;
 
             return frame.FreeTime >= requiredMargin;
         }
 
-        public static float AttackDeadline(TacticalFrame frame)
+        /// <summary>
+        /// Offensive contact horizon. Opponent ETA is a loose-ball estimate, so it is used as a
+        /// pressure reference rather than a hard possession-killing deadline. Controlled possession
+        /// receives a larger continuation window; emergency saves bypass this function entirely.
+        /// </summary>
+        public static float AttackDeadline(TacticalFrame frame, bool controlledPossession = false)
         {
             if (frame == null || !float.IsFinite(frame.OpponentEta))
                 return 0f;
-            float reserve = frame.HasCover || frame.MyEta <= 0.20f ? -0.05f : 0.16f;
-            return System.Math.Clamp(frame.OpponentEta - reserve, 0f, 3f);
+
+            float continuation;
+            if (controlledPossession)
+                continuation = 0.55f;
+            else if (frame.HasCover)
+                continuation = 0.38f;
+            else if (frame.UnderPressure)
+                continuation = 0.22f;
+            else
+                continuation = 0.18f;
+
+            if (!controlledPossession && frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
+                continuation -= 0.08f;
+
+            return System.Math.Clamp(frame.OpponentEta + continuation, 0f, 3f);
         }
 
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
