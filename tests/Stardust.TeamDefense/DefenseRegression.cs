@@ -481,20 +481,20 @@ internal static class DefenseRegression
             {
                 Slices = new[]
                 {
-                    new BallSlice(10.45f, new Vec3(0, -3950, 100), new Vec3(0, -1500, 0)),
-                    new BallSlice(10.80f, new Vec3(0, -4475, 100), new Vec3(0, -1500, 0))
+                    new BallSlice(10.90f, new Vec3(0, -4100, 100), new Vec3(0, -1500, 0)),
+                    new BallSlice(11.20f, new Vec3(0, -4550, 100), new Vec3(0, -1500, 0))
                 }
             };
 
             Check(Defense.TryDefensiveIntercept(
-                    car, prediction, blueGoal, 10f, 0.9f, out Vec3 block),
+                    car, prediction, blueGoal, 10f, 1.15f, out Vec3 block),
                 "reachable low-ball emergency intercept was missed");
-            Check(block.y < -3800f && block.y > -4700f,
+            Check(block.y < -3950f && block.y > -4650f,
                 $"unexpected emergency block point: {block}");
 
             car.Location = new Vec3(0, -3000, 17);
             Check(!Defense.TryDefensiveIntercept(
-                    car, prediction, blueGoal, 10f, 0.9f, out _),
+                    car, prediction, blueGoal, 10f, 1.15f, out _),
                 "wrong-side car was allowed to attack an emergency ball");
         });
 
