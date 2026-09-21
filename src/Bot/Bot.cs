@@ -204,18 +204,18 @@ namespace Bot
 
                 if (!emergency)
                 {
-                    Vec3 reference = Defense.ReferenceBall(
+                    Vec3 counterReference = Defense.ReferenceBall(
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
-                    bool goalSide = Defense.IsGoalSide(
+                    bool counterGoalSide = Defense.IsGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
-                    Vec3 route = goalSide
+                    Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
-                            reference, OurGoal.Location, DefensiveRole.Shadow,
+                            counterReference, OurGoal.Location, DefensiveRole.Shadow,
                             MathF.Min(pressureTime, 0.35f))
-                        : Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location);
+                        : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     GuardTo(Tactics.GoalReturnTarget(Me, route, OurGoal.Location),
                         2250f, 650f, false);
-                    SetDecision(goalSide
+                    SetDecision(counterGoalSide
                         ? "defend / counter shadow"
                         : "defend / counter recover");
                     return;
