@@ -120,7 +120,7 @@ namespace RedUtils
             }
         }
 
-        public override void HandleMatchComm(int Index, int Team, List<byte> Content, string? Display, bool teamOnly)
+        public override void HandleMatchComm(int Index, int Team, List<byte> Content, string Display, bool teamOnly)
         {
             if (Team != this.Team || Index == this.Index || Index < 0 || Content == null || Content.Count > 64) return;
             claims.Receive(Index, Encoding.ASCII.GetString(Content.ToArray()), Game.Time);
