@@ -284,6 +284,9 @@ namespace Bot
                 next = slice.Time + 0.06f;
                 evaluated++;
 
+                if (emergency &&
+                    !Defense.IsGoalSide(bot.Me.Location, slice.Location, bot.OurGoal.Location, -100f))
+                    continue;
                 if (!target.Fits(slice.Location) || (!emergency && claimed(slice.Time)))
                     continue;
 
