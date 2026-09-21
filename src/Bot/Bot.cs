@@ -350,11 +350,7 @@ namespace Bot
             if (Options.Trace)
             {
                 Console.WriteLine(FormattableString.Invariant(
-                    $"stardust t={Game.Time:F3} car={Index} decision={Decision} " +
-                    $"rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} " +
-                    $"opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2} " +
-                    $"last_back={Situation.LastBack} cover={Situation.HasCover} " +
-                    $"goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
+                    $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2} last_back={Situation.LastBack} cover={Situation.HasCover} goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
             }
         }
 
