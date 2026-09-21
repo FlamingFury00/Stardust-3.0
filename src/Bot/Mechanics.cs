@@ -30,9 +30,7 @@ namespace Bot
             bool carried = local.z > 100 && local.z < 215 && MathF.Abs(local.x) < 105 &&
                 MathF.Abs(local.y) < 65 && relativeVelocity.Length() < 400;
             stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
-            // A short pre-contact threat can precede the ball-only interception race estimate.
-            float pressure = bot is Stardust stardust ?
-                MathF.Min(stardust.Situation.OpponentEta, stardust.Situation.PressureTime) : 6;
+            float pressure = bot is Stardust stardust ? stardust.Situation.OpponentEta : 6;
             if (carried && Game.Time - stableSince > 0.25f && pressure < 0.75f && local.x > 10 &&
                 car.Velocity.Dot(car.Forward) > 500 && car.Forward.Dot(lane) > 0.9f)
             { bot.Action = new ControlledFlick(car, lane); return; }

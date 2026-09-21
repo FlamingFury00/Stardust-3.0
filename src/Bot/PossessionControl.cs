@@ -24,19 +24,9 @@ namespace Bot
             return controls;
         }
 
-        /// <summary>
-        /// Relative feedback for a predicted BALLISTIC contact state at the same horizon as the car.
-        /// Both trajectories already include gravity, which cancels in relative acceleration. This is
-        /// not a hover controller: use FlightAcceleration with gravity feed-forward for a fixed target.
-        /// </summary>
-        public static Vec3 FlightAtHorizon(Car car, Vec3 targetPosition, Vec3 targetVelocity, float horizon)
-        {
-            if (car == null || !float.IsFinite(horizon) || horizon <= 0 || horizon > 1 ||
-                !ControlMath.Finite(car.Location) || !ControlMath.Finite(car.Velocity) ||
-                !ControlMath.Finite(targetPosition) || !ControlMath.Finite(targetVelocity)) return Vec3.Zero;
-            Vec3 acceleration = ControlMath.FlightAcceleration(car.PredictLocation(horizon), car.PredictVelocity(horizon),
-                targetPosition, targetVelocity, Vec3.Zero);
-            return ControlMath.Finite(acceleration) ? acceleration : Vec3.Zero;
-        }
+        /// <summary>Both objects are advanced to the same look-ahead time before computing flight error.</summary>
+        public static Vec3 FlightAtHorizon(Car car, Vec3 targetPosition, Vec3 targetVelocity, float horizon) =>
+            ControlMath.FlightAcceleration(car.PredictLocation(horizon), car.PredictVelocity(horizon),
+                targetPosition, targetVelocity, Game.Gravity);
     }
 }
