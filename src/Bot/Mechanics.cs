@@ -168,12 +168,12 @@ namespace Bot
             Car car = bot.Me;
             Vec3 delta = Ball.Location - car.Location;
             float distance = delta.Length();
-            float closing = (car.Velocity - Ball.Velocity)
+            float separationClosing = (car.Velocity - Ball.Velocity)
                 .Dot(ControlMath.Unit(delta, Vec3.Up));
             if (car.IsGrounded || distance > 900f || Ball.Location.z < 180f ||
                 Game.Time - started > 4f ||
                 (car.Boost <= 0f && distance > 220f) ||
-                (distance > 360f && closing < -360f))
+                (distance > 360f && separationClosing < -360f))
             {
                 Finished = true;
                 return;
