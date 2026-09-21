@@ -81,5 +81,7 @@ Test("opponent model: player facing and driving away does not create pressure", 
     Check(float.IsPositiveInfinity(pressure), $"retreating opponent created false pressure: {pressure}");
 });
 
+DefenseRegression.Run(Test);
+
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;

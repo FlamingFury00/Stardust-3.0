@@ -28,8 +28,7 @@ ProbeBot Probe(Car car, int team = 0)
     var bot = new ProbeBot();
     Set(typeof(RLBot.Manager.Bot), "Index", bot, 0);
     Set(typeof(RLBot.Manager.Bot), "Team", bot, team);
-    Cars.AllCars.Clear();
-    Cars.AllCars.Add(car);
+    Set(typeof(Cars), nameof(Cars.AllCars), null, new List<Car> { car });
     return bot;
 }
 
@@ -98,7 +97,7 @@ Test("ground dribble: pre-contact pressure triggers the flick window", () =>
         Slices = new[] { new BallSlice(0.3f, ballLocation, car.Velocity) }
     });
 
-    var bot = new Stardust();
+    var bot = new Stardust("stardust-mechanics-regression");
     Set(typeof(RLBot.Manager.Bot), "Index", bot, 0);
     Set(typeof(RLBot.Manager.Bot), "Team", bot, 0);
     Cars.AllCars.Clear();

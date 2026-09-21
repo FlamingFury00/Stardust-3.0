@@ -24,9 +24,23 @@ namespace Bot
             return controls;
         }
 
-        /// <summary>Both objects are advanced to the same look-ahead time before computing flight error.</summary>
-        public static Vec3 FlightAtHorizon(Car car, Vec3 targetPosition, Vec3 targetVelocity, float horizon) =>
-            ControlMath.FlightAcceleration(car.PredictLocation(horizon), car.PredictVelocity(horizon),
-                targetPosition, targetVelocity, Game.Gravity);
+        /// <summary>
+        /// Both objects are advanced to the same look-ahead time before computing flight error.
+        /// The car prediction already includes gravity, so this is a residual correction at the
+        /// future state and must not add gravity feed-forward a second time.
+        /// </summary>
+        public static Vec3 FlightAtHorizon(Car car, Vec3 targetPosition, Vec3 targetVelocity, float horizon)
+        {
+            if (car == null || !float.IsFinite(horizon) || horizon < 0f ||
+                !ControlMath.Finite(targetPosition) || !ControlMath.Finite(targetVelocity))
+                return Vec3.Zero;
+
+            return ControlMath.FlightAcceleration(
+                car.PredictLocation(horizon),
+                car.PredictVelocity(horizon),
+                targetPosition,
+                targetVelocity,
+                Vec3.Zero);
+        }
     }
 }
