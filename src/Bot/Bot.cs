@@ -104,10 +104,9 @@ namespace Bot
             float threat = Defense.GoalThreat(Ball.Prediction.Slices, OurGoal.Location,
                 Game.Time, 2.5f, out Vec3 crossing);
             float counterThreat = threat;
-            Vec3 counterCrossing = crossing;
             if (!float.IsFinite(counterThreat))
                 counterThreat = Defense.GoalThreat(Ball.Prediction.Slices, OurGoal.Location,
-                    Game.Time, 4.5f, out counterCrossing);
+                    Game.Time, 4.5f, out _);
 
             EmergencyThreatTime = threat;
             CounterThreatTime = counterThreat;
