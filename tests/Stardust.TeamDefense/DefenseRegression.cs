@@ -44,7 +44,7 @@ internal static class DefenseRegression
         Set(typeof(Ball), "Location", null!, ball);
         Set(typeof(Ball), "Velocity", null!, Vec3.Zero);
         Set(typeof(Ball), "Prediction", null!,
-            new BallPrediction { Slices = Array.Empty<BallSlice>() });
+            new RedUtils.BallPrediction { Slices = Array.Empty<BallSlice>() });
 
         var bot = new Stardust("defense-regression");
         Set(typeof(RLBot.Manager.Bot), "Index", bot, 0);
@@ -256,7 +256,7 @@ internal static class DefenseRegression
         test("defense-v3: reference ball only leads movement toward own goal", () =>
         {
             Vec3 ball = new(200, -2000, 100);
-            var incoming = new BallPrediction
+            var incoming = new RedUtils.BallPrediction
             {
                 Slices = new[]
                 {
