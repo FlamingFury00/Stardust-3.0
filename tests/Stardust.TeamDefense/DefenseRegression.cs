@@ -190,8 +190,12 @@ internal static class DefenseRegression
 
             frame.OpponentEta = 0.72f;
             frame.PressureTime = 0.2f;
+            Check(Defense.CanChallenge(frame, car, ball, blueGoal),
+                "imminent near-tie was shadowed instead of challenged");
+
+            frame.OpponentEta = 0.45f;
             Check(!Defense.CanChallenge(frame, car, ball, blueGoal),
-                "lost last-man race was allowed");
+                "clearly lost last-man race was allowed");
         });
 
         test("defense-v3: immediate controlled contact is not made artificially passive", () =>
@@ -360,17 +364,106 @@ internal static class DefenseRegression
             }
         });
 
-        test("telemetry: JSON frame sampling is rate-limited and includes actual control/target", () =>
+        test("possession-v4: controlled roof ball survives a slightly lost race", () =>
+        {
+            Car car = CarAt(0, -1200);
+            car.Velocity = new Vec3(0, -650, 0);
+            Ball ball = new(new Vec3(0, -1200, 170), car.Velocity);
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.25f,
+                OpponentEta = 0.12f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true,
+                PressureTime = 0.18f
+            };
+
+            Check(PossessionControl.HasControlledPossession(car, ball),
+                "centered roof control was not recognized");
+            Check(PossessionControl.ShouldRetainPossession(frame, car, ball, blueGoal),
+                "pressure incorrectly revoked existing possession");
+            Check(GroundDribble.CanStart(car, ball, frame.FreeTime),
+                "ground carry refused an already-controlled ball");
+        });
+
+        test("possession-v4: blocker creates a bounded cut instead of straight-line dribbling", () =>
+        {
+            Car car = CarAt(0, 0);
+            Ball ball = new(new Vec3(0, 0, 170), Vec3.Zero);
+            Car blocker = CarAt(320, 900, 1, 1);
+
+            Vec3 lane = PossessionControl.AttackingLane(
+                car, ball, new[] { blocker }, new Vec3(0, 5120, 0));
+
+            Check(lane.y > 0.75f, $"evasion stopped attacking progress: {lane}");
+            Check(lane.x < -0.05f, $"lane did not cut away from right-side blocker: {lane}");
+        });
+
+        test("possession-v4: pressured roof possession is selected instead of shadow", () =>
+        {
+            Car car = CarAt(0, -1200);
+            car.Velocity = new Vec3(0, -500, 0);
+            Car opponent = CarAt(0, -850, 1, 1);
+            opponent.Orientation = new Mat3x3(new Vec3(0, -MathF.PI / 2, 0));
+
+            var bot = World(new Vec3(0, -1200, 170), car, opponent);
+            Set(typeof(Ball), "Velocity", null!, car.Velocity);
+            bot.Run();
+
+            Check(bot.Action is GroundDribble,
+                $"controlled ball was abandoned for {bot.Action?.GetType().Name}");
+            Check(bot.Decision.Contains("ground carry", StringComparison.Ordinal),
+                $"unexpected possession decision: {bot.Decision}");
+        });
+
+        test("attack-v4: pressure extends commitment beyond opponent loose-ball ETA", () =>
+        {
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.48f,
+                OpponentEta = 0.60f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true,
+                PressureTime = 0.25f
+            };
+
+            float normal = Defense.AttackDeadline(frame);
+            float possession = Defense.AttackDeadline(frame, controlledPossession: true);
+            Check(normal > frame.OpponentEta,
+                $"pressure still shortened the attack horizon: {normal}");
+            Check(possession >= normal + 0.25f,
+                $"controlled possession did not receive continuation time: {possession}");
+        });
+
+        test("attack-v4: fallback challenge approaches from behind the ball", () =>
+        {
+            Car car = CarAt(0, -3000);
+            Ball ball = new(new Vec3(0, -2200, 100), new Vec3(0, -250, 0));
+            var prediction = new RedUtils.BallPrediction { Slices = Array.Empty<BallSlice>() };
+
+            Vec3 target = Tactics.PressureChallengeTarget(
+                car, prediction, ball, new Vec3(0, 5120, 0), 10f, 0.5f);
+
+            Check(ControlMath.Finite(target), "pressure challenge target was not finite");
+            Check(target.y < ball.location.y,
+                $"challenge approached from the wrong side of the ball: {target}");
+        });
+
+        test("telemetry: file JSONL is rate-limited and includes actual control/target", () =>
         {
             string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
             string? oldHz = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
-            TextWriter originalOut = Console.Out;
-            var capture = new StringWriter();
+            string? oldFile = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
+            string path = Path.Combine(Path.GetTempPath(),
+                $"stardust-telemetry-regression-{Guid.NewGuid():N}.jsonl");
 
             try
             {
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", "10");
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", path);
                 Set(typeof(Game), nameof(Game.Time), null, 10f);
 
                 var car = CarAt(0, -3000);
@@ -383,37 +476,32 @@ internal static class DefenseRegression
                     "OnOutputReady", BindingFlags.NonPublic | BindingFlags.Instance)
                     ?? throw new Exception("post-output telemetry hook not found");
 
-                Console.SetOut(capture);
                 hook.Invoke(bot, null);
                 hook.Invoke(bot, null); // same timestamp: must be suppressed
                 Set(typeof(Game), nameof(Game.Time), null, 10.11f);
                 hook.Invoke(bot, null);
+
+                string[] lines = File.ReadAllLines(path);
+                Check(lines.Length == 2, $"10 Hz telemetry wrote {lines.Length} lines for 0.11 s");
+
+                using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
+                var root = first.RootElement;
+                Check(root.GetProperty("schema").GetInt32() == 2, "telemetry schema missing");
+                Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
+                    "telemetry did not capture actual sanitized controller output");
+                Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
+                    "telemetry did not capture defensive action target");
+                Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
+                    "telemetry omitted possession state");
+                Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
+                    "telemetry omitted challenge decision state");
             }
             finally
             {
-                Console.SetOut(originalOut);
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", oldHz);
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
             }
-
-            string[] lines = capture.ToString()
-                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(line => line.StartsWith("STARDUST_JSON ", StringComparison.Ordinal))
-                .ToArray();
-
-            Check(lines.Length == 2, $"10 Hz telemetry emitted {lines.Length} lines for 0.11 s");
-            using var first = System.Text.Json.JsonDocument.Parse(
-                lines[0]["STARDUST_JSON ".Length..]);
-            var root = first.RootElement;
-            Check(root.GetProperty("schema").GetInt32() == 1, "telemetry schema missing");
-            Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
-                "telemetry did not capture actual sanitized controller output");
-            Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
-                "telemetry did not capture defensive action target");
-            Check(root.GetProperty("car_state").TryGetProperty("goal_side_progress", out _),
-                "telemetry omitted goal-side geometry");
-            Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
-                "telemetry omitted challenge decision state");
         });
     }
 }
