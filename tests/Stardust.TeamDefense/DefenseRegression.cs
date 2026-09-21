@@ -359,5 +359,61 @@ internal static class DefenseRegression
                 }
             }
         });
+
+        test("telemetry: JSON frame sampling is rate-limited and includes actual control/target", () =>
+        {
+            string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
+            string? oldHz = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
+            TextWriter originalOut = Console.Out;
+            var capture = new StringWriter();
+
+            try
+            {
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", "10");
+                Set(typeof(Game), nameof(Game.Time), null, 10f);
+
+                var car = CarAt(0, -3000);
+                var bot = World(new Vec3(0, -2000, 100), car);
+                bot.Action = new DefensiveDrive(car, new Vec3(0, -4100, 17), 1800f, 500f);
+                bot.Controller.Throttle = 0.75f;
+                bot.Controller.Steer = -0.25f;
+
+                MethodInfo hook = typeof(Stardust).GetMethod(
+                    "OnOutputReady", BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new Exception("post-output telemetry hook not found");
+
+                Console.SetOut(capture);
+                hook.Invoke(bot, null);
+                hook.Invoke(bot, null); // same timestamp: must be suppressed
+                Set(typeof(Game), nameof(Game.Time), null, 10.11f);
+                hook.Invoke(bot, null);
+            }
+            finally
+            {
+                Console.SetOut(originalOut);
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", oldHz);
+            }
+
+            string[] lines = capture.ToString()
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(line => line.StartsWith("STARDUST_JSON ", StringComparison.Ordinal))
+                .ToArray();
+
+            Check(lines.Length == 2, $"10 Hz telemetry emitted {lines.Length} lines for 0.11 s");
+            using var first = System.Text.Json.JsonDocument.Parse(
+                lines[0]["STARDUST_JSON ".Length..]);
+            var root = first.RootElement;
+            Check(root.GetProperty("schema").GetInt32() == 1, "telemetry schema missing");
+            Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
+                "telemetry did not capture actual sanitized controller output");
+            Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
+                "telemetry did not capture defensive action target");
+            Check(root.GetProperty("car_state").TryGetProperty("goal_side_progress", out _),
+                "telemetry omitted goal-side geometry");
+            Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
+                "telemetry omitted challenge decision state");
+        });
     }
 }
