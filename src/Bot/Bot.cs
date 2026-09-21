@@ -11,6 +11,14 @@ namespace Bot
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
         public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
+        public bool Telemetry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY") == "1";
+        public int TelemetryHz { get; init; } = ReadTelemetryHz();
+
+        private static int ReadTelemetryHz()
+        {
+            string raw = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
+            return int.TryParse(raw, out int hz) ? System.Math.Clamp(hz, 1, 30) : 10;
+        }
     }
 
     /// <summary>Threat-first planning with explicit goal-side recovery and moving shadow defense.</summary>
@@ -24,8 +32,12 @@ namespace Bot
         private float nextPlan = float.NegativeInfinity;
         private bool defending, pressured;
         private Shot defensiveShot;
+        private readonly StardustTelemetry telemetry;
 
-        public Stardust(string defaultAgentId = null) : base(defaultAgentId) { }
+        public Stardust(string defaultAgentId = null) : base(defaultAgentId)
+        {
+            telemetry = new StardustTelemetry(Options.Telemetry, Options.TelemetryHz);
+        }
 
         public override void Run()
         {
@@ -35,6 +47,7 @@ namespace Bot
                 defending = false;
                 pressured = false;
                 defensiveShot = null;
+                telemetry.Reset();
             }
 
             Shooting = Action is Shot;
@@ -346,13 +359,17 @@ namespace Bot
             if (Decision == decision)
                 return;
 
+            string previous = Decision;
             Decision = decision;
+            telemetry.Decision(this, previous);
             if (Options.Trace)
             {
                 Console.WriteLine(FormattableString.Invariant(
                     $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2} last_back={Situation.LastBack} cover={Situation.HasCover} goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
             }
         }
+
+        protected override void OnOutputReady() => telemetry.Sample(this);
 
         // Retained for compatibility with the original Shadow action.
         public bool IsBack() => CanDefend(Me, OurGoal.Location) || Situation.FirstMan == Index;
