@@ -11,8 +11,13 @@ namespace Bot
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
         public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
-        public bool Telemetry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY") == "1";
+        public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
+        public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
+        public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
         public int TelemetryHz { get; init; } = ReadTelemetryHz();
+
+        public bool TelemetryDisabled => TelemetrySetting == "0";
+        public bool TelemetryExplicit => TelemetrySetting != null;
 
         private static int ReadTelemetryHz()
         {
@@ -36,7 +41,13 @@ namespace Bot
 
         public Stardust(string defaultAgentId = null) : base(defaultAgentId)
         {
-            telemetry = new StardustTelemetry(Options.Telemetry, Options.TelemetryHz);
+            // The packaged RLBot process enables file telemetry by default. Test/probe instances pass
+            // an explicit agent id and remain quiet unless STARDUST_TELEMETRY was explicitly provided.
+            bool productionEntry = defaultAgentId == null;
+            bool telemetryEnabled = !Options.TelemetryDisabled &&
+                (productionEntry || Options.TelemetryExplicit);
+            telemetry = new StardustTelemetry(
+                telemetryEnabled, Options.TelemetryHz, Options.TelemetryConsole, Options.TelemetryFile);
         }
 
         public override void Run()
@@ -136,12 +147,20 @@ namespace Bot
                 return;
             }
 
+            bool controlledPossession =
+                PossessionControl.HasControlledPossession(Me, Ball.MainBall) ||
+                PossessionControl.HasAirControl(Me, Ball.MainBall);
             bool canChallenge = Defense.CanChallenge(Situation, Me, Ball.Location, OurGoal.Location);
-            float attackDeadline = Defense.AttackDeadline(Situation);
+            float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
-            if (Action is IPossessionAction)
+            if (Action is IPossessionAction possession)
             {
-                if (canChallenge)
+                bool retain = Action is GroundCatch
+                    ? Situation.TeamRank == 0 && (canChallenge || Situation.FreeTime >= -0.12f)
+                    : PossessionControl.ShouldRetainPossession(
+                        Situation, Me, Ball.MainBall, OurGoal.Location);
+
+                if (retain && !possession.Finished)
                     return;
                 Action = null;
             }
@@ -175,11 +194,15 @@ namespace Bot
 
             if (!Me.IsGrounded)
             {
-                if (canChallenge && Options.AerialCarry &&
+                bool canPossessAir = Options.AerialCarry &&
+                    PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
+                if (canPossessAir &&
                     AerialCarry.CanStart(Me, Ball.MainBall, Situation.OpponentEta))
                 {
                     Action = new AerialCarry();
-                    SetDecision("mechanic / aerial carry");
+                    SetDecision(underPressure
+                        ? "mechanic / pressured aerial carry"
+                        : "mechanic / aerial carry");
                     return;
                 }
 
@@ -193,41 +216,85 @@ namespace Bot
                 return;
             }
 
+            bool canPossessGround = Options.GroundControl &&
+                PossessionControl.CanAcquireGround(
+                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool canDribble = canPossessGround &&
+                GroundDribble.CanStart(Me, Ball.MainBall, Situation.FreeTime);
+
+            // If the ball is already balanced on the car, protect ownership first. Pressure is handled
+            // inside GroundDribble by an earlier flick instead of by throwing possession away.
+            if (controlledPossession && canDribble)
+            {
+                Action = new GroundDribble();
+                SetDecision(underPressure
+                    ? "mechanic / pressured ground carry"
+                    : "mechanic / ground carry");
+                return;
+            }
+
+            Shot attack = canChallenge
+                ? Tactics.SelectShot(this, false, Situation.OpponentEta, HasClaim, attackDeadline)
+                : null;
+            BallSlice catchSlice = canPossessGround && Ball.Location.z > 175f
+                ? GroundCatch.FindCatch(Me)
+                : null;
+
+            // Prefer a real scoring/clearing contact when it is imminent or contested. With time and a
+            // descending ball, keep the softer catch available instead of forcing every touch.
+            if (attack != null &&
+                (underPressure || catchSlice == null || attack.Slice.Time - Game.Time <= 0.72f))
+            {
+                Action = attack;
+                SetDecision(underPressure
+                    ? "attack / pressured intercept"
+                    : "attack / economical intercept");
+                return;
+            }
+
+            if (canDribble)
+            {
+                Action = new GroundDribble();
+                SetDecision(underPressure
+                    ? "mechanic / pressured ground carry"
+                    : "mechanic / ground carry");
+                return;
+            }
+
+            if (catchSlice != null)
+            {
+                Action = new GroundCatch();
+                SetDecision(underPressure
+                    ? "mechanic / contested cushion catch"
+                    : "mechanic / cushion catch");
+                return;
+            }
+
+            if (attack != null)
+            {
+                Action = attack;
+                SetDecision("attack / economical intercept");
+                return;
+            }
+
             if (canChallenge)
             {
-                if (!underPressure && Options.GroundControl &&
-                    GroundDribble.CanStart(Me, Ball.MainBall, Situation.FreeTime))
+                if (underPressure || Situation.FreeTime < 0.35f)
                 {
-                    Action = new GroundDribble();
-                    SetDecision("mechanic / ground carry");
+                    Vec3 contact = Tactics.PressureChallengeTarget(
+                        Me, Ball.Prediction, Ball.MainBall, TheirGoal.Location,
+                        Game.Time, Situation.MyEta);
+                    DriveTo(contact, Car.MaxSpeed, false);
+                    SetDecision("attack / pressure challenge");
                     return;
                 }
 
-                if (!underPressure && Options.GroundControl && Situation.FreeTime > 0.7f &&
-                    Ball.Location.z > 200f && GroundCatch.FindCatch(Me) != null)
-                {
-                    Action = new GroundCatch();
-                    SetDecision("mechanic / cushion catch");
-                    return;
-                }
-
-                Shot attack = Tactics.SelectShot(this, false, Situation.OpponentEta,
-                    HasClaim, attackDeadline);
-                if (attack != null)
-                {
-                    Action = attack;
-                    SetDecision("attack / economical intercept");
-                    return;
-                }
-
-                if (Situation.FreeTime > 0.25f)
-                {
-                    Vec3 lane = ControlMath.FlatUnit(TheirGoal.Location - Ball.Location, Me.Forward);
-                    DriveTo(Field.LimitToNearestSurface(Ball.Location - lane * 350f),
-                        1500f, false);
-                    SetDecision("possess / approach behind ball");
-                    return;
-                }
+                Vec3 lane = PossessionControl.AttackingLane(
+                    Me, Ball.MainBall, LivingOpponents, TheirGoal.Location);
+                DriveTo(Field.LimitToNearestSurface(Ball.Location - lane * 300f),
+                    1750f, false);
+                SetDecision("possess / approach behind ball");
+                return;
             }
 
             DefensiveRole role = Situation.TeamCount == 1

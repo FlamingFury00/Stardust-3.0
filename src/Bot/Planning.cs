@@ -200,6 +200,29 @@ namespace Bot
             return earliest;
         }
 
+        /// <summary>
+        /// Short predicted contact waypoint used when a pressured first man has no valid scripted
+        /// shot. Approach from the attacking side of the ball rather than dropping back to shadow.
+        /// </summary>
+        public static Vec3 PressureChallengeTarget(Car car, BallPrediction prediction, Ball ball,
+            Vec3 attackGoal, float now, float eta)
+        {
+            if (car == null || ball == null || !ControlMath.Finite(ball.location) ||
+                !ControlMath.Finite(attackGoal))
+                return ball?.location ?? Vec3.Zero;
+
+            float horizon = float.IsFinite(eta)
+                ? System.Math.Clamp(eta * 0.45f, 0.08f, 0.32f)
+                : 0.16f;
+            Ball contact = prediction != null && prediction.TrySample(now + horizon, out Ball sample)
+                ? sample
+                : ball.Predict(horizon);
+
+            Vec3 lane = ControlMath.FlatUnit(attackGoal - contact.location, car.Forward);
+            Vec3 target = contact.location - lane * 70f;
+            return Field.LimitToNearestSurface(target);
+        }
+
         /// <summary>Compatibility wrapper: stationary defensive parking has zero terminal speed.</summary>
         public static float GuardSpeed(Car car, Vec3 target, float cruiseSpeed) =>
             Defense.DriveSpeed(car, target, cruiseSpeed, 0f);
@@ -262,8 +285,6 @@ namespace Bot
                 evaluated++;
 
                 if (!target.Fits(slice.Location) || (!emergency && claimed(slice.Time)))
-                    continue;
-                if (!emergency && opponentEta < 1.5f && t > opponentEta + 0.35f)
                     continue;
 
                 Ball after = slice.ToBall();
