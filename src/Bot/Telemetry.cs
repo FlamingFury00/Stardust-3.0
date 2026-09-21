@@ -250,7 +250,7 @@ namespace Bot
 
             var output = new Dictionary<string, object>
             {
-                ["schema"] = 3,
+                ["schema"] = 4,
                 ["build"] = typeof(Stardust).Assembly.ManifestModule.ModuleVersionId.ToString("N"),
                 ["seq"] = sequence++,
                 ["kind"] = kind,
@@ -383,7 +383,9 @@ namespace Bot
                         ["cruise_speed"] = Num(defense.CruiseSpeed),
                         ["terminal_speed"] = Num(defense.TerminalSpeed),
                         ["hold_position"] = defense.HoldPosition,
-                        ["holding"] = defense.Holding
+                        ["holding"] = defense.Holding,
+                        ["allow_dodges"] = defense.AllowDodges,
+                        ["mobility_action"] = defense.MobilityAction
                     };
                 case Drive drive:
                     return new Dictionary<string, object>
@@ -391,6 +393,8 @@ namespace Bot
                         ["target_speed"] = Num(drive.TargetSpeed),
                         ["backwards"] = drive.Backwards,
                         ["allow_dodges"] = drive.AllowDodges,
+                        ["dodge_min_speed"] = Num(drive.DodgeMinSpeed),
+                        ["mobility_action"] = drive.Action?.GetType().Name,
                         ["handbrake_allowed"] = drive.AllowHandbrake
                     };
                 case GetBoost boost:
