@@ -1,4 +1,3 @@
-using System.Reflection;
 using RedUtils;
 using RedUtils.Math;
 using RLBot.Flat;
@@ -15,10 +14,6 @@ void Near(float actual, float expected, float tolerance)
     Check(float.IsFinite(actual) && MathF.Abs(actual - expected) <= tolerance,
         $"expected {expected}, got {actual}");
 }
-void Set(Type type, string property, object instance, object value) =>
-    type.GetProperty(property, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance)!
-        .SetValue(instance, value);
-
 Test("drive: ground boost alignment uses yaw rather than pitch", () =>
 {
     Near(Drive.GroundHeadingError(0, MathF.PI / 2), MathF.PI / 2, 0.0001f);
