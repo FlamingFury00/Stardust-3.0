@@ -195,7 +195,6 @@ namespace Bot
             float threat = Defense.GoalThreat(
                 Ball.Prediction.Slices, goal, Game.Time, 2.5f, out Vec3 crossing);
             float goalProgress = Defense.GoalSideProgress(me.Location, ball.location, goal);
-            bool canChallenge = Defense.CanChallenge(frame, me, ball.location, goal);
 
             bool hasTarget = TryActionTarget(bot.Action, out Vec3 target);
             float targetProgress = hasTarget
