@@ -31,7 +31,8 @@ namespace Bot
             { Finished = true; return; }
 
             Vec3 lane = PossessionControl.AttackingLane(
-                car, Ball.MainBall, bot.LivingOpponents, bot.TheirGoal.Location);
+                car, Ball.MainBall, bot.LivingOpponents,
+                bot.TheirGoal.Location, bot.OurGoal.Location);
             bool carried = PossessionControl.HasControlledPossession(car, Ball.MainBall);
             stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
 
@@ -44,7 +45,8 @@ namespace Bot
 
             float requiredStable = pressure < 0.40f || opponentDistance < 450f ? 0.06f : 0.13f;
             if (carried && Game.Time - stableSince >= requiredStable &&
-                PossessionControl.ShouldFlick(car, Ball.MainBall, lane, pressure, opponentDistance))
+                PossessionControl.ShouldFlick(
+                    car, Ball.MainBall, lane, pressure, opponentDistance, bot.OurGoal.Location))
             {
                 bot.Action = new ControlledFlick(car, lane);
                 return;
@@ -157,7 +159,8 @@ namespace Bot
             const float horizon = 0.12f;
             Ball prediction = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
             Vec3 lane = PossessionControl.AttackingLane(
-                car, prediction, bot.LivingOpponents, bot.TheirGoal.Location);
+                car, prediction, bot.LivingOpponents,
+                bot.TheirGoal.Location, bot.OurGoal.Location);
             float pressure = bot is Stardust stardustPressure
                 ? MathF.Min(stardustPressure.Situation.OpponentEta, stardustPressure.Situation.PressureTime)
                 : float.PositiveInfinity;
