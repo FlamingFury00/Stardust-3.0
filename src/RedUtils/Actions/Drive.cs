@@ -24,6 +24,11 @@ namespace RedUtils
 		public bool WasteBoost;
 		/// <summary>Whether this drive may powerslide. Disable for precise goal-mouth parking.</summary>
 		public bool AllowHandbrake = true;
+		/// <summary>
+		/// Minimum ground speed before a forward dodge/speedflip may be selected. Normal routes keep
+		/// the conservative 850 uu/s threshold; urgent long recovery routes can lower it.
+		/// </summary>
+		public float DodgeMinSpeed = 850f;
 		/// <summary>This action's subaction, which could be a dodge, halfflip, speedflip, etc</summary>
 		public IAction Action;
 
@@ -162,7 +167,13 @@ namespace RedUtils
 						if (TargetSpeed > 100 + forwardSpeed)
 						{
 							// When we're moving forward, and need extra speed, look for dodges, speedflips, and wavedashes
-							if (bot.Me.Location.z < 200 && bot.Me.IsGrounded && carSpeed > 850 && bot.Me.Forward.FlatAngle(bot.Me.Location.Direction(finalTarget)) < 0.12f && timeOnGround > 0.15f)
+							float dodgeMinSpeed = float.IsFinite(DodgeMinSpeed)
+								? System.Math.Clamp(DodgeMinSpeed, 400f, 1400f)
+								: 850f;
+							if (bot.Me.Location.z < 200 && bot.Me.IsGrounded &&
+								carSpeed > dodgeMinSpeed &&
+								bot.Me.Forward.FlatAngle(bot.Me.Location.Direction(finalTarget)) < 0.12f &&
+								timeOnGround > 0.15f)
 							{
 								// If we are on the ground, we rule out wavedashes, and look at dodges
 								Dodge dodge = new Dodge(bot.Me.Location.FlatDirection(Target));
