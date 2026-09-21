@@ -476,6 +476,7 @@ internal static class DefenseRegression
         test("log-v5: reachable emergency block is preferred from goal-side geometry", () =>
         {
             Car car = CarAt(0, -3500);
+            car.Velocity = new Vec3(0, -900, 0);
             var prediction = new RedUtils.BallPrediction
             {
                 Slices = new[]
