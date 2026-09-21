@@ -44,14 +44,25 @@ Set environment variables **before starting the bot process**:
 | `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable the new catch/carry/flick selection |
 | `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
 | `STARDUST_FLIP_RESETS` | disabled | Set `1` to enable experimental reset attempts within an aerial carry |
-| `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
+| `STARDUST_TRACE` | disabled | Set `1` to log human-readable strategy transitions and ETA estimates |
+| `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
+| `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
 
 Example in PowerShell, before launching the bot from that environment:
 
 ```powershell
 $env:STARDUST_TRACE = "1"
+$env:STARDUST_TELEMETRY = "1"
+$env:STARDUST_TELEMETRY_HZ = "10"
 $env:STARDUST_FLIP_RESETS = "1"
 ```
+
+
+Structured telemetry is designed for real-match debugging without per-tick console spam. Each sampled line starts with `STARDUST_JSON ` followed by one JSON object. Decision changes emit immediately; regular frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. The frame is recorded after the action runs and after controller sanitization, so `controller` represents the actual command returned for that frame.
+
+For defensive diagnosis the payload includes car/ball position and velocity, current action and target, target/car goal-side progress, nearest opponent-to-ball state, role/decision, ETAs, free time, pre-contact pressure, predicted goal crossing, rank/cover/last-back flags, challenge permission, defensive-drive terminal/cruise/hold state, boost, and controller axes/buttons. Non-finite tactical times are omitted instead of emitting invalid JSON. Telemetry disables itself after its first serialization error so diagnostics cannot destabilize gameplay.
+
+When sharing a match log for analysis, keep the complete contiguous block of `STARDUST_JSON` lines from roughly 5–10 seconds before the defensive mistake through a few seconds after it. Including the replay or a screen recording alongside the log makes timing/contact interpretation substantially stronger.
 
 A reset attempt is not selected on every aerial: it requires adequate height, fuel, proximity, low relative speed, an already spent flip, and apparent opponent separation. A confirmed reset additionally needs a recent own touch with the wheels facing the ball and persistent flags showing that the flip was restored. Neither a normal airborne state nor a touch by another player is sufficient. Unsuccessful attempts time out into replanning/recovery.
 
@@ -61,7 +72,7 @@ For an exact A/B baseline, use the original commit in a separate checkout; disab
 
 The ground carry projects **relative** ball/car motion before placing the ball over a hood target. Advancing only the ball would inject a false position error whenever both objects share a high world velocity. `PossessionControl` makes this invariant directly testable. Throttle follows longitudinal error and ball velocity; lateral error changes the heading. Boost and handbrake are suppressed during the carry.
 
-The aerial carry samples the framework ball prediction at a short horizon, advances the car to the same time, and computes a velocity-matching PD acceleration with gravity compensation. A shortest-rotation quaternion error drives pitch/yaw/roll. Boost is gated by nose alignment, fuel, contact closing speed, and hysteresis. This is a **receding-horizon PD controller**, not a full nonlinear MPC optimizer or learned policy.
+The aerial carry samples the framework ball prediction at a short horizon and advances the car ballistically to the same time before computing a velocity-matching residual PD correction. Because both future states already include gravity, the horizon residual deliberately does not add gravity feed-forward a second time. A shortest-rotation quaternion error drives pitch/yaw/roll. Boost is gated by nose alignment, fuel, contact closing speed, and hysteresis. This is a **receding-horizon PD controller**, not a full nonlinear MPC optimizer or learned policy.
 
 Strategy uses a conservative ground-intercept race estimate for ownership and pressure. Shot selection prefers a lower-cost ground/jump option over a more expensive aerial when a similar intercept is available. Emergency clears use the **own** goal as an exclusion target; the previous strategy constructed an away-from-opponent-goal target. Expensive searches are separated from per-frame control, but actual p95/p99 tick latency must still be measured on the target hardware with multiple bots.
 
