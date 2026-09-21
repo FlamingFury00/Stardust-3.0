@@ -11,8 +11,13 @@ namespace Bot
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
         public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
-        public bool Telemetry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY") == "1";
+        public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
+        public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
+        public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
         public int TelemetryHz { get; init; } = ReadTelemetryHz();
+
+        public bool TelemetryDisabled => TelemetrySetting == "0";
+        public bool TelemetryExplicit => TelemetrySetting != null;
 
         private static int ReadTelemetryHz()
         {
@@ -36,7 +41,13 @@ namespace Bot
 
         public Stardust(string defaultAgentId = null) : base(defaultAgentId)
         {
-            telemetry = new StardustTelemetry(Options.Telemetry, Options.TelemetryHz);
+            // The packaged RLBot process enables file telemetry by default. Test/probe instances pass
+            // an explicit agent id and remain quiet unless STARDUST_TELEMETRY was explicitly provided.
+            bool productionEntry = defaultAgentId == null;
+            bool telemetryEnabled = !Options.TelemetryDisabled &&
+                (productionEntry || Options.TelemetryExplicit);
+            telemetry = new StardustTelemetry(
+                telemetryEnabled, Options.TelemetryHz, Options.TelemetryConsole, Options.TelemetryFile);
         }
 
         public override void Run()
