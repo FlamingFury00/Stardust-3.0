@@ -1091,6 +1091,28 @@ internal static class DefenseRegression
                 "low emergency unnecessarily jumped and surrendered steering");
         });
 
+        test("log-v17: low emergency block targets the ball instead of circling 145 uu behind it", () =>
+        {
+            Car car = CarAt(0f, -4900f);
+            car.Orientation = new Mat3x3(Vec3.Zero);
+            car.Velocity = new Vec3(250f, 0f, 0f);
+            var bot = World(
+                new Vec3(150f, -4950f, 100f), car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, Vec3.Zero);
+            Set(typeof(Game), nameof(Game.Time), null!, 25f);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
+
+            var clear = new EmergencyClear(
+                car, blueGoal, new Vec3(0f, 5120f, 0f));
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+
+            Check(clear.GroundBlock,
+                "low point-blank fixture was not treated as a grounded block");
+            Check(clear.Target.FlatDist(Ball.Location) < 80f,
+                $"low block still aimed too far behind the ball: target={clear.Target}, ball={Ball.Location}");
+        });
+
         test("log-v16: high emergency uses vertical second jump before any contact dodge", () =>
         {
             Car car = CarAt(-887.94f, -3395.55f);
@@ -1142,6 +1164,47 @@ internal static class DefenseRegression
                 "raised emergency was incorrectly treated as a ground block");
             Check(!clear.DirectionalDodgeAllowed,
                 "mid-height emergency armed an immediate directional dodge before reaching ball height");
+        });
+
+        test("log-v17: threat staging never routes behind the own goal line", () =>
+        {
+            Car car = CarAt(0f, -5000f);
+            car.Orientation = new Mat3x3(
+                new Vec3(0f, -MathF.PI / 2f, 0f));
+            car.Velocity = new Vec3(0f, -300f, 0f);
+            car.Boost = 20f;
+
+            var insideOnly = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(40.40f,
+                        new Vec3(0f, -5050f, 93f),
+                        new Vec3(0f, -700f, 0f))
+                }
+            };
+
+            Check(!Defense.TryThreatStagingTarget(
+                    car, insideOnly, blueGoal, new Vec3(0f, 5120f, 0f),
+                    40f, 0.60f, out _, out _),
+                "staging accepted a target behind the own goal line");
+
+            var fieldSide = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(40.45f,
+                        new Vec3(0f, -4800f, 93f),
+                        new Vec3(0f, -700f, 0f))
+                }
+            };
+
+            Check(Defense.TryThreatStagingTarget(
+                    car, fieldSide, blueGoal, new Vec3(0f, 5120f, 0f),
+                    40f, 0.60f, out Vec3 stage, out _),
+                "reachable field-side staging point was rejected");
+            Check(Defense.OwnDepth(stage, blueGoal) < MathF.Abs(blueGoal.y) - 70f,
+                $"staging point was not safely field-side of the line: {stage}");
         });
 
         test("scenario-v10: counter threat stages behind a future ball instead of shallow parking", () =>
