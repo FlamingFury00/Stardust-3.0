@@ -16,14 +16,13 @@ namespace Bot
         public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
         public int TelemetryHz { get; init; } = ReadTelemetryHz();
 
-        public bool DebugUi { get; init; } =
-            Environment.GetEnvironmentVariable("STARDUST_DEBUG") == "1";
+        public string DebugSetting { get; init; } =
+            Environment.GetEnvironmentVariable("STARDUST_DEBUG");
         public bool DebugOpenBrowser { get; init; } =
             Environment.GetEnvironmentVariable("STARDUST_DEBUG_OPEN") != "0";
         public int DebugPort { get; init; } = ReadInt("STARDUST_DEBUG_PORT", 49152, 1024, 65500);
-        public bool ScenarioRecording { get; init; } =
-            Environment.GetEnvironmentVariable("STARDUST_SCENARIOS") == "1" ||
-            Environment.GetEnvironmentVariable("STARDUST_DEBUG") == "1";
+        public string ScenarioSetting { get; init; } =
+            Environment.GetEnvironmentVariable("STARDUST_SCENARIOS");
         public int ScenarioHz { get; init; } = ReadInt("STARDUST_SCENARIO_HZ", 20, 2, 60);
         public float ScenarioPreSeconds { get; init; } =
             ReadFloat("STARDUST_SCENARIO_PRE_SECONDS", 8f, 2f, 20f);
@@ -32,6 +31,10 @@ namespace Bot
 
         public bool TelemetryDisabled => TelemetrySetting == "0";
         public bool TelemetryExplicit => TelemetrySetting != null;
+        public bool DebugDisabled => DebugSetting == "0";
+        public bool DebugExplicit => DebugSetting != null;
+        public bool ScenariosDisabled => ScenarioSetting == "0";
+        public bool ScenariosExplicit => ScenarioSetting != null;
 
         private static int ReadTelemetryHz()
         {
@@ -90,13 +93,21 @@ namespace Bot
             telemetry = new StardustTelemetry(
                 telemetryEnabled, Options.TelemetryHz, Options.TelemetryConsole, Options.TelemetryFile);
 
+            // Local production bot launches should be observable without depending on shell
+            // environment propagation through the RLBot manager. Test/probe instances pass an
+            // explicit agent id and stay quiet unless debugging is explicitly enabled.
+            bool debugEnabled = !Options.DebugDisabled &&
+                (productionEntry || Options.DebugExplicit);
+            bool scenariosEnabled = !Options.ScenariosDisabled &&
+                (productionEntry || Options.ScenariosExplicit || debugEnabled);
+
             scenarioRecorder = new StardustScenarioRecorder(
-                Options.ScenarioRecording,
+                scenariosEnabled,
                 Options.ScenarioHz,
                 Options.ScenarioPreSeconds,
                 Options.ScenarioDirectory);
             debugDashboard = new StardustDebugDashboard(
-                Options.DebugUi,
+                debugEnabled,
                 Options.DebugPort,
                 Options.DebugOpenBrowser,
                 scenarioRecorder);
@@ -635,7 +646,7 @@ namespace Bot
         protected override void OnOutputReady()
         {
             telemetry.Sample(this);
-            if (Options.DebugUi)
+            if (debugDashboard.Enabled)
                 debugDashboard.Publish(StardustDebugSnapshot.CaptureLive(this));
         }
 
