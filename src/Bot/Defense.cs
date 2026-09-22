@@ -690,6 +690,28 @@ namespace Bot
             return System.Math.Clamp(contactClock + continuation, 0f, 3f);
         }
 
+        /// <summary>
+        /// Hard deadline for defensive planning. Unlike ordinary attack ownership, defense must
+        /// respect every credible way the state can change before the untouched ball prediction:
+        /// opponent race ETA, short-horizon pressure/contact ETA, and the current goal-threat clock.
+        /// </summary>
+        public static float DefensiveDeadline(float dangerTime, TacticalFrame frame)
+        {
+            if (!float.IsFinite(dangerTime))
+                return 0f;
+
+            float earliest = MathF.Max(0f, dangerTime);
+            if (frame != null)
+            {
+                if (float.IsFinite(frame.OpponentEta))
+                    earliest = MathF.Min(earliest, MathF.Max(0f, frame.OpponentEta));
+                if (float.IsFinite(frame.PressureTime))
+                    earliest = MathF.Min(earliest, MathF.Max(0f, frame.PressureTime));
+            }
+
+            return MathF.Max(0.05f, earliest - 0.025f);
+        }
+
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
         {
             if (frame == null || car == null || pressure ||
