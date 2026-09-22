@@ -737,6 +737,23 @@ namespace Bot
             return MathF.Max(0.05f, earliest - 0.025f);
         }
 
+        /// <summary>
+        /// Contact selection must stop at the next credible opponent touch, but defensive staging is
+        /// movement, not a promised ball contact. It may use the full current threat horizon and
+        /// replan after the opponent actually touches. Capping staging at the contact deadline caused
+        /// the bot to skip reachable intermediate blocks and fall straight back to remote goal-line
+        /// waypoints.
+        /// </summary>
+        public static float ThreatStagingHorizon(float dangerTime, float contactDeadline)
+        {
+            if (!float.IsFinite(dangerTime) && !float.IsFinite(contactDeadline))
+                return 0.05f;
+
+            float danger = float.IsFinite(dangerTime) ? MathF.Max(0f, dangerTime) : 0f;
+            float contact = float.IsFinite(contactDeadline) ? MathF.Max(0f, contactDeadline) : 0f;
+            return System.Math.Clamp(MathF.Max(danger, contact), 0.05f, 3f);
+        }
+
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
         {
             if (frame == null || car == null || pressure ||
