@@ -244,6 +244,88 @@ Test("log-v14: emergency planning deadline stops at imminent opponent touch", ()
         $"clean untouched threat lost its own crossing deadline: {deadline:F3}");
 });
 
+Test("log-v16: 400 uu save with 0.33 s remaining stays in travel mode", () =>
+{
+    float required = GoalLineSave.RequiredTravelSpeed(400f, 0.33f);
+    Check(required > 1400f,
+        $"fixture no longer requires urgent travel: {required:F0}");
+    Check(GoalLineSave.NeedsFastTravel(400f, 0.33f),
+        "short-range goal-line save still entered parking mode before arrival");
+    Check(!GoalLineSave.NeedsFastTravel(100f, 0.33f),
+        "true arrival-radius save unnecessarily stayed in travel mode");
+});
+
+Test("log-v16: lateral alignment cannot trigger a jump far from the goal plane", () =>
+{
+    var far = new Car
+    {
+        Location = new Vec3(-1000f, -2200f, 17f),
+        IsGrounded = true
+    };
+    Vec3 guard = new(-537f, -5065f, 17f);
+
+    Check(!GoalLineSave.IsJumpPositioned(far, guard),
+        "car nearly 3k uu upfield was considered jump-positioned");
+
+    far.Location = new Vec3(-950f, -4850f, 17f);
+    Check(GoalLineSave.IsJumpPositioned(far, guard),
+        "real goal-plane coverage was rejected");
+});
+
+Test("possession-v16: safe dribble acquisition outranks a routine intercept", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 0.45f,
+        OpponentEta = 1.10f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+
+    Check(PossessionControl.PreferGroundControl(
+            frame, canDribble: true, underPressure: false,
+            forceFinishOpportunity: false),
+        "clean possession window still preferred a generic hit");
+    Check(!PossessionControl.PreferGroundControl(
+            frame, canDribble: true, underPressure: true,
+            forceFinishOpportunity: false),
+        "contested loose control incorrectly ignored pressure");
+    Check(!PossessionControl.PreferGroundControl(
+            frame, canDribble: true, underPressure: false,
+            forceFinishOpportunity: true),
+        "forced opponent-box finish was suppressed by dribble setup");
+});
+
+Test("possession-v16: post-touch aerial separation can be recaptured with boost and time", () =>
+{
+    var car = new Car
+    {
+        Location = new Vec3(3400f, 4560f, 270f),
+        Velocity = new Vec3(150f, -150f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, 0f, 0f)),
+        IsGrounded = false,
+        Boost = 100f
+    };
+    var ball = new Ball(
+        new Vec3(3100f, 4560f, 410f),
+        new Vec3(-350f, 380f, -160f));
+    var frame = new TacticalFrame
+    {
+        MyEta = 2.17f,
+        OpponentEta = 2.17f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Check(PossessionControl.CanAcquireAir(frame, car, ball, goal),
+        "recoverable opponent-half aerial state still fell straight to Recover");
+    Check(AerialCarry.CanStart(car, ball, frame.OpponentEta),
+        "healthy-boost separating aerial carry was still rejected");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
