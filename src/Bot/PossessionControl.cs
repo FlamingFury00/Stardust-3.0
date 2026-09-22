@@ -120,6 +120,14 @@ namespace Bot
             return Defense.EffectiveFreeTime(frame) >= 0.22f;
         }
 
+        public static bool CanHandoffShotToAirCarry(
+            Car car, Ball ball, float opponentWindow)
+        {
+            return car != null && ball != null && !car.IsGrounded &&
+                HasAirControl(car, ball) &&
+                AerialCarry.CanStart(car, ball, opponentWindow);
+        }
+
         public static bool CanAcquireAir(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
         {
             if (frame == null || car == null || ball == null || frame.TeamRank != 0 ||
