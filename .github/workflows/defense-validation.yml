@@ -22,12 +22,6 @@ jobs:
           mkdir -p validation-artifacts
           git rev-parse HEAD > validation-artifacts/commit.txt
           git archive --format=tar.gz --output=validation-artifacts/source.tar.gz HEAD
-      - uses: actions/upload-artifact@v7
-        with:
-          name: defense-source-${{ github.run_id }}
-          path: validation-artifacts/
-          retention-days: 7
-          if-no-files-found: error
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
@@ -35,3 +29,21 @@ jobs:
         run: chmod +x src/generate-flatbuffers.sh src/flatbuffers-schema/binaries/flatc
       - name: Build and validate team defense
         run: dotnet run --project tests/Stardust.TeamDefense/Stardust.TeamDefense.csproj --configuration Release
+      - name: Retain isolated offline validation toolchain
+        if: github.head_ref == 'fix/predictive-goal-side-defense'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(dirname "$(readlink -f "$(command -v dotnet)")")"
+          version="$(dotnet --version)"
+          cd "$root"
+          shopt -s nullglob
+          paths=(dotnet sdk/"$version" host/fxr/8.* shared/Microsoft.NETCore.App/8.* packs/Microsoft.NETCore.App.Ref/8.* packs/Microsoft.AspNetCore.App.Ref/8.* packs/NETStandard.Library.Ref packs/Microsoft.NETCore.App.Host.linux-x64/8.*)
+          tar -czf "$GITHUB_WORKSPACE/validation-artifacts/dotnet.tar.gz" "${paths[@]}"
+          tar -C "$HOME/.nuget" -czf "$GITHUB_WORKSPACE/validation-artifacts/nuget-packages.tar.gz" packages
+      - uses: actions/upload-artifact@v7
+        with:
+          name: defense-source-${{ github.run_id }}
+          path: validation-artifacts/
+          retention-days: 1
+          if-no-files-found: error
