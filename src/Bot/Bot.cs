@@ -165,8 +165,31 @@ namespace Bot
                 bool clearSide = Defense.IsGoalSide(
                     Me.Location, Ball.Location, OurGoal.Location, -100f);
 
+                // Before a hard emergency, a clean shot at the opponent net is the strongest clear:
+                // it removes the threat and can score. Only do this from safe goal-side ownership.
+                if (counterDanger && clearSide && ChallengeCommitted)
+                {
+                    Shot counterShot = Tactics.SelectShot(
+                        this, false, Situation.OpponentEta, HasClaim,
+                        MathF.Min(deadline, 1.35f));
+                    if (counterShot != null)
+                    {
+                        float counterContact = counterShot.Slice.Time - Game.Time;
+                        bool directCounter = counterContact <= 0.82f &&
+                            Tactics.GoalLaneOpen(
+                                LivingOpponents, counterShot.Slice.Location, TheirGoal.Location);
+                        if (directCounter || Tactics.PreferImmediateShot(this, counterShot, Situation))
+                        {
+                            Action = counterShot;
+                            defensiveShot = null;
+                            SetDecision("attack / counter-shot clear");
+                            return;
+                        }
+                    }
+                }
+
                 // A formal clear is only legal from approximately goal-side geometry. The uploaded
-                // match contained a probable own-goal acceleration from a wrong-side emergency dodge.
+                // match contained a probable own-goal acceleration from a wrong-side recovery dodge.
                 if (clearSide)
                 {
                     if (!(Action is Shot current) || !ReferenceEquals(Action, defensiveShot) ||
@@ -183,7 +206,7 @@ namespace Bot
                     defensiveShot = null;
                 }
 
-                if (Action != null)
+                if (Action != null && !(Action is GoalLineSave))
                 {
                     SetDecision(emergency
                         ? "defend / emergency clear"
@@ -195,7 +218,7 @@ namespace Bot
                     Me, Ball.Prediction, OurGoal.Location, Game.Time, deadline,
                     out Vec3 block))
                 {
-                    DriveTo(block, Car.MaxSpeed, false, false);
+                    DriveTo(block, Car.MaxSpeed, true, false);
                     SetDecision(emergency
                         ? "defend / emergency intercept"
                         : "defend / counter intercept");
@@ -213,18 +236,29 @@ namespace Bot
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
                             MathF.Min(pressureTime, 0.35f))
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
-                    GuardTo(Tactics.GoalReturnTarget(Me, route, OurGoal.Location),
-                        2250f, 650f, false, allowDodges: !counterGoalSide);
+                    Vec3 counterSupport = Tactics.GoalReturnTarget(
+                        Me, route, OurGoal.Location);
+                    bool fastCounterRecovery = !counterGoalSide &&
+                        Defense.CanFastRecover(
+                            Me, Ball.Location, counterSupport, OurGoal.Location);
+                    GuardTo(counterSupport, 2250f, 650f, false,
+                        allowDodges: fastCounterRecovery);
                     SetDecision(counterGoalSide
                         ? "defend / counter shadow"
                         : "defend / counter recover");
                     return;
                 }
 
-                Vec3 rawGuard = Defense.EmergencyTarget(crossing, OurGoal.Location);
-                Vec3 guard = Tactics.GoalReturnTarget(Me, rawGuard, OurGoal.Location);
-                GuardTo(guard, Car.MaxSpeed, 0f, true);
-                SetDecision("defend / goal-line block");
+                float crossingTime = Game.Time + MathF.Max(0f, threat);
+                if (Action is GoalLineSave save && !save.Finished)
+                {
+                    save.Crossing = crossing;
+                    save.CrossingTime = crossingTime;
+                }
+                else
+                    Action = new GoalLineSave(Me, crossing, crossingTime);
+
+                SetDecision("defend / goal-line save");
                 return;
             }
 
@@ -234,8 +268,23 @@ namespace Bot
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
+            bool canOwnAttack = canChallenge || controlledPossession;
+            Shot priorityAttack = canOwnAttack
+                ? Tactics.SelectShot(
+                    this, false, Situation.OpponentEta, HasClaim, attackDeadline)
+                : null;
+            bool finishNow = Tactics.PreferImmediateShot(
+                this, priorityAttack, Situation);
+
             if (Action is IPossessionAction possession)
             {
+                if (finishNow)
+                {
+                    Action = priorityAttack;
+                    SetDecision("attack / finish now");
+                    return;
+                }
+
                 bool retain = Action is GroundCatch
                     ? Situation.TeamRank == 0 && (canChallenge || Situation.FreeTime >= -0.12f)
                     : PossessionControl.ShouldRetainPossession(
@@ -275,6 +324,13 @@ namespace Bot
 
             if (!Me.IsGrounded)
             {
+                if (finishNow)
+                {
+                    Action = priorityAttack;
+                    SetDecision("attack / airborne finish");
+                    return;
+                }
+
                 bool canPossessAir = Options.AerialCarry &&
                     PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
                 if (canPossessAir &&
@@ -287,9 +343,7 @@ namespace Bot
                     return;
                 }
 
-                Shot aerial = canChallenge
-                    ? Tactics.SelectShot(this, false, Situation.OpponentEta, HasClaim, attackDeadline)
-                    : null;
+                Shot aerial = priorityAttack;
                 Action = aerial ?? (IAction)new Recover();
                 SetDecision(aerial == null
                     ? "recover / landing surface"
@@ -303,8 +357,15 @@ namespace Bot
             bool canDribble = canPossessGround &&
                 GroundDribble.CanStart(Me, Ball.MainBall, Situation.FreeTime);
 
-            // If the ball is already balanced on the car, protect ownership first. Pressure is handled
-            // inside GroundDribble by an earlier flick instead of by throwing possession away.
+            // A direct scoring contact outranks continuing a dribble. Otherwise preserve controlled
+            // possession and use its pressure-triggered outplays.
+            if (finishNow)
+            {
+                Action = priorityAttack;
+                SetDecision("attack / finish now");
+                return;
+            }
+
             if (controlledPossession && canDribble)
             {
                 Action = new GroundDribble();
@@ -314,9 +375,7 @@ namespace Bot
                 return;
             }
 
-            Shot attack = canChallenge
-                ? Tactics.SelectShot(this, false, Situation.OpponentEta, HasClaim, attackDeadline)
-                : null;
+            Shot attack = priorityAttack;
             BallSlice catchSlice = canPossessGround && Ball.Location.z > 175f
                 ? GroundCatch.FindCatch(Me)
                 : null;
@@ -429,8 +488,11 @@ namespace Bot
                 hold = true;
             }
 
+            bool fastRecovery = recoveringGoalSide && !exitingGoal &&
+                Defense.CanFastRecover(
+                    Me, Ball.Location, support, OurGoal.Location);
             GuardTo(support, cruise, terminal, hold,
-                allowDodges: recoveringGoalSide && !exitingGoal);
+                allowDodges: fastRecovery);
 
             if (exitingGoal)
                 SetDecision("defend / exit net");
