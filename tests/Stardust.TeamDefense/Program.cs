@@ -326,6 +326,30 @@ Test("possession-v16: post-touch aerial separation can be recaptured with boost 
         "healthy-boost separating aerial carry was still rejected");
 });
 
+Test("possession-v16: airborne jump-shot setup can hand off before its dodge", () =>
+{
+    var car = new Car
+    {
+        Location = new Vec3(0f, 0f, 190f),
+        Velocity = new Vec3(450f, 0f, 350f),
+        Orientation = new Mat3x3(Vec3.Zero),
+        IsGrounded = false,
+        Boost = 80f
+    };
+    var ball = new Ball(
+        new Vec3(170f, 0f, 500f),
+        new Vec3(300f, 0f, 120f));
+
+    Check(PossessionControl.HasAirControl(car, ball),
+        "fixture stopped reproducing established air control");
+    Check(PossessionControl.CanHandoffShotToAirCarry(car, ball, 1.6f),
+        "air-controlled JumpShot state could not hand off to AerialCarry");
+
+    car.IsGrounded = true;
+    Check(!PossessionControl.CanHandoffShotToAirCarry(car, ball, 1.6f),
+        "grounded car incorrectly qualified for an airborne handoff");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
