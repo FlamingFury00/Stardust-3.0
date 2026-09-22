@@ -261,6 +261,20 @@ namespace Bot
             return true;
         }
 
+        public static bool CanSearchAttack(TacticalFrame frame, Car car, Ball ball,
+            Vec3 attackGoal, bool canChallenge, bool controlledPossession)
+        {
+            if (canChallenge || controlledPossession)
+                return true;
+            if (frame == null || car == null || ball == null ||
+                frame.TeamRank != 0 || !ControlMath.Finite(attackGoal))
+                return false;
+
+            return ball.location.FlatDist(attackGoal) < 3600f &&
+                frame.FreeTime >= -0.12f &&
+                car.Location.Dist(ball.location) < 1700f;
+        }
+
         /// <summary>
         /// A high-value direct finish outranks keeping possession. Possession is still preferred for
         /// low-value/slow contacts, but an imminent goal-directed hit in the attacking half should
