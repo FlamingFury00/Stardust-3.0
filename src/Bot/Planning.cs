@@ -277,7 +277,7 @@ namespace Bot
             // Slightly negative ETA estimates in the attacking third should not suppress the shot
             // planner entirely. The selected shot still has to pass its own mechanical validity.
             return ball.location.FlatDist(attackGoal) < 3200f &&
-                frame.FreeTime >= -0.08f &&
+                Defense.EffectiveFreeTime(frame) >= -0.08f &&
                 car.Location.Dist(ball.location) < 1500f;
         }
 
@@ -303,7 +303,7 @@ namespace Bot
             if (goalDistance > 1900f || carDistance > 1750f)
                 return false;
 
-            float raceDeficit = frame.MyEta - frame.OpponentEta;
+            float raceDeficit = frame.MyEta - Defense.OpponentContactEta(frame);
             if (raceDeficit > 0.20f)
                 return false;
 
