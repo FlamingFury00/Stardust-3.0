@@ -109,7 +109,19 @@ namespace Bot
                 ? sample
                 : ball.Predict(horizon);
 
-            Vec3 contact = predicted.location - ClearDirection * 145f;
+            bool raised = predicted.location.z > 155f;
+            GroundBlock = !raised;
+            bool cleanGoalSide = Defense.IsDepthGoalSide(
+                car.Location, ball.location, bot.OurGoal.Location, 20f);
+
+            // When already behind a low shot, drive through the predicted ball center. Offsetting
+            // 145 uu behind it created a tiny, rapidly moving waypoint that flipped steering from
+            // side to side in the uploaded concession even though the ball was directly ahead.
+            // Slightly wrong-side blocks retain the fieldward offset so they do not become own-goal
+            // chases while trying to get around the ball.
+            Vec3 contact = GroundBlock && cleanGoalSide
+                ? predicted.location
+                : predicted.location - ClearDirection * 145f;
             Target = Field.LimitToNearestSurface(
                 new Vec3(contact.x, contact.y, 17f));
 
@@ -122,12 +134,8 @@ namespace Bot
                 drive.WasteBoost = true;
                 drive.Run(bot);
 
-                // Low shots should be blocked on the wheels. The previous implementation jumped
-                // at z≈100–130, removing lateral steering exactly as the ball crossed the car.
-                // Raised contacts still need an immediate jump/dodge, but start it on this same
-                // controller tick rather than spending another planning frame in drive mode.
-                bool raised = predicted.location.z > 155f;
-                GroundBlock = !raised;
+                // Low shots should be blocked on the wheels. Raised contacts still need an
+                // immediate jump/dodge, started on this same controller tick.
                 bool imminent = distance < 470f ||
                     (distance < 530f && elapsed > 0.05f);
 

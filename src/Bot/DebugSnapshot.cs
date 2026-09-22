@@ -186,7 +186,7 @@ namespace Bot
                 };
             }
 
-            bool goalSide = Defense.IsGoalSide(
+            bool goalSide = Defense.IsTacticallyGoalSide(
                 bot.Me.Location, ball.location, ownGoal, 20f);
             bool controlled = PossessionControl.HasControlledPossession(
                 bot.Me, ball);
