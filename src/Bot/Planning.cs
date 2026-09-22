@@ -339,6 +339,36 @@ namespace Bot
                 shot.ShotDirection.Flatten().Length() / total, 0f, 1f);
         }
 
+        /// <summary>
+        /// Reject mechanically valid offensive contacts that surrender the horizontal authority
+        /// required to clear our defensive third safely.
+        /// </summary>
+        public static bool AttackContactIsSane(RUBot bot, BallSlice slice, Shot shot)
+        {
+            if (bot == null || slice == null || shot == null ||
+                !ControlMath.Finite(slice.Location) ||
+                !ControlMath.Finite(shot.ShotDirection))
+                return false;
+
+            float ownDepth = Defense.OwnDepth(
+                slice.Location, bot.OurGoal.Location);
+            float ownGoalDistance = slice.Location.FlatDist(
+                bot.OurGoal.Location);
+            float flatAuthority = FlatShotAuthority(shot);
+
+            bool defensiveThird = ownDepth > 2600f ||
+                ownGoalDistance < 2700f;
+            if (defensiveThird && flatAuthority < 0.52f)
+                return false;
+
+            if (ownGoalDistance < 1800f &&
+                !Defense.ClearDirectionIsSafe(
+                    shot.ShotDirection, bot.OurGoal.Location, 0.22f))
+                return false;
+
+            return true;
+        }
+
         public static bool PreferImmediateShot(RUBot bot, Shot shot, TacticalFrame frame)
         {
             if (bot == null || shot == null || shot.Slice == null ||
@@ -583,29 +613,9 @@ namespace Bot
                                 candidate.ShotDirection, bot.OurGoal.Location, 0.08f))
                             return;
 
-                        if (!emergency)
-                        {
-                            float ownDepth = Defense.OwnDepth(
-                                slice.Location, bot.OurGoal.Location);
-                            float ownGoalDistance = slice.Location.FlatDist(
-                                bot.OurGoal.Location);
-                            float flatAuthority = FlatShotAuthority(candidate);
-
-                            // In our defensive third, do not call a nearly vertical pop an
-                            // "attack". The 1-1 concession selected a JumpShot at ~100 uu ball
-                            // height with only ~0.17 planar authority; the real touch then carried
-                            // the ball laterally/toward our own goal instead of producing a clear.
-                            bool defensiveThird = ownDepth > 2600f ||
-                                ownGoalDistance < 2700f;
-                            if (defensiveThird && flatAuthority < 0.52f)
-                                return;
-
-                            if (ownGoalDistance < 1800f &&
-                                !Defense.ClearDirectionIsSafe(
-                                    candidate.ShotDirection,
-                                    bot.OurGoal.Location, 0.22f))
-                                return;
-                        }
+                        if (!emergency &&
+                            !AttackContactIsSane(bot, slice, candidate))
+                            return;
 
                         lowMechanicValid |= candidate is GroundShot || candidate is JumpShot;
 
