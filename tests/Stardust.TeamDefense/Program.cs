@@ -148,6 +148,26 @@ Test("log-v14: ordinary near-tie pressure keeps committed challenge hysteresis",
         "contact-clock fusion made normal committed defense passive");
 });
 
+Test("log-v14: contact ETA fusion is continuous through the disagreement band", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 1.0f,
+        OpponentEta = 1.20f,
+        PressureTime = 0.64f
+    };
+
+    float justInside = Defense.OpponentContactEta(frame);
+    frame.PressureTime = 0.63f;
+    float slightlyEarlier = Defense.OpponentContactEta(frame);
+    Check(justInside <= 1.20f && justInside >= 0.64f,
+        $"blended contact ETA left its source interval: {justInside:F4}");
+    Check(slightlyEarlier <= justInside,
+        $"earlier pressure made fused opponent contact later: {justInside:F4} -> {slightlyEarlier:F4}");
+    Check(justInside - slightlyEarlier < 0.10f,
+        $"contact ETA fusion still contains a hard tactical jump: {justInside:F4} -> {slightlyEarlier:F4}");
+});
+
 Test("log-v14: car behind own goal line exits before loose-ball commitment", () =>
 {
     var frame = new TacticalFrame
