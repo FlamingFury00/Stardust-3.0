@@ -1222,8 +1222,13 @@ internal static class DefenseRegression
                     "telemetry did not capture actual sanitized controller output");
                 Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
                     "telemetry did not capture defensive action target");
-                Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
+                var possession = root.GetProperty("possession");
+                Check(possession.TryGetProperty("controlled", out _),
                     "telemetry omitted possession state");
+                Check(possession.TryGetProperty("ground_dribble_ready", out _) &&
+                      possession.TryGetProperty("air_carry_ready", out _) &&
+                      possession.TryGetProperty("shot_to_air_handoff", out _),
+                    "telemetry omitted possession acquisition/handoff diagnostics");
                 Check(root.GetProperty("car_state").TryGetProperty("forward", out _),
                     "telemetry omitted car orientation");
                 Check(root.GetProperty("tactics").TryGetProperty("raw_can_challenge", out _),
