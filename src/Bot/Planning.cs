@@ -321,6 +321,54 @@ namespace Bot
         /// low-value/slow contacts, but an imminent goal-directed hit in the attacking half should
         /// not be converted into another catch or dribble setup.
         /// </summary>
+        /// <summary>
+        /// Fraction of a planned contact direction that actually acts in the field plane.
+        /// Near-vertical "shots" beside our own goal are mechanically valid JumpShots, but they
+        /// surrender horizontal clearance authority and were observed turning into dangerous
+        /// sideways/own-goal touches despite nominally aiming at the opponent net.
+        /// </summary>
+        public static float FlatShotAuthority(Shot shot)
+        {
+            if (shot == null || !ControlMath.Finite(shot.ShotDirection))
+                return 0f;
+
+            float total = shot.ShotDirection.Length();
+            if (!float.IsFinite(total) || total < 0.001f)
+                return 0f;
+            return System.Math.Clamp(
+                shot.ShotDirection.Flatten().Length() / total, 0f, 1f);
+        }
+
+        /// <summary>
+        /// Reject mechanically valid offensive contacts that surrender the horizontal authority
+        /// required to clear our defensive third safely.
+        /// </summary>
+        public static bool AttackContactIsSane(RUBot bot, BallSlice slice, Shot shot)
+        {
+            if (bot == null || slice == null || shot == null ||
+                !ControlMath.Finite(slice.Location) ||
+                !ControlMath.Finite(shot.ShotDirection))
+                return false;
+
+            float ownDepth = Defense.OwnDepth(
+                slice.Location, bot.OurGoal.Location);
+            float ownGoalDistance = slice.Location.FlatDist(
+                bot.OurGoal.Location);
+            float flatAuthority = FlatShotAuthority(shot);
+
+            bool defensiveThird = ownDepth > 2600f ||
+                ownGoalDistance < 2700f;
+            if (defensiveThird && flatAuthority < 0.52f)
+                return false;
+
+            if (ownGoalDistance < 1800f &&
+                !Defense.ClearDirectionIsSafe(
+                    shot.ShotDirection, bot.OurGoal.Location, 0.22f))
+                return false;
+
+            return true;
+        }
+
         public static bool PreferImmediateShot(RUBot bot, Shot shot, TacticalFrame frame)
         {
             if (bot == null || shot == null || shot.Slice == null ||
@@ -558,6 +606,10 @@ namespace Bot
 
                         if (emergency && !Defense.ClearDirectionIsSafe(
                                 candidate.ShotDirection, bot.OurGoal.Location, 0.08f))
+                            return;
+
+                        if (!emergency &&
+                            !AttackContactIsSane(bot, slice, candidate))
                             return;
 
                         lowMechanicValid |= candidate is GroundShot || candidate is JumpShot;

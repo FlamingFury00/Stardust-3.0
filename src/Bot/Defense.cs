@@ -74,7 +74,11 @@ namespace Bot
             if (!float.IsFinite(ballOwnDepth))
                 return false;
 
-            return ballOwnDepth > 1800f
+            // Once the ball is meaningfully inside our half, field depth must be authoritative.
+            // The previous 1800 uu switch produced a real discontinuity: a car more than 1000 uu
+            // upfield of the ball was considered goal-side until the ball crossed the threshold,
+            // then the supervisor abruptly abandoned its challenge one planning tick later.
+            return ballOwnDepth > 450f
                 ? IsDepthGoalSide(point, ball, goal, buffer)
                 : IsGoalSide(point, ball, goal, buffer);
         }
@@ -205,13 +209,11 @@ namespace Bot
                     lateralBias = 650f;
                     break;
                 default:
-                    // PR #1's first defender lived much closer to the play (~900 uu) and forced
-                    // touches instead of conceding a huge cushion. Keep that aggression, but retain
-                    // a small danger/pressure compression band so deep defense remains steerable.
-                    desiredGap = Lerp(1080f, 720f, danger) - 300f * urgency;
-                    desiredGap = System.Math.Clamp(desiredGap, 420f, 1100f);
-                    minimumProgress = 320f - 100f * urgency;
-                    lateralBias = 220f;
+                    // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
+                    desiredGap = Lerp(1425f, 900f, danger) - 420f * urgency;
+                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1450f);
+                    minimumProgress = 460f - 120f * urgency;
+                    lateralBias = 260f;
                     break;
             }
 
@@ -249,22 +251,7 @@ namespace Bot
             float availableProgress = GoalSideProgress(target, flatBall, flatGoal);
             float requiredProgress = MathF.Min(minimumProgress, MathF.Max(150f, goalDistance + ShallowNetDepth));
             if (availableProgress < requiredProgress)
-            {
                 target += goalward * (requiredProgress - availableProgress);
-                availableProgress = requiredProgress;
-            }
-
-            // x-only lane shaping can add a surprising amount of ball-to-goal projection near
-            // the sidewall. A solo shadow should not turn a ~900 uu tactical gap into the 1600+
-            // uu cushions seen in the uploaded concessions.
-            if (role == DefensiveRole.Shadow)
-            {
-                float maximumProgress = MathF.Min(
-                    desiredGap + 120f,
-                    MathF.Max(260f, maximumUsefulGap));
-                if (availableProgress > maximumProgress)
-                    target -= goalward * (availableProgress - maximumProgress);
-            }
 
             // Re-apply mouth bounds after the progress correction.
             target.y = side * System.Math.Clamp(target.y * side, -goalDepth + 180f, goalDepth + ShallowNetDepth);
@@ -359,21 +346,8 @@ namespace Bot
                 return false;
 
             float ballDistance = car.Location.Dist(ball);
-
-            // Ground ETA can be pessimistic for a ball already inside contact range, especially
-            // around sidewalls/opponent corners. If the ball is physically low enough to play,
-            // do not shadow from 250-350 uu because an ETA bucket says 0.9 s.
-            bool immediate = ballDistance < 360f &&
-                (frame.MyEta <= 0.30f || ball.z <= 285f);
+            bool immediate = ballDistance < 360f && frame.MyEta <= 0.30f;
             if (immediate)
-                return true;
-
-            // In 1v1 a goal-side first defender has nobody to rotate behind. PR #1 felt more
-            // decisive because it did not wait for an explicit pressure tick before contesting
-            // a close ETA tie. Commit the tie while the play is still within forcing distance.
-            if (frame.TeamCount <= 1 &&
-                ballDistance < 850f &&
-                frame.FreeTime >= -0.05f)
                 return true;
 
             float goalDistance = ball.FlatDist(goal);
@@ -592,41 +566,41 @@ namespace Bot
         /// pressure reference rather than a hard possession-killing deadline. Controlled possession
         /// receives a larger continuation window; emergency saves bypass this function entirely.
         /// </summary>
-        /// <summary>
-        /// A 2.5-4.5 second untouched-ball counter projection is advisory while Stardust already
-        /// owns a safe challenge. PR #1 only hard-switched on the short emergency horizon; yielding
-        /// an owned challenge to a distant counter prediction creates the passive regressions seen
-        /// in the uploaded 6-6 match.
-        /// </summary>
-        public static bool ShouldYieldToCounterThreat(
-            float counterThreat, bool challengeCommitted) =>
-            float.IsFinite(counterThreat) && !challengeCommitted;
-
         public static float AttackDeadline(TacticalFrame frame, bool controlledPossession = false)
         {
             if (frame == null || !float.IsFinite(frame.OpponentEta))
                 return 0f;
 
+            float contactClock = frame.OpponentEta;
+
+            // OpponentEta is a loose-ball race estimate; PressureTime is a short-horizon estimate
+            // of the opponent's next actual touch. The uploaded concessions repeatedly planned
+            // 0.7-1.3 s shots while PressureTime was only 0.1-0.2 s. For a loose ball, the imminent
+            // touch is the real deadline. Controlled possession keeps its larger continuation window.
+            if (!controlledPossession &&
+                float.IsFinite(frame.PressureTime))
+                contactClock = MathF.Min(contactClock, frame.PressureTime);
+
             float continuation;
             if (controlledPossession)
                 continuation = 0.55f;
             else if (frame.HasCover)
-                continuation = 0.38f;
+                continuation = 0.30f;
             else if (frame.UnderPressure)
-                continuation = 0.22f;
+                continuation = 0.14f;
             else
                 continuation = 0.18f;
 
             if (!controlledPossession && frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
                 continuation -= 0.08f;
 
-            return System.Math.Clamp(frame.OpponentEta + continuation, 0f, 3f);
+            return System.Math.Clamp(contactClock + continuation, 0f, 3f);
         }
 
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
         {
             if (frame == null || car == null || pressure ||
-                !IsGoalSide(car.Location, ball, goal, 20f))
+                !IsTacticallyGoalSide(car.Location, ball, goal, 20f))
                 return false;
 
             float side = Side(goal);
@@ -636,8 +610,13 @@ namespace Bot
             // intentional boost economy at all. Allow only goal-side, low-risk refills while the
             // opponent is not about to touch and the ball is outside the dangerous own-box depth.
             if (frame.TeamCount <= 1)
+            {
+                bool genuinelyFree = frame.FreeTime > 0.30f;
+                bool verySafeUpfield = defensiveDepth < -1400f &&
+                    frame.OpponentEta > 2.40f;
                 return defensiveDepth < 2500f && frame.OpponentEta > 1.35f &&
-                    (frame.FreeTime > 0.30f || defensiveDepth < 300f);
+                    (genuinelyFree || verySafeUpfield);
+            }
 
             if (frame.TeamRank == 0)
                 return false;
