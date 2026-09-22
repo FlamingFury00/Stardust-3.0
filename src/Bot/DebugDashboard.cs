@@ -278,7 +278,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:5px 6px;
 <section>
   <div class="card"><h2>Current objective</h2><div class="hero" id="objective">—</div><div id="decision" class="small">—</div><p id="explanation" class="explain">—</p></div>
   <div class="card"><h2>World model</h2><canvas id="field" width="700" height="820"></canvas></div>
-  <div class="card"><h2>Cars</h2><table><thead><tr><th>#</th><th>team</th><th>speed</th><th>boost</th><th>ball</th><th>goal-side</th></tr></thead><tbody id="cars"></tbody></table></div>
+  <div class="card"><h2>Cars</h2><table><thead><tr><th>#</th><th>team</th><th>speed</th><th>boost</th><th>ball</th><th>diag</th><th>depth</th></tr></thead><tbody id="cars"></tbody></table></div>
 </section>
 <section>
   <div class="card"><h2>Tactical state</h2><div class="grid" id="metrics"></div><div class="checks" id="checks" style="margin-top:10px"></div></div>
@@ -311,14 +311,14 @@ function update(s){
   metric('speed',fmt(m.speed,0)),metric('boost',fmt(m.boost,0)),metric('ball dist',fmt(m.ball_distance,0)),
   metric('my ETA',fmt(t.my_eta)),metric('opp ETA',fmt(t.opponent_eta)),metric('free time',fmt(t.free_time)),
   metric('pressure',fmt(t.pressure_time)),metric('goal threat',fmt(t.goal_threat_time)),metric('counter threat',fmt(t.counter_threat_time)),
-  metric('goal-side',fmt(m.goal_side_progress,0)),metric('ball speed',fmt(b.speed,0)),metric('role',s.role||'—')
+  metric('goal-side diag',fmt(m.goal_side_progress,0)),metric('goal depth',fmt(m.goal_depth_progress,0)),metric('role',s.role||'—')
  ].join('');
  const q=s.checks||{};$('checks').innerHTML=Object.entries(q).map(([k,v])=>check(k.replaceAll('_',' '),v)).join('');
  const u=s.controller||{};$('controller').innerHTML=[
   metric('throttle',fmt(u.throttle)),metric('steer',fmt(u.steer)),metric('boost',String(!!u.boost)),
   metric('jump',String(!!u.jump)),metric('pitch',fmt(u.pitch)),metric('yaw',fmt(u.yaw))
  ].join('');$('detail').textContent=JSON.stringify(s.action_detail,null,2);
- $('cars').innerHTML=(s.cars||[]).map(car=>'<tr><td>'+car.index+'</td><td>'+car.team+'</td><td>'+fmt(car.speed,0)+'</td><td>'+fmt(car.boost,0)+'</td><td>'+fmt(car.ball_distance,0)+'</td><td>'+fmt(car.goal_side_progress,0)+'</td></tr>').join('');
+ $('cars').innerHTML=(s.cars||[]).map(car=>'<tr><td>'+car.index+'</td><td>'+car.team+'</td><td>'+fmt(car.speed,0)+'</td><td>'+fmt(car.boost,0)+'</td><td>'+fmt(car.ball_distance,0)+'</td><td>'+fmt(car.goal_side_progress,0)+'</td><td>'+fmt(car.goal_depth_progress,0)+'</td></tr>').join('');
  draw(s);
 }
 async function poll(){try{const r=await fetch('/api/state',{cache:'no-store'});if(r.ok)update(await r.json())}catch(e){$('status').textContent='disconnected'}setTimeout(poll,100)}
