@@ -58,9 +58,12 @@ namespace Bot
         public static bool NeedsFastTravel(float distance, float timeRemaining)
         {
             if (!float.IsFinite(distance) || !float.IsFinite(timeRemaining) ||
-                distance <= 420f || timeRemaining <= 0.10f)
+                distance <= 420f || timeRemaining <= 0f)
                 return false;
 
+            // Never fall back into parking mode merely because the crossing is extremely close.
+            // At that point the required speed saturates, but continuing maximum useful lateral
+            // travel is still strictly better than braking short of an uncovered part of the mouth.
             float required = RequiredTravelSpeed(distance, timeRemaining);
             return distance > 1050f || required > 700f;
         }
