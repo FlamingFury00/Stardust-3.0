@@ -69,6 +69,19 @@ namespace Bot
             return distance > 1050f || required > 700f;
         }
 
+        public static bool IsJumpPositioned(Car car, Vec3 guardTarget)
+        {
+            if (car == null || !ControlMath.Finite(car.Location) ||
+                !ControlMath.Finite(guardTarget))
+                return false;
+
+            float lateralError = MathF.Abs(car.Location.x - guardTarget.x);
+            float depthError = MathF.Abs(car.Location.y - guardTarget.y);
+            bool nearGoalPlane = depthError <= 430f;
+            return nearGoalPlane &&
+                (lateralError <= 650f || car.Location.FlatDist(guardTarget) <= 760f);
+        }
+
         public void Run(RUBot bot)
         {
             if (bot == null || !ControlMath.Finite(Crossing) ||
@@ -143,16 +156,11 @@ namespace Bot
                 if (!float.IsFinite(jumpTime) || jumpTime <= 0f)
                     jumpTime = doubleJump ? 0.55f : 0.32f;
 
-                float lateralError = MathF.Abs(car.Location.x - GuardTarget.x);
-                float depthError = MathF.Abs(car.Location.y - GuardTarget.y);
-
                 // Lateral alignment alone is not save positioning. In the uploaded 2-1 -> 2-2
                 // concession the car was almost 3000 uu upfield, happened to share the crossing X,
                 // and jumped instead of continuing toward the goal line. Require actual goal-plane
                 // proximity before committing the non-steerable vertical phase.
-                bool nearGoalPlane = depthError <= 430f;
-                bool positioned = nearGoalPlane &&
-                    (lateralError <= 650f || car.Location.FlatDist(GuardTarget) <= 760f);
+                bool positioned = IsJumpPositioned(car, GuardTarget);
 
                 if (positioned && timeRemaining <= jumpTime + 0.12f)
                 {
