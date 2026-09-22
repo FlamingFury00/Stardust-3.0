@@ -433,6 +433,25 @@ namespace Bot
             bool defensiveBoom = Tactics.PreferDefensiveClear(
                 this, priorityAttack, Situation);
 
+            // Evaluate mechanic availability before deciding whether an already-selected shot gets
+            // another planning interval. Previously Shot retention returned here first, so a routine
+            // intercept could monopolize a state that had become safely dribble/carry-ready.
+            bool canPossessGroundNow = Me.IsGrounded && Options.GroundControl &&
+                PossessionControl.CanAcquireGround(
+                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool groundDribbleReadyNow = canPossessGroundNow &&
+                GroundDribble.CanStart(Me, Ball.MainBall, tacticalFreeTime);
+            bool preferGroundControlNow = PossessionControl.PreferGroundControl(
+                Situation, groundDribbleReadyNow, underPressure, forceFinishOpportunity);
+
+            float opponentContactWindow = Defense.OpponentContactEta(Situation);
+            bool canPossessAirNow = !Me.IsGrounded && Options.AerialCarry &&
+                PossessionControl.CanAcquireAir(
+                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool airCarryReadyNow = canPossessAirNow &&
+                AerialCarry.CanStart(
+                    Me, Ball.MainBall, opponentContactWindow);
+
             if (Action is IPossessionAction possession)
             {
                 if (possessionFinish || defensiveBoom)
@@ -456,10 +475,19 @@ namespace Bot
 
             if (Action is Shot shot)
             {
-                if (canOwnAttack && shot.IsPredictionValid() &&
+                bool currentShotMustFinish =
+                    Tactics.PreferPossessionFinish(this, shot, Situation) ||
+                    Tactics.PreferDefensiveClear(this, shot, Situation);
+                bool yieldToPossession =
+                    !currentShotMustFinish &&
+                    (preferGroundControlNow || airCarryReadyNow);
+
+                if (!yieldToPossession &&
+                    canOwnAttack && shot.IsPredictionValid() &&
                     shot.Slice.Time - Game.Time <= attackDeadline &&
                     !HasTeammateEarlierShot(shot.Slice.Time))
                     return;
+
                 Action = null;
             }
 
@@ -494,11 +522,8 @@ namespace Bot
                     return;
                 }
 
-                bool canPossessAir = Options.AerialCarry &&
-                    PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
-                if (canPossessAir &&
-                    AerialCarry.CanStart(
-                        Me, Ball.MainBall, Defense.OpponentContactEta(Situation)))
+                bool canPossessAir = canPossessAirNow;
+                if (airCarryReadyNow)
                 {
                     Action = new AerialCarry();
                     SetDecision(underPressure
@@ -522,11 +547,8 @@ namespace Bot
                 return;
             }
 
-            bool canPossessGround = Options.GroundControl &&
-                PossessionControl.CanAcquireGround(
-                    Situation, Me, Ball.MainBall, OurGoal.Location);
-            bool canDribble = canPossessGround &&
-                GroundDribble.CanStart(Me, Ball.MainBall, tacticalFreeTime);
+            bool canPossessGround = canPossessGroundNow;
+            bool canDribble = groundDribbleReadyNow;
 
             // A genuinely high-value finish or own-box boom outranks possession. A routine
             // mechanically-valid hit does not: PR4's possession intent regressed when broad
@@ -552,8 +574,7 @@ namespace Bot
             // Safe acquisition with real free time is itself a tactical objective. The previous
             // ordering made this branch unreachable whenever SelectShot found any valid contact,
             // which is why telemetry showed dozens of dribble-ready states becoming routine shots.
-            bool preferGroundControl = PossessionControl.PreferGroundControl(
-                Situation, canDribble, underPressure, forceFinishOpportunity);
+            bool preferGroundControl = preferGroundControlNow;
             if (preferGroundControl)
             {
                 Action = new GroundDribble();
