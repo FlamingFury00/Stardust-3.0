@@ -186,6 +186,20 @@ Test("log-v14: car behind own goal line exits before loose-ball commitment", () 
         $"exit target risked a goal post: {exit}");
 });
 
+Test("log-v14: urgent sub-threshold goal-line save keeps travel speed", () =>
+{
+    const float distance = 960f;
+    const float timeRemaining = 0.895f;
+
+    float required = GoalLineSave.RequiredTravelSpeed(distance, timeRemaining);
+    Check(required > 1100f,
+        $"observed save geometry understated required travel speed: {required:F0}");
+    Check(GoalLineSave.NeedsFastTravel(distance, timeRemaining),
+        "960 uu / 0.895 s save still fell into parking mode");
+    Check(!GoalLineSave.NeedsFastTravel(distance, 2.2f),
+        "early 960 uu positioning incorrectly stayed in emergency travel mode");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
