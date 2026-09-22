@@ -400,16 +400,18 @@ namespace Bot
                 : null;
             bool finishNow = Tactics.PreferImmediateShot(
                 this, priorityAttack, Situation);
+            bool possessionFinish = Tactics.PreferPossessionFinish(
+                this, priorityAttack, Situation);
             bool defensiveBoom = Tactics.PreferDefensiveClear(
                 this, priorityAttack, Situation);
 
             if (Action is IPossessionAction possession)
             {
-                if (finishNow || defensiveBoom)
+                if (possessionFinish || defensiveBoom)
                 {
                     Action = priorityAttack;
-                    SetDecision(finishNow
-                        ? "attack / finish now"
+                    SetDecision(possessionFinish
+                        ? "attack / possession finish"
                         : "attack / defensive boom");
                     return;
                 }
@@ -453,11 +455,13 @@ namespace Bot
 
             if (!Me.IsGrounded)
             {
-                if (finishNow || defensiveBoom)
+                // Preserve an air-control opportunity before a generic "take any shot" finish.
+                // Only a true possession-breaking finish or a required defensive boom may preempt it.
+                if (possessionFinish || defensiveBoom)
                 {
                     Action = priorityAttack;
-                    SetDecision(finishNow
-                        ? "attack / airborne finish"
+                    SetDecision(possessionFinish
+                        ? "attack / airborne possession finish"
                         : "attack / airborne defensive boom");
                     return;
                 }
@@ -471,6 +475,13 @@ namespace Bot
                     SetDecision(underPressure
                         ? "mechanic / pressured aerial carry"
                         : "mechanic / aerial carry");
+                    return;
+                }
+
+                if (finishNow)
+                {
+                    Action = priorityAttack;
+                    SetDecision("attack / airborne finish");
                     return;
                 }
 
@@ -488,13 +499,14 @@ namespace Bot
             bool canDribble = canPossessGround &&
                 GroundDribble.CanStart(Me, Ball.MainBall, tacticalFreeTime);
 
-            // A direct scoring contact outranks continuing a dribble. Otherwise preserve controlled
-            // possession and use its pressure-triggered outplays.
-            if (finishNow || defensiveBoom)
+            // A genuinely high-value finish or own-box boom outranks possession. A routine
+            // mechanically-valid hit does not: PR4's possession intent regressed when broad
+            // "finish now" selection began preempting almost every controllable touch.
+            if (possessionFinish || defensiveBoom)
             {
                 Action = priorityAttack;
-                SetDecision(finishNow
-                    ? "attack / finish now"
+                SetDecision(possessionFinish
+                    ? "attack / possession finish"
                     : "attack / defensive boom");
                 return;
             }
@@ -505,6 +517,18 @@ namespace Bot
                 SetDecision(underPressure
                     ? "mechanic / pressured ground carry"
                     : "mechanic / ground carry");
+                return;
+            }
+
+            // Safe acquisition with real free time is itself a tactical objective. The previous
+            // ordering made this branch unreachable whenever SelectShot found any valid contact,
+            // which is why telemetry showed dozens of dribble-ready states becoming routine shots.
+            bool preferGroundControl = canDribble && !underPressure &&
+                !forceFinishOpportunity && tacticalFreeTime >= 0.22f;
+            if (preferGroundControl)
+            {
+                Action = new GroundDribble();
+                SetDecision("mechanic / ground carry setup");
                 return;
             }
 
