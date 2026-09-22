@@ -121,5 +121,35 @@ Test("shot quality: jump-shot estimate includes dodge power", () =>
         $"dodge contact was not valued above ground touch: ground={groundSpeed:F0}, jump={jumpSpeed:F0}");
 });
 
+Test("log-v14: offset jump-shot power estimate does not collapse to zero", () =>
+{
+    float now = Game.Time;
+    var car = new Car
+    {
+        Location = new Vec3(-1868.82f, -4036.89f, 17.02f),
+        Velocity = new Vec3(-1083.26f, -265.22f, 0.14f),
+        Orientation = new Mat3x3(new Vec3(-0.0096f, -2.9032f, -0.0001f)),
+        IsGrounded = true,
+        Boost = 0f
+    };
+    var slice = new BallSlice(
+        now + 0.4171f,
+        new Vec3(-2312.58f, -3965.61f, 190.60f),
+        new Vec3(685f, -281f, 165f));
+    Vec3 target = new(-729.39f, 5212f, 230.54f);
+
+    var ground = new GroundShot(car, slice, target);
+    var jump = new JumpShot(car, slice, target);
+    float groundSpeed = Tactics.EstimateShotSpeed(car, slice, ground);
+    float jumpSpeed = Tactics.EstimateShotSpeed(car, slice, jump);
+
+    Check(groundSpeed > 650f,
+        $"solver-aligned ground estimate remained implausibly weak: {groundSpeed:F0}");
+    Check(jumpSpeed > 900f,
+        $"telemetry-style jump estimate still collapsed: {jumpSpeed:F0}");
+    Check(jumpSpeed > groundSpeed + 100f,
+        $"dodge power was not preserved: ground={groundSpeed:F0}, jump={jumpSpeed:F0}");
+});
+
 Console.WriteLine($"SHOOTING RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
