@@ -60,6 +60,7 @@ namespace Bot
         public bool Demolished { get; set; }
         public bool Supersonic { get; set; }
         public float GoalSideProgress { get; set; }
+        public float GoalDepthProgress { get; set; }
         public float BallDistance { get; set; }
     }
 
@@ -330,6 +331,8 @@ namespace Bot
             Supersonic = car.IsSupersonic,
             GoalSideProgress = Safe(
                 Defense.GoalSideProgress(car.Location, ball, ownGoal)),
+            GoalDepthProgress = Safe(
+                Defense.GoalDepthProgress(car.Location, ball, ownGoal)),
             BallDistance = Safe(car.Location.Dist(ball))
         };
 
