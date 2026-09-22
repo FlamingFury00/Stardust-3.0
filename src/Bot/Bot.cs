@@ -316,7 +316,7 @@ namespace Bot
                 {
                     Vec3 counterReference = Defense.ReferenceBall(
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
-                    bool counterGoalSide = Defense.IsGoalSide(
+                    bool counterGoalSide = Defense.IsTacticallyGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
@@ -347,6 +347,27 @@ namespace Bot
 
                 SetDecision("defend / goal-line save");
                 return;
+            }
+
+            if (Defense.ShouldForceBoxClear(
+                    Situation, Me, Ball.MainBall, OurGoal.Location))
+            {
+                float boxContactWindow = MathF.Min(
+                    float.IsFinite(Situation.PressureTime)
+                        ? Situation.PressureTime : 4.5f,
+                    float.IsFinite(Situation.OpponentEta)
+                        ? Situation.OpponentEta : 4.5f);
+
+                if (EmergencyClear.CanStart(
+                        Me, Ball.MainBall, OurGoal.Location, boxContactWindow))
+                {
+                    if (!(Action is EmergencyClear) || Action.Finished)
+                        Action = new EmergencyClear(
+                            Me, OurGoal.Location, TheirGoal.Location);
+                    defensiveShot = null;
+                    SetDecision("defend / pressured box clear");
+                    return;
+                }
             }
 
             bool controlledPossession =
@@ -546,7 +567,8 @@ namespace Bot
 
             Vec3 reference = Defense.ReferenceBall(Ball.Prediction, Ball.Location,
                 OurGoal.Location, Game.Time);
-            bool goalSide = Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location, 20f);
+            bool goalSide = Defense.IsTacticallyGoalSide(
+                Me.Location, Ball.Location, OurGoal.Location, 20f);
             bool recoveringGoalSide = !goalSide;
 
             Vec3 rawSupport = recoveringGoalSide

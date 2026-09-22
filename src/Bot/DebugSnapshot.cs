@@ -253,7 +253,7 @@ namespace Bot
                     OpponentGoalLaneOpen = goalLaneOpen,
                     FastRecoveryAllowed = fastRecovery
                 },
-                ActionDetail = ActionDetail(bot.Action)
+                ActionDetail = ActionDetail(bot.Action, bot.Me)
             };
         }
 
@@ -367,7 +367,7 @@ namespace Bot
             }
         }
 
-        private static object ActionDetail(IAction action)
+        private static object ActionDetail(IAction action, Car car)
         {
             switch (action)
             {
@@ -400,7 +400,10 @@ namespace Bot
                             ? null
                             : V(shot.Slice.Location),
                         ["shot_target"] = V(shot.ShotTarget),
-                        ["shot_direction"] = V(shot.ShotDirection)
+                        ["shot_direction"] = V(shot.ShotDirection),
+                        ["predicted_speed"] = shot.Slice == null
+                            ? 0f
+                            : Safe(Tactics.EstimateShotSpeed(car, shot.Slice, shot))
                     };
                 case GoalLineSave save:
                     return new Dictionary<string, object>
@@ -417,7 +420,8 @@ namespace Bot
                     {
                         ["target"] = V(clear.Target),
                         ["clear_direction"] = V(clear.ClearDirection),
-                        ["committed"] = clear.Committed
+                        ["committed"] = clear.Committed,
+                        ["ground_block"] = clear.GroundBlock
                     };
                 case GetBoost boost:
                     return new Dictionary<string, object>

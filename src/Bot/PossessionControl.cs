@@ -83,7 +83,8 @@ namespace Bot
             if (deepPressure)
                 return false;
 
-            if (frame.TeamRank != 0 || !Defense.IsGoalSide(car.Location, ball.location, ownGoal, -80f))
+            if (frame.TeamRank != 0 ||
+                !Defense.IsTacticallyGoalSide(car.Location, ball.location, ownGoal, -80f))
                 return false;
 
             Vec3 local = car.Local(ball.location - car.Location);
@@ -106,7 +107,7 @@ namespace Bot
             float side = ownGoal.y < 0 ? -1f : 1f;
             float ownDepth = ball.location.y * side;
             float requiredProgress = ownDepth > 3800f ? 35f : -40f;
-            bool safeGeometry = Defense.IsGoalSide(
+            bool safeGeometry = Defense.IsTacticallyGoalSide(
                 car.Location, ball.location, ownGoal, requiredProgress);
             return safeGeometry && frame.FreeTime >= -0.10f;
         }

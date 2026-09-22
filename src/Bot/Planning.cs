@@ -418,6 +418,83 @@ namespace Bot
         }
 
         /// <summary>
+        /// Bias attacking aim away from floor-level "easy" targets. The raw Target.Clamp result is
+        /// still retained as a fallback, but a second candidate aims through the middle/lower-middle
+        /// of the aperture so a valid power contact does not default to z≈ball-radius every time.
+        /// </summary>
+        public static Vec3 PowerShotTarget(Target target, BallSlice slice, Vec3 easiest, Goal goal)
+        {
+            if (target == null || slice == null || goal == null ||
+                !ControlMath.Finite(slice.Location) || !ControlMath.Finite(easiest))
+                return easiest;
+
+            target.GetCorrectedLimits(slice.Location,
+                out _, out _, out Vec3 correctedTop, out Vec3 correctedBottom);
+
+            float low = MathF.Min(correctedTop.z, correctedBottom.z);
+            float high = MathF.Max(correctedTop.z, correctedBottom.z);
+            if (!float.IsFinite(low) || !float.IsFinite(high) || high - low < 80f)
+                return easiest;
+
+            float goalDistance = slice.Location.FlatDist(goal.Location);
+            float close = 1f - System.Math.Clamp(goalDistance / 4200f, 0f, 1f);
+            float ballHeight = System.Math.Clamp((slice.Location.z - 110f) / 650f, 0f, 1f);
+
+            // Far shots still target above the floor; close/high-ball finishes climb further into
+            // the net while preserving substantial crossbar margin.
+            float desiredZ = 220f + 95f * close + 85f * ballHeight;
+            desiredZ = System.Math.Clamp(desiredZ, low + 28f, high - 28f);
+
+            Vec3 raised = target.TargetSurface.Limit(
+                new Vec3(easiest.x, easiest.y, desiredZ));
+            return ControlMath.Finite(raised) ? raised : easiest;
+        }
+
+        /// <summary>
+        /// Lightweight impact-strength estimate used for ranking mechanically valid shots. This is
+        /// not a replacement for Rocket League collision physics; it only prevents the planner from
+        /// always choosing the earliest weak touch when a slightly later, much harder hit is valid.
+        /// </summary>
+        public static float EstimateShotSpeed(Car car, BallSlice slice, Shot shot)
+        {
+            if (car == null || slice == null || shot == null ||
+                !float.IsFinite(slice.Time) || !ControlMath.Finite(shot.TargetLocation) ||
+                !ControlMath.Finite(shot.ShotDirection))
+                return 0f;
+
+            float t = slice.Time - Game.Time;
+            if (!float.IsFinite(t) || t <= 0.001f)
+                return 0f;
+
+            Vec3 plannedCarVelocity =
+                ((shot.TargetLocation - car.Location) / t).Cap(0f, Car.MaxSpeed);
+
+            // A JumpShot finishes with a directional dodge, which contributes a substantial
+            // contact-speed impulse that a plain GroundShot never gets. Include a conservative
+            // fraction of that impulse so the planner can prefer a real power shot.
+            if (shot is JumpShot jump)
+            {
+                Vec3 dodge = ControlMath.Unit(jump.DodgeDirection, shot.ShotDirection);
+                plannedCarVelocity =
+                    (plannedCarVelocity + dodge * 420f).Cap(0f, Car.MaxSpeed);
+            }
+
+            Vec3 relative = plannedCarVelocity - slice.Velocity;
+            float relativeSpeed = relative.Length();
+            if (!float.IsFinite(relativeSpeed))
+                return 0f;
+
+            Vec3 direction = ControlMath.Unit(shot.ShotDirection, Vec3.X);
+            float alignment = relativeSpeed > 1f
+                ? System.Math.Clamp(relative.Dot(direction) / relativeSpeed, 0f, 1f)
+                : 0f;
+            float existing = MathF.Max(0f, slice.Velocity.Dot(direction));
+            float impulse = relativeSpeed * Utils.ShotPowerModifier(relativeSpeed) * alignment;
+
+            return System.Math.Clamp(existing + impulse, 0f, Ball.MaxSpeed);
+        }
+
+        /// <summary>
         /// Bounded shot search with an optional hard contact deadline. Emergency defense must not
         /// select a nominally valid contact that occurs after the ball has already crossed the line.
         /// </summary>
@@ -459,43 +536,76 @@ namespace Bot
                 Ball after = slice.ToBall();
                 Vec3 approach = (slice.Location - bot.Me.Location) / t;
                 after.velocity = approach.Cap(0f, Car.MaxSpeed) + slice.Velocity * 0.25f;
-                Vec3 destination = target.Clamp(after);
-                if (!ControlMath.Finite(destination))
+                Vec3 easiest = target.Clamp(after);
+                if (!ControlMath.Finite(easiest))
                     continue;
 
-                Shot candidate = new GroundShot(bot.Me, slice, destination);
-                float cost = 0f;
-                if (!candidate.IsValid(bot.Me))
-                {
-                    candidate = new JumpShot(bot.Me, slice, destination);
-                    cost = 0.15f;
-                }
-                if (!candidate.IsValid(bot.Me))
-                {
-                    candidate = new DoubleJumpShot(bot.Me, slice, destination);
-                    cost = 0.4f;
-                }
-                if (!candidate.IsValid(bot.Me))
-                {
-                    candidate = new AerialShot(bot.Me, slice, destination);
-                    cost = 0.8f;
-                }
-                if (!candidate.IsValid(bot.Me))
-                    continue;
+                Vec3 powerAim = emergency
+                    ? easiest
+                    : PowerShotTarget(target, slice, easiest, bot.TheirGoal);
+                Vec3[] destinations = easiest.Dist(powerAim) > 12f
+                    ? new[] { powerAim, easiest }
+                    : new[] { easiest };
 
-                if (emergency && !Defense.ClearDirectionIsSafe(
-                        candidate.ShotDirection, bot.OurGoal.Location, 0.08f))
-                    continue;
-
-                float score = -t - cost -
-                    MathF.Max(0f, t - opponentEta) * (emergency ? 0f : 2f);
-                if (score > bestScore)
+                foreach (Vec3 destination in destinations)
                 {
-                    best = candidate;
-                    bestScore = score;
+                    bool lowMechanicValid = false;
+
+                    void Consider(Shot candidate, float cost)
+                    {
+                        if (candidate == null || !candidate.IsValid(bot.Me))
+                            return;
+
+                        if (emergency && !Defense.ClearDirectionIsSafe(
+                                candidate.ShotDirection, bot.OurGoal.Location, 0.08f))
+                            return;
+
+                        lowMechanicValid |= candidate is GroundShot || candidate is JumpShot;
+
+                        float score;
+                        if (emergency)
+                        {
+                            score = -t - cost;
+                        }
+                        else
+                        {
+                            float predictedSpeed = EstimateShotSpeed(bot.Me, slice, candidate);
+                            float powerBonus = System.Math.Clamp(
+                                (predictedSpeed - 950f) / 900f, -0.45f, 1.45f);
+
+                            float idealHeight = 300f;
+                            float placement = 1f - System.Math.Clamp(
+                                MathF.Abs(candidate.ShotTarget.z - idealHeight) / 300f,
+                                0f, 1f);
+
+                            // Power and useful net height are first-class objectives. Waiting a few
+                            // tenths for a much stronger contact is often superior to the first
+                            // barely-valid ground touch.
+                            score = -t * 0.72f - cost +
+                                powerBonus * 1.15f + placement * 0.22f -
+                                MathF.Max(0f, t - opponentEta) * 2f;
+                        }
+
+                        if (score > bestScore)
+                        {
+                            best = candidate;
+                            bestScore = score;
+                        }
+                    }
+
+                    // For low balls, consider both mechanics. The old fallback chain never even
+                    // evaluated a power dodge if GroundShot was technically valid.
+                    Consider(new GroundShot(bot.Me, slice, destination), 0f);
+                    Consider(new JumpShot(bot.Me, slice, destination), emergency ? 0.12f : 0.06f);
+
+                    if (!lowMechanicValid)
+                    {
+                        Consider(new DoubleJumpShot(bot.Me, slice, destination), 0.34f);
+                        Consider(new AerialShot(bot.Me, slice, destination), 0.8f);
+                    }
                 }
 
-                if (best != null && t > best.Slice.Time - Game.Time + 0.3f)
+                if (best != null && t > best.Slice.Time - Game.Time + 0.45f)
                     break;
             }
 

@@ -739,6 +739,37 @@ internal static class DefenseRegression
                 "raw Drive fallback still chased a future slice toward our own goal");
         });
 
+        test("scenario-v11: defensive-third goal-side uses true field depth", () =>
+        {
+            Vec3 car = new(747.65f, -3389.5f, 17f);
+            Vec3 ball = new(3488.76f, -4057.08f, 1209f);
+
+            Check(Defense.IsGoalSide(car, ball, blueGoal),
+                "fixture no longer reproduces diagonal goal-side false positive");
+            Check(!Defense.IsTacticallyGoalSide(car, ball, blueGoal),
+                "deep defense still trusted diagonal progress over field depth");
+        });
+
+        test("scenario-v11: pressured goal-mouth possession forces a clear", () =>
+        {
+            Car car = CarAt(1389.2f, -4957.55f);
+            Ball ball = new(
+                new Vec3(1344.31f, -4862.73f, 170.88f),
+                new Vec3(-639.54f, 53.34f, -143.78f));
+            var frame = new TacticalFrame
+            {
+                TeamRank = 0,
+                TeamCount = 1,
+                MyEta = 1.0581f,
+                OpponentEta = 2.0078f,
+                PressureTime = 1.1163f,
+                LastBack = true
+            };
+
+            Check(Defense.ShouldForceBoxClear(frame, car, ball, blueGoal),
+                "goal-line pocket still preferred pressured dribble possession");
+        });
+
         test("log-v9: pressured own-box boom outranks soft possession", () =>
         {
             Car car = CarAt(-715.6f, -4720.2f);
@@ -802,14 +833,14 @@ internal static class DefenseRegression
                 "179 uu goal-bound counter threat waited for the 2.5 s emergency horizon");
         });
 
-        test("scenario-v10: low point-blank emergency commits instead of chasing a moving target", () =>
+        test("scenario-v11: low point-blank emergency stays grounded for lateral steering", () =>
         {
-            Car car = CarAt(1618.57f, -4923.37f);
-            car.Velocity = new Vec3(-219f, 22f, 0f);
+            Car car = CarAt(140.5f, -3242.7f);
+            car.Velocity = new Vec3(-6.4f, 280.4f, 0f);
             var bot = World(
-                new Vec3(1380.12f, -4658.33f, 109.13f), car);
+                new Vec3(-64.8f, -2846.7f, 113.5f), car);
             Set(typeof(Ball), nameof(Ball.Velocity), null!,
-                new Vec3(-1492f, -982f, 82f));
+                new Vec3(400.3f, -2271.4f, 6.2f));
             Set(typeof(Game), nameof(Game.Time), null!, 20f);
             Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
 
@@ -817,14 +848,33 @@ internal static class DefenseRegression
                 car, blueGoal, new Vec3(0f, 5120f, 0f));
             bot.Controller = new ControllerStateT();
             clear.Run(bot);
-            Check(clear.Committed,
-                "368 uu low emergency still remained an uncommitted drive chase");
 
-            Set(typeof(Game), nameof(Game.Time), null!, 20.01f);
+            Check(clear.GroundBlock,
+                "z≈113 emergency did not select grounded block mode");
+            Check(!clear.Committed && !bot.Controller.Jump,
+                "low emergency unnecessarily jumped and surrendered steering");
+        });
+
+        test("scenario-v11: raised point-blank emergency jumps on the first action tick", () =>
+        {
+            Car car = CarAt(1638.9f, -4293.6f);
+            car.Velocity = new Vec3(21f, 153.5f, 0f);
+            var bot = World(
+                new Vec3(1761.5f, -3951.9f, 161.8f), car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+                new Vec3(-1448f, -832.5f, 282.2f));
+            Set(typeof(Game), nameof(Game.Time), null!, 30f);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
+
+            var clear = new EmergencyClear(
+                car, blueGoal, new Vec3(0f, 5120f, 0f));
             bot.Controller = new ControllerStateT();
             clear.Run(bot);
-            Check(bot.Controller.Jump,
-                "committed low emergency did not begin its contact jump");
+
+            Check(clear.Committed && bot.Controller.Jump,
+                "raised close emergency spent an extra planning frame before jumping");
+            Check(!clear.GroundBlock,
+                "raised emergency was incorrectly treated as a ground block");
         });
 
         test("scenario-v10: counter threat stages behind a future ball instead of shallow parking", () =>
@@ -1062,7 +1112,7 @@ internal static class DefenseRegression
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
                 var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 6, "telemetry schema missing");
+                Check(root.GetProperty("schema").GetInt32() == 7, "telemetry schema missing");
                 Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
                 Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
                     "telemetry did not capture actual sanitized controller output");
