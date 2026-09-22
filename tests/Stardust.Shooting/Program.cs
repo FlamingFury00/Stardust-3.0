@@ -1,3 +1,4 @@
+using Bot;
 using System.Reflection;
 using RedUtils;
 using RedUtils.Math;
@@ -78,6 +79,46 @@ Test("target: attacking goal aperture keeps crossbar clearance without lifting f
         $"upper target {upper:F1} leaves less than 60 uu crossbar safety margin");
     Check(lower <= Ball.Radius + 1,
         $"lower target {lower:F1} would unnecessarily remove rolling shots");
+});
+
+Test("shot quality: power aim lifts floor-level target into useful net height", () =>
+{
+    var goal = new Goal(1);
+    var target = new Target(goal);
+    var slice = new BallSlice(
+        Game.Time + 1f, new Vec3(0, 1800, 100), new Vec3(0, 300, 0));
+    Vec3 easiest = new Vec3(0, target.TargetSurface.Location.y, 93f);
+
+    Vec3 power = Tactics.PowerShotTarget(target, slice, easiest, goal);
+
+    Check(Finite(power), $"power aim became non-finite: {power}");
+    Check(power.z >= 200f,
+        $"power aim stayed shallow at z={power.z:F1}");
+    Check(power.z <= Goal.Height - Ball.Radius - 40f,
+        $"power aim violated crossbar clearance: {power}");
+});
+
+Test("shot quality: jump-shot estimate includes dodge power", () =>
+{
+    var car = new Car
+    {
+        Location = new Vec3(0, 0, 17),
+        Velocity = new Vec3(0, 900, 0),
+        Orientation = new Mat3x3(new Vec3(0, MathF.PI / 2f, 0)),
+        IsGrounded = true,
+        Boost = 0
+    };
+    var slice = new BallSlice(
+        Game.Time + 0.85f, new Vec3(0, 1000, 115), Vec3.Zero);
+    Vec3 target = new Vec3(0, 5212, 280);
+
+    var ground = new GroundShot(car, slice, target);
+    var jump = new JumpShot(car, slice, target);
+    float groundSpeed = Tactics.EstimateShotSpeed(car, slice, ground);
+    float jumpSpeed = Tactics.EstimateShotSpeed(car, slice, jump);
+
+    Check(jumpSpeed > groundSpeed + 100f,
+        $"dodge contact was not valued above ground touch: ground={groundSpeed:F0}, jump={jumpSpeed:F0}");
 });
 
 Console.WriteLine($"SHOOTING RESULT: {passed} passed, {failed} failed.");
