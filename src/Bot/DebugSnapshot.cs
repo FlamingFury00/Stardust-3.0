@@ -408,7 +408,9 @@ namespace Bot
                         ["crossing"] = V(save.Crossing),
                         ["crossing_time"] = Safe(save.CrossingTime),
                         ["jumping"] = save.Jumping,
-                        ["double_jump"] = save.UsesDoubleJump
+                        ["double_jump"] = save.UsesDoubleJump,
+                        ["fast_travel"] = save.FastTravel,
+                        ["airborne_flight"] = save.AirborneFlight
                     };
                 case EmergencyClear clear:
                     return new Dictionary<string, object>
