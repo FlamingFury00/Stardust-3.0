@@ -528,6 +528,36 @@ namespace Bot
         }
 
         /// <summary>
+        /// Deep own-box possession is not automatically valuable. If the car is almost on the goal
+        /// line, the ball is close, and an opponent can contest soon, prioritize a fieldward clear
+        /// over another dribble/catch cycle even when roof-control heuristics are positive.
+        /// </summary>
+        public static bool ShouldForceBoxClear(
+            TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
+        {
+            if (frame == null || car == null || ball == null || car.IsDemolished ||
+                !ControlMath.Finite(car.Location) || !ControlMath.Finite(ball.location) ||
+                !ControlMath.Finite(ownGoal))
+                return false;
+
+            float ballDepth = OwnDepth(ball.location, ownGoal);
+            float distance = car.Location.Dist(ball.location);
+            if (ballDepth < 4350f || distance > 430f)
+                return false;
+
+            float contact = MathF.Min(
+                float.IsFinite(frame.PressureTime) ? frame.PressureTime : 6f,
+                float.IsFinite(frame.OpponentEta) ? frame.OpponentEta : 6f);
+
+            // The last 450 uu of field depth is effectively the goal-mouth pocket. There, even
+            // moderate pressure is enough to prefer a decisive clear unless the threat is remote.
+            if (ballDepth > 4700f)
+                return contact < 1.40f;
+
+            return contact < 0.95f;
+        }
+
+        /// <summary>
         /// Offensive contact horizon. Opponent ETA is a loose-ball estimate, so it is used as a
         /// pressure reference rather than a hard possession-killing deadline. Controlled possession
         /// receives a larger continuation window; emergency saves bypass this function entirely.
