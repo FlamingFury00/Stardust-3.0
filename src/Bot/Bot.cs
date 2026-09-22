@@ -222,7 +222,9 @@ namespace Bot
             // Do not let a 2.5-4.5 s untouched-ball projection override an already committed,
             // safe first-man challenge. This exact suppression produced "counter shadow/recover"
             // frames in the uploaded concessions while can_challenge was true.
-            bool counterMustDefend = counterDanger && !ChallengeCommitted;
+            bool counterMustDefend = counterDanger &&
+                Defense.ShouldYieldToCounterThreat(
+                    counterThreat, ChallengeCommitted);
 
             if (emergency || counterMustDefend)
             {
