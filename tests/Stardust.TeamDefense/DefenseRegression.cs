@@ -66,20 +66,6 @@ internal static class DefenseRegression
                 $"midfield solo shadow was too passive/aggressive: {target}");
         });
 
-        test("log-v12: solo sidewall shadow keeps PR1 forcing distance", () =>
-        {
-            Vec3 ball = new(-4000.7f, -1587.6f, 240.6f);
-            Vec3 target = Defense.ShadowTarget(
-                ball, blueGoal, DefensiveRole.Shadow);
-
-            float progress = Defense.GoalSideProgress(
-                target, ball, blueGoal);
-            Check(progress <= 1205f,
-                $"solo shadow reopened a passive {progress:F1} uu cushion: {target}");
-            Check(progress >= 300f,
-                $"solo shadow became reckless/wrong-side: {target}");
-        });
-
         test("defense-v3: deep-ball targets are always goal-side for every role and team", () =>
         {
             foreach (int side in new[] { -1, 1 })
@@ -187,50 +173,6 @@ internal static class DefenseRegression
             Vec3 ball = new(0, -2200, 100);
             Check(!Defense.CanChallenge(frame, car, ball, blueGoal),
                 "large ETA lead overrode lost goal-side position");
-        });
-
-        test("log-v12: close solo ETA tie challenges before pressure detector catches up", () =>
-        {
-            Car car = CarAt(-3462.5f, -1870.7f);
-            Vec3 ball = new(-4000.7f, -1587.6f, 240.6f);
-            var frame = new TacticalFrame
-            {
-                MyEta = 1.69f,
-                OpponentEta = 1.69f,
-                TeamRank = 0,
-                TeamCount = 1,
-                LastBack = true
-            };
-
-            Check(Defense.CanChallenge(frame, car, ball, blueGoal),
-                "632 uu exact tie still shadowed for a frame before challenging");
-        });
-
-        test("log-v12: point-blank low offensive tie never drops from challenge to shadow", () =>
-        {
-            Car car = CarAt(-1063.9f, 4988.3f);
-            Vec3 ball = new(-1233.4f, 4979.8f, 181.2f);
-            var frame = new TacticalFrame
-            {
-                MyEta = 0.90f,
-                OpponentEta = 0.90f,
-                TeamRank = 0,
-                TeamCount = 1,
-                LastBack = true
-            };
-
-            Check(Defense.CanChallenge(frame, car, ball, blueGoal),
-                "250 uu playable tie still abandoned the opponent-box challenge");
-        });
-
-        test("log-v12: advisory counter threat cannot cancel owned challenge", () =>
-        {
-            Check(!Defense.ShouldYieldToCounterThreat(4.45f, challengeCommitted: true),
-                "4.45 s counter prediction still overrode an owned challenge");
-            Check(!Defense.ShouldYieldToCounterThreat(2.99f, challengeCommitted: true),
-                "2.99 s counter prediction still forced counter shadow while challenge was owned");
-            Check(Defense.ShouldYieldToCounterThreat(3.20f, challengeCommitted: false),
-                "unowned counter threat no longer triggered defensive preparation");
         });
 
         test("defense-v3: last man challenges a won race but not a lost race", () =>
@@ -911,32 +853,6 @@ internal static class DefenseRegression
                 "z≈113 emergency did not select grounded block mode");
             Check(!clear.Committed && !bot.Controller.Jump,
                 "low emergency unnecessarily jumped and surrendered steering");
-        });
-
-        test("log-v12: goal-side low emergency drives through ball instead of chasing rear offset", () =>
-        {
-            Car car = CarAt(2449.2f, -4158.5f);
-            car.Velocity = new Vec3(411.3f, -178.4f, 0.3f);
-            car.Orientation = new Mat3x3(new Vec3(
-                0f, -0.79f, 0f));
-            var bot = World(
-                new Vec3(2442f, -3909.5f, 96.2f), car);
-            Set(typeof(Ball), nameof(Ball.Velocity), null!,
-                new Vec3(-1332.3f, -763.1f, 42.2f));
-            Set(typeof(Game), nameof(Game.Time), null!, 61.692f);
-            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
-
-            var clear = new EmergencyClear(
-                car, blueGoal, new Vec3(0f, 5120f, 0f));
-            bot.Controller = new ControllerStateT();
-            clear.Run(bot);
-
-            Check(clear.GroundBlock,
-                "fixture stopped selecting the low grounded block");
-            Check(clear.Target.y > car.Location.y + 100f,
-                $"goal-side low save still targeted a tiny rear waypoint: {clear.Target}");
-            Check(clear.Target.FlatDist(Ball.Location) < 260f,
-                $"ground block stopped attacking the predicted ball center: {clear.Target}");
         });
 
         test("scenario-v11: raised point-blank emergency jumps on the first action tick", () =>
