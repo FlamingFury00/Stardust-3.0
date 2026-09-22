@@ -193,7 +193,8 @@ namespace Bot
                 return;
             }
             if (bot is Stardust stardust && stardust.Options.FlipResets &&
-                stardust.Situation.OpponentEta > 1.2f && FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
+                Defense.OpponentContactEta(stardust.Situation) > 1.2f &&
+                FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
             { bot.Action = new FlipReset(bot.Jump); return; }
             const float horizon = 0.12f;
             Ball prediction = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
