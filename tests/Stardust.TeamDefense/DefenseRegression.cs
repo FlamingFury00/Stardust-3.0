@@ -677,6 +677,39 @@ internal static class DefenseRegression
                 "upfield lateral car was allowed to take an emergency clear");
         });
 
+        test("log-v9: close inbound shot produces an away-from-goal scripted clear", () =>
+        {
+            Car car = CarAt(-755.6f, -4577.8f);
+            car.Velocity = new Vec3(-83.5f, 303.7f, 0.3f);
+            car.Boost = 12f;
+            var bot = World(new Vec3(-768.3f, -4467.3f, 212.8f), car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+                new Vec3(1493.8f, -711.3f, -277.8f));
+            Set(typeof(Ball), nameof(Ball.Prediction), null!,
+                new RedUtils.BallPrediction
+                {
+                    Slices = new[]
+                    {
+                        new BallSlice(108.725f,
+                            new Vec3(-371.2f, -4656.5f, 115.4f),
+                            new Vec3(1480f, -705f, -410f)),
+                        new BallSlice(108.925f,
+                            new Vec3(-105.8f, -4769.9f, 128.2f),
+                            new Vec3(1270f, -520f, 180f))
+                    }
+                });
+            Set(typeof(Game), nameof(Game.Time), null!, 108.458f);
+
+            Shot clear = Tactics.SelectShot(
+                bot, true, 2.48f, _ => false, 1.15f);
+
+            Check(clear != null,
+                "close 1.15 s goal threat still fell through to passive goal-line coverage");
+            Check(Defense.ClearDirectionIsSafe(
+                    clear.ShotDirection, blueGoal, 0.08f),
+                $"emergency shot direction was not a clear: {clear.ShotDirection}");
+        });
+
         test("log-v9: raw emergency interceptor refuses an own-goal chase", () =>
         {
             Car car = CarAt(-894.8f, -3559.7f);
