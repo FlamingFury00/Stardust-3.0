@@ -18,6 +18,7 @@ namespace Bot
         public Vec3 ClearDirection { get; private set; }
         public bool Committed => committed;
         public bool GroundBlock { get; private set; }
+        public bool DirectionalDodgeAllowed { get; private set; }
 
         private readonly Drive drive;
         // A close scoring ball can traverse 250+ uu during a conventional 0.12 s jump hold.
@@ -149,6 +150,7 @@ namespace Bot
             // completely past the play without a touch. Single-jump blocks preserve steering
             // and vertical coverage; reserve the committed dodge for genuinely high contacts.
             bool needsDirectionalDodge = predicted.location.z > 235f;
+            DirectionalDodgeAllowed = needsDirectionalDodge;
             JumpCommand command = jumps.Step(
                 Game.Time, needsDirectionalDodge && bot.Jump.CanDodge);
 
