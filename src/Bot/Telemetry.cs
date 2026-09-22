@@ -480,7 +480,8 @@ namespace Bot
                         ["clear_dir"] = Vec(clear.ClearDirection),
                         ["committed"] = clear.Committed,
                         ["ground_block"] = clear.GroundBlock,
-                        ["directional_dodge_allowed"] = clear.DirectionalDodgeAllowed
+                        ["directional_dodge_allowed"] = clear.DirectionalDodgeAllowed,
+                        ["neutral_second_jump"] = clear.NeutralSecondJump
                     };
                 default:
                     return null;
