@@ -25,13 +25,15 @@ namespace Bot
         private readonly Drive drive;
 
         public DefensiveDrive(Car car, Vec3 target, float cruiseSpeed = 1800f,
-            float terminalSpeed = 0f, bool holdPosition = false, bool allowDodges = false)
+            float terminalSpeed = 0f, bool holdPosition = false,
+            bool allowDodges = false, bool allowBoost = false)
         {
             Target = target;
             CruiseSpeed = cruiseSpeed;
             TerminalSpeed = terminalSpeed;
             HoldPosition = holdPosition;
             AllowDodges = allowDodges;
+            AllowBoost = allowBoost;
             drive = new Drive(car, target, MathF.Max(1f, cruiseSpeed), allowDodges, wasteBoost: false)
             {
                 AllowHandbrake = false,
