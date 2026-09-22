@@ -74,7 +74,11 @@ namespace Bot
             if (!float.IsFinite(ballOwnDepth))
                 return false;
 
-            return ballOwnDepth > 1800f
+            // Once the ball is meaningfully inside our half, field depth must be authoritative.
+            // The previous 1800 uu switch produced a real discontinuity: a car more than 1000 uu
+            // upfield of the ball was considered goal-side until the ball crossed the threshold,
+            // then the supervisor abruptly abandoned its challenge one planning tick later.
+            return ballOwnDepth > 450f
                 ? IsDepthGoalSide(point, ball, goal, buffer)
                 : IsGoalSide(point, ball, goal, buffer);
         }
@@ -567,26 +571,36 @@ namespace Bot
             if (frame == null || !float.IsFinite(frame.OpponentEta))
                 return 0f;
 
+            float contactClock = frame.OpponentEta;
+
+            // OpponentEta is a loose-ball race estimate; PressureTime is a short-horizon estimate
+            // of the opponent's next actual touch. The uploaded concessions repeatedly planned
+            // 0.7-1.3 s shots while PressureTime was only 0.1-0.2 s. For a loose ball, the imminent
+            // touch is the real deadline. Controlled possession keeps its larger continuation window.
+            if (!controlledPossession &&
+                float.IsFinite(frame.PressureTime))
+                contactClock = MathF.Min(contactClock, frame.PressureTime);
+
             float continuation;
             if (controlledPossession)
                 continuation = 0.55f;
             else if (frame.HasCover)
-                continuation = 0.38f;
+                continuation = 0.30f;
             else if (frame.UnderPressure)
-                continuation = 0.22f;
+                continuation = 0.14f;
             else
                 continuation = 0.18f;
 
             if (!controlledPossession && frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
                 continuation -= 0.08f;
 
-            return System.Math.Clamp(frame.OpponentEta + continuation, 0f, 3f);
+            return System.Math.Clamp(contactClock + continuation, 0f, 3f);
         }
 
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
         {
             if (frame == null || car == null || pressure ||
-                !IsGoalSide(car.Location, ball, goal, 20f))
+                !IsTacticallyGoalSide(car.Location, ball, goal, 20f))
                 return false;
 
             float side = Side(goal);
@@ -596,8 +610,13 @@ namespace Bot
             // intentional boost economy at all. Allow only goal-side, low-risk refills while the
             // opponent is not about to touch and the ball is outside the dangerous own-box depth.
             if (frame.TeamCount <= 1)
+            {
+                bool genuinelyFree = frame.FreeTime > 0.30f;
+                bool verySafeUpfield = defensiveDepth < -1400f &&
+                    frame.OpponentEta > 2.40f;
                 return defensiveDepth < 2500f && frame.OpponentEta > 1.35f &&
-                    (frame.FreeTime > 0.30f || defensiveDepth < 300f);
+                    (genuinelyFree || verySafeUpfield);
+            }
 
             if (frame.TeamRank == 0)
                 return false;
