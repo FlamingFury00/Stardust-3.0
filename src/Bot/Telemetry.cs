@@ -250,7 +250,7 @@ namespace Bot
 
             var output = new Dictionary<string, object>
             {
-                ["schema"] = 5,
+                ["schema"] = 6,
                 ["build"] = typeof(Stardust).Assembly.ManifestModule.ModuleVersionId.ToString("N"),
                 ["seq"] = sequence++,
                 ["kind"] = kind,
@@ -370,6 +370,9 @@ namespace Bot
                 case GoalLineSave save:
                     target = save.GuardTarget;
                     return ControlMath.Finite(target);
+                case EmergencyClear clear:
+                    target = clear.Target;
+                    return ControlMath.Finite(target);
                 default:
                     target = Vec3.Zero;
                     return false;
@@ -423,6 +426,13 @@ namespace Bot
                         ["guard_p"] = Vec(save.GuardTarget),
                         ["jumping"] = save.Jumping,
                         ["double_jump"] = save.UsesDoubleJump
+                    };
+                case EmergencyClear clear:
+                    return new Dictionary<string, object>
+                    {
+                        ["target_p"] = Vec(clear.Target),
+                        ["clear_dir"] = Vec(clear.ClearDirection),
+                        ["committed"] = clear.Committed
                     };
                 default:
                     return null;
