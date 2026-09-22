@@ -592,6 +592,16 @@ namespace Bot
         /// pressure reference rather than a hard possession-killing deadline. Controlled possession
         /// receives a larger continuation window; emergency saves bypass this function entirely.
         /// </summary>
+        /// <summary>
+        /// A 2.5-4.5 second untouched-ball counter projection is advisory while Stardust already
+        /// owns a safe challenge. PR #1 only hard-switched on the short emergency horizon; yielding
+        /// an owned challenge to a distant counter prediction creates the passive regressions seen
+        /// in the uploaded 6-6 match.
+        /// </summary>
+        public static bool ShouldYieldToCounterThreat(
+            float counterThreat, bool challengeCommitted) =>
+            float.IsFinite(counterThreat) && !challengeCommitted;
+
         public static float AttackDeadline(TacticalFrame frame, bool controlledPossession = false)
         {
             if (frame == null || !float.IsFinite(frame.OpponentEta))
