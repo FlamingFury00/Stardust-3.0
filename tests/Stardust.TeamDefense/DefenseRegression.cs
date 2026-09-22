@@ -913,6 +913,32 @@ internal static class DefenseRegression
                 "low emergency unnecessarily jumped and surrendered steering");
         });
 
+        test("log-v12: goal-side low emergency drives through ball instead of chasing rear offset", () =>
+        {
+            Car car = CarAt(2449.2f, -4158.5f);
+            car.Velocity = new Vec3(411.3f, -178.4f, 0.3f);
+            car.Orientation = new Mat3x3(new Vec3(
+                0f, -0.79f, 0f));
+            var bot = World(
+                new Vec3(2442f, -3909.5f, 96.2f), car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+                new Vec3(-1332.3f, -763.1f, 42.2f));
+            Set(typeof(Game), nameof(Game.Time), null!, 61.692f);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
+
+            var clear = new EmergencyClear(
+                car, blueGoal, new Vec3(0f, 5120f, 0f));
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+
+            Check(clear.GroundBlock,
+                "fixture stopped selecting the low grounded block");
+            Check(clear.Target.y > car.Location.y + 100f,
+                $"goal-side low save still targeted a tiny rear waypoint: {clear.Target}");
+            Check(clear.Target.FlatDist(Ball.Location) < 260f,
+                $"ground block stopped attacking the predicted ball center: {clear.Target}");
+        });
+
         test("scenario-v11: raised point-blank emergency jumps on the first action tick", () =>
         {
             Car car = CarAt(1638.9f, -4293.6f);
