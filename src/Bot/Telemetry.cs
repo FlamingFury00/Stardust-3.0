@@ -284,6 +284,8 @@ namespace Bot
                     ["boost"] = Num(me.Boost),
                     ["grounded"] = me.IsGrounded,
                     ["goal_side_progress"] = Num(goalProgress),
+                    ["goal_depth_progress"] = Num(
+                        Defense.GoalDepthProgress(me.Location, ball.location, goal)),
                     ["ball_dist"] = Num(me.Location.Dist(ball.location))
                 },
                 ["ball"] = new Dictionary<string, object>
