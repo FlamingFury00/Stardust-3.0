@@ -819,6 +819,48 @@ internal static class DefenseRegression
                 "steep defensive-box pop was still accepted as an offensive commitment");
         });
 
+        test("possession-v16: supervisor interrupts pre-dodge JumpShot for air carry", () =>
+        {
+            Car car = CarAt(0f, 1500f);
+            car.Location = new Vec3(0f, 1500f, 190f);
+            car.Velocity = new Vec3(450f, 0f, 350f);
+            car.Orientation = new Mat3x3(Vec3.Zero);
+            car.IsGrounded = false;
+            car.Boost = 80f;
+
+            Vec3 ballLocation = new(170f, 1500f, 500f);
+            Vec3 ballVelocity = new(300f, 0f, 120f);
+            var bot = World(ballLocation, car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, ballVelocity);
+            Set(typeof(Game), nameof(Game.Time), null!, 70f);
+            Set(typeof(Stardust), nameof(Stardust.Situation), bot, new TacticalFrame
+            {
+                MyEta = 0.6f,
+                OpponentEta = 1.6f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true
+            });
+
+            var slice = new BallSlice(
+                70.45f, ballLocation + ballVelocity * 0.45f, ballVelocity);
+            var shot = new JumpShot(car, slice, new Vec3(0f, 5212f, 260f));
+            typeof(JumpShot).GetProperty(nameof(JumpShot.Interruptible))!
+                .SetValue(shot, false);
+            bot.Action = shot;
+
+            Check(PossessionControl.CanHandoffShotToAirCarry(
+                    car, Ball.MainBall, 1.6f),
+                "fixture stopped reproducing air-carry handoff geometry");
+
+            bot.Run();
+
+            Check(bot.Action is AerialCarry,
+                $"non-interruptible JumpShot still blocked carry handoff: {bot.Action?.GetType().Name}");
+            Check(bot.Decision.Contains("aerial carry handoff", StringComparison.Ordinal),
+                $"handoff did not expose its decision: {bot.Decision}");
+        });
+
         test("possession-v16: broad immediate shot does not break midfield control", () =>
         {
             Car car = CarAt(0f, 700f);
