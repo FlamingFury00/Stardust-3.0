@@ -200,6 +200,28 @@ Test("log-v14: urgent sub-threshold goal-line save keeps travel speed", () =>
         "early 960 uu positioning incorrectly stayed in emergency travel mode");
 });
 
+Test("log-v14: emergency planning deadline stops at imminent opponent touch", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 1.0581f,
+        OpponentEta = 1.6913f,
+        PressureTime = 0.44f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+
+    float deadline = Defense.DefensiveDeadline(1.80f, frame);
+    Check(deadline >= 0.40f && deadline <= 0.44f,
+        $"1.8 s untouched threat ignored 0.44 s opponent contact: {deadline:F3}");
+
+    frame.PressureTime = float.PositiveInfinity;
+    deadline = Defense.DefensiveDeadline(1.20f, frame);
+    Check(deadline > 1.15f && deadline < 1.20f,
+        $"clean untouched threat lost its own crossing deadline: {deadline:F3}");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
