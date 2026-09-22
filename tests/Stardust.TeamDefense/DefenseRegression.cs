@@ -790,6 +790,44 @@ internal static class DefenseRegression
                 "marginal deep-box possession remained sticky under pressure");
         });
 
+        test("debug-v2: packaged bot enables debugger without shell flag propagation", () =>
+        {
+            string? oldAgent = Environment.GetEnvironmentVariable("RLBOT_AGENT_ID");
+            string? oldDebug = Environment.GetEnvironmentVariable("STARDUST_DEBUG");
+            string? oldOpen = Environment.GetEnvironmentVariable("STARDUST_DEBUG_OPEN");
+            string? oldScenarios = Environment.GetEnvironmentVariable("STARDUST_SCENARIOS");
+            string? oldDir = Environment.GetEnvironmentVariable("STARDUST_SCENARIO_DIR");
+            string directory = Path.Combine(
+                Path.GetTempPath(), $"stardust-debug-default-{Guid.NewGuid():N}");
+
+            try
+            {
+                Environment.SetEnvironmentVariable("RLBOT_AGENT_ID", "debug-default-regression");
+                Environment.SetEnvironmentVariable("STARDUST_DEBUG", null);
+                Environment.SetEnvironmentVariable("STARDUST_DEBUG_OPEN", "0");
+                Environment.SetEnvironmentVariable("STARDUST_SCENARIOS", null);
+                Environment.SetEnvironmentVariable("STARDUST_SCENARIO_DIR", directory);
+
+                var bot = new Stardust();
+                FieldInfo field = typeof(Stardust).GetField(
+                    "debugDashboard", BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new Exception("debug dashboard field missing");
+                var dashboard = field.GetValue(bot) as StardustDebugDashboard;
+
+                Check(dashboard?.Enabled == true,
+                    "normal packaged bot still depended on STARDUST_DEBUG=1");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("RLBOT_AGENT_ID", oldAgent);
+                Environment.SetEnvironmentVariable("STARDUST_DEBUG", oldDebug);
+                Environment.SetEnvironmentVariable("STARDUST_DEBUG_OPEN", oldOpen);
+                Environment.SetEnvironmentVariable("STARDUST_SCENARIOS", oldScenarios);
+                Environment.SetEnvironmentVariable("STARDUST_SCENARIO_DIR", oldDir);
+                try { Directory.Delete(directory, recursive: true); } catch { }
+            }
+        });
+
         test("debug-v1: live snapshot exposes objective, target, checks, and world state", () =>
         {
             Car car = CarAt(0, -2500);
