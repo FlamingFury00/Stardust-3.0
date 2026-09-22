@@ -58,12 +58,13 @@ namespace Bot
         public static bool NeedsFastTravel(float distance, float timeRemaining)
         {
             if (!float.IsFinite(distance) || !float.IsFinite(timeRemaining) ||
-                distance <= 420f || timeRemaining <= 0f)
+                distance <= Defense.ArrivalRadius + 45f || timeRemaining <= 0f)
                 return false;
 
-            // Never fall back into parking mode merely because the crossing is extremely close.
-            // At that point the required speed saturates, but continuing maximum useful lateral
-            // travel is still strictly better than braking short of an uncovered part of the mouth.
+            // Distance alone is not an arrival criterion. The uploaded 1-0 -> 1-1 concession
+            // entered parking mode about 400 uu short of the guard point with ~0.33 s left,
+            // even though that still required well over 1000 uu/s. Keep travelling whenever
+            // the crossing clock demands meaningful speed, right down to the true arrival radius.
             float required = RequiredTravelSpeed(distance, timeRemaining);
             return distance > 1050f || required > 700f;
         }
@@ -143,8 +144,15 @@ namespace Bot
                     jumpTime = doubleJump ? 0.55f : 0.32f;
 
                 float lateralError = MathF.Abs(car.Location.x - GuardTarget.x);
-                bool positioned = lateralError <= 650f ||
-                    car.Location.FlatDist(GuardTarget) <= 760f;
+                float depthError = MathF.Abs(car.Location.y - GuardTarget.y);
+
+                // Lateral alignment alone is not save positioning. In the uploaded 2-1 -> 2-2
+                // concession the car was almost 3000 uu upfield, happened to share the crossing X,
+                // and jumped instead of continuing toward the goal line. Require actual goal-plane
+                // proximity before committing the non-steerable vertical phase.
+                bool nearGoalPlane = depthError <= 430f;
+                bool positioned = nearGoalPlane &&
+                    (lateralError <= 650f || car.Location.FlatDist(GuardTarget) <= 760f);
 
                 if (positioned && timeRemaining <= jumpTime + 0.12f)
                 {
