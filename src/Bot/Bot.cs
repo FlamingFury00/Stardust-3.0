@@ -478,9 +478,12 @@ namespace Bot
                 bool currentShotMustFinish =
                     Tactics.PreferPossessionFinish(this, shot, Situation) ||
                     Tactics.PreferDefensiveClear(this, shot, Situation);
+                bool groundPossessionTakeover =
+                    groundDribbleReadyNow &&
+                    (controlledPossession || preferGroundControlNow);
                 bool yieldToPossession =
                     !currentShotMustFinish &&
-                    (preferGroundControlNow || airCarryReadyNow);
+                    (groundPossessionTakeover || airCarryReadyNow);
 
                 if (!yieldToPossession &&
                     canOwnAttack && shot.IsPredictionValid() &&
