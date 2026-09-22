@@ -123,9 +123,16 @@ namespace Bot
         public static bool CanHandoffShotToAirCarry(
             Car car, Ball ball, float opponentWindow)
         {
-            return car != null && ball != null && !car.IsGrounded &&
-                HasAirControl(car, ball) &&
-                AerialCarry.CanStart(car, ball, opponentWindow);
+            if (car == null || ball == null || car.IsGrounded ||
+                car.Boost <= 4f || !float.IsFinite(opponentWindow) ||
+                opponentWindow <= 0.35f)
+                return false;
+
+            // Handoff is intentionally wider than a cold AerialCarry start. A JumpShot has already
+            // spent the setup cost and may have created genuine air control only 50-150 uu off the
+            // floor; requiring the cold-start height/boost gates made every logged handoff remain
+            // false even when HasAirControl was true.
+            return HasAirControl(car, ball);
         }
 
         public static bool CanAcquireAir(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
