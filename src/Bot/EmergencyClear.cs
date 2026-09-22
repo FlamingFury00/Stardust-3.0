@@ -17,9 +17,12 @@ namespace Bot
         public Vec3 Target { get; private set; }
         public Vec3 ClearDirection { get; private set; }
         public bool Committed => committed;
+        public bool GroundBlock { get; private set; }
 
         private readonly Drive drive;
-        private readonly JumpSequence jumps = new(0.11f);
+        // A close scoring ball can traverse 250+ uu during a conventional 0.12 s jump hold.
+        // Use the shortest legal hold so the release/dodge edge is available near first contact.
+        private readonly JumpSequence jumps = new(0.025f);
         private readonly float started = Game.Time;
         private bool committed;
         private float committedAt = float.NaN;
@@ -119,22 +122,23 @@ namespace Bot
                 drive.WasteBoost = true;
                 drive.Run(bot);
 
-                // Do not let the "low ball" path become a moving target the car chases until
-                // it has already passed. Point-blank low threats also need a committed dodge.
-                bool raised = ball.location.z > 125f;
-                float threat = bot is Stardust stardust
-                    ? stardust.EmergencyThreatTime
-                    : float.PositiveInfinity;
-                bool hardUrgency = float.IsFinite(threat) && threat < 0.58f;
-                bool imminent = distance < 390f ||
-                    (distance < 500f && elapsed > 0.08f && (raised || hardUrgency));
-                if (imminent)
-                {
-                    committed = true;
-                    committedAt = Game.Time;
-                }
-                return;
+                // Low shots should be blocked on the wheels. The previous implementation jumped
+                // at z≈100–130, removing lateral steering exactly as the ball crossed the car.
+                // Raised contacts still need an immediate jump/dodge, but start it on this same
+                // controller tick rather than spending another planning frame in drive mode.
+                bool raised = predicted.location.z > 155f;
+                GroundBlock = !raised;
+                bool imminent = distance < 470f ||
+                    (distance < 530f && elapsed > 0.05f);
+
+                if (!raised || !imminent)
+                    return;
+
+                committed = true;
+                committedAt = Game.Time;
             }
+
+            GroundBlock = false;
 
             ControlMath.Aim(
                 car, bot.Controller, ClearDirection, Vec3.Up);
