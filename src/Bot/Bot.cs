@@ -354,13 +354,9 @@ namespace Bot
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
-            bool attackingThird =
-                Ball.Location.FlatDist(TheirGoal.Location) < 3600f;
-            bool opportunisticAttack = Situation.TeamRank == 0 &&
-                attackingThird && Situation.FreeTime >= -0.12f &&
-                Me.Location.Dist(Ball.Location) < 1700f;
-            bool canOwnAttack =
-                canChallenge || controlledPossession || opportunisticAttack;
+            bool canOwnAttack = Tactics.CanSearchAttack(
+                Situation, Me, Ball.MainBall, TheirGoal.Location,
+                canChallenge, controlledPossession);
             Shot priorityAttack = canOwnAttack
                 ? Tactics.SelectShot(
                     this, false, Situation.OpponentEta, HasClaim, attackDeadline)
