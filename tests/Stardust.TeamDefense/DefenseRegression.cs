@@ -664,6 +664,89 @@ internal static class DefenseRegression
                 "blocked 1.2 s setup was incorrectly forced into a shot");
         });
 
+        test("log-v9: lateral offset cannot fake emergency goal-side depth", () =>
+        {
+            Car car = CarAt(-894.8f, -3559.7f);
+            Vec3 ball = new(1406.8f, -3886.4f, 110f);
+
+            Check(Defense.GoalSideProgress(car.Location, ball, blueGoal) > 0f,
+                "fixture no longer reproduces the diagonal false-positive");
+            Check(Defense.GoalDepthProgress(car.Location, ball, blueGoal) < -300f,
+                "strict depth model did not recognize the car as upfield");
+            Check(!Defense.IsDepthGoalSide(car.Location, ball, blueGoal, -100f),
+                "upfield lateral car was allowed to take an emergency clear");
+        });
+
+        test("log-v9: raw emergency interceptor refuses an own-goal chase", () =>
+        {
+            Car car = CarAt(-894.8f, -3559.7f);
+            car.Velocity = new Vec3(1200f, -1500f, 0f);
+            var prediction = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(190.90f,
+                        new Vec3(823.5f, -4836f, 104f),
+                        new Vec3(-715f, -1208f, 0f))
+                }
+            };
+
+            Check(!Defense.TryDefensiveIntercept(
+                    car, prediction, blueGoal, 190.158f, 0.98f, out _),
+                "raw Drive fallback still chased a future slice toward our own goal");
+        });
+
+        test("log-v9: pressured own-box boom outranks soft possession", () =>
+        {
+            Car car = CarAt(-715.6f, -4720.2f);
+            car.Velocity = new Vec3(-100f, -400f, 0f);
+            var bot = World(new Vec3(-1149.2f, -4892.6f, 286.2f), car);
+            Set(typeof(Game), nameof(Game.Time), null!, 106.975f);
+
+            var slice = new BallSlice(
+                107.258f,
+                new Vec3(-818.7f, -4791.1f, 125.7f),
+                new Vec3(1170f, 360f, -500f));
+            var shot = new GroundShot(
+                car, slice, new Vec3(-730.8f, 5212f, 125.7f));
+            var frame = new TacticalFrame
+            {
+                TeamRank = 0,
+                TeamCount = 1,
+                MyEta = 0.20f,
+                OpponentEta = 1.1f,
+                PressureTime = 0.9f,
+                LastBack = true
+            };
+
+            Check(Tactics.PreferDefensiveClear(bot, shot, frame),
+                "0.28 s own-box clear was subordinated to catch/dribble possession");
+        });
+
+        test("log-v9: marginal own-box dribble is released under closing pressure", () =>
+        {
+            Car car = CarAt(-796f, -4799f);
+            car.Velocity = new Vec3(0f, -300f, 0f);
+            Ball ball = new(
+                new Vec3(-850f, -4801f, 145f),
+                new Vec3(900f, 250f, 0f));
+            var frame = new TacticalFrame
+            {
+                TeamRank = 0,
+                TeamCount = 1,
+                MyEta = 0.25f,
+                OpponentEta = 0.9f,
+                PressureTime = 0.6f,
+                LastBack = true
+            };
+
+            Check(!PossessionControl.HasControlledPossession(car, ball),
+                "fixture accidentally became strong roof possession");
+            Check(!PossessionControl.ShouldRetainPossession(
+                    frame, car, ball, blueGoal),
+                "marginal deep-box possession remained sticky under pressure");
+        });
+
         test("debug-v1: live snapshot exposes objective, target, checks, and world state", () =>
         {
             Car car = CarAt(0, -2500);
