@@ -944,6 +944,8 @@ internal static class DefenseRegression
                 "raised close emergency spent an extra planning frame before jumping");
             Check(!clear.GroundBlock,
                 "raised emergency was incorrectly treated as a ground block");
+            Check(!clear.DirectionalDodgeAllowed,
+                "mid-height emergency armed an immediate directional dodge before reaching ball height");
         });
 
         test("scenario-v10: counter threat stages behind a future ball instead of shallow parking", () =>
