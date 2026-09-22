@@ -187,10 +187,12 @@ namespace Bot
                 float.IsFinite(pressureTime) ? pressureTime : 6f,
                 Situation != null && float.IsFinite(Situation.OpponentEta)
                     ? Situation.OpponentEta : 6f);
+            JumpShot handoffShot = Action as JumpShot;
             bool shotToCarryHandoff =
                 !emergency && !counterDanger &&
                 Options.AerialCarry &&
-                Action is JumpShot &&
+                handoffShot != null &&
+                !Tactics.PreferPossessionFinish(this, handoffShot, Situation) &&
                 PossessionControl.CanHandoffShotToAirCarry(
                     Me, Ball.MainBall, airOpponentWindow);
 
