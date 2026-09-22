@@ -506,40 +506,58 @@ namespace Bot
         public static float EstimateShotSpeed(Car car, BallSlice slice, Shot shot)
         {
             if (car == null || slice == null || shot == null ||
-                !float.IsFinite(slice.Time) || !ControlMath.Finite(shot.TargetLocation) ||
-                !ControlMath.Finite(shot.ShotDirection))
+                !float.IsFinite(slice.Time) || !ControlMath.Finite(slice.Location) ||
+                !ControlMath.Finite(slice.Velocity) || !ControlMath.Finite(shot.ShotTarget))
                 return 0f;
 
             float t = slice.Time - Game.Time;
             if (!float.IsFinite(t) || t <= 0.001f)
                 return 0f;
 
-            Vec3 plannedCarVelocity =
-                ((shot.TargetLocation - car.Location) / t).Cap(0f, Car.MaxSpeed);
+            Surface surface = Field.NearestSurface(slice.Location);
+            Vec3 displacement = slice.Location - car.Location;
+            Vec3 plannedCarVelocity;
 
-            // A JumpShot finishes with a directional dodge, which contributes a substantial
-            // contact-speed impulse that a plain GroundShot never gets. Include a conservative
-            // fraction of that impulse so the planner can prefer a real power shot.
-            if (shot is JumpShot jump)
+            // Match the initialization models used by the production shot actions. Using
+            // TargetLocation here is wrong: it is intentionally offset behind the ball and can
+            // make a powerful, valid contact look like a near-zero-speed collision.
+            if (shot is GroundShot)
             {
+                plannedCarVelocity =
+                    (displacement.Flatten(surface.Normal) / t).Cap(0f, Car.MaxSpeed);
+            }
+            else if (shot is JumpShot jump)
+            {
+                Vec3 approach = car.Location.FlatDirection(slice.Location, surface.Normal);
+                plannedCarVelocity =
+                    (displacement / t + approach * 500f).Cap(0f, Car.MaxSpeed);
+
+                // JumpShot finishes with a directional dodge. A conservative fraction of the dodge
+                // impulse keeps the ranking model from treating a power dodge like a plain drive-in.
                 Vec3 dodge = ControlMath.Unit(jump.DodgeDirection, shot.ShotDirection);
                 plannedCarVelocity =
-                    (plannedCarVelocity + dodge * 420f).Cap(0f, Car.MaxSpeed);
+                    (plannedCarVelocity + dodge * 380f).Cap(0f, Car.MaxSpeed);
+            }
+            else
+            {
+                plannedCarVelocity = (displacement / t).Cap(0f, Car.MaxSpeed);
             }
 
-            Vec3 relative = plannedCarVelocity - slice.Velocity;
-            float relativeSpeed = relative.Length();
+            float relativeSpeed = (plannedCarVelocity - slice.Velocity).Length();
             if (!float.IsFinite(relativeSpeed))
                 return 0f;
 
-            Vec3 direction = ControlMath.Unit(shot.ShotDirection, Vec3.X);
-            float alignment = relativeSpeed > 1f
-                ? System.Math.Clamp(relative.Dot(direction) / relativeSpeed, 0f, 1f)
-                : 0f;
-            float existing = MathF.Max(0f, slice.Velocity.Dot(direction));
-            float impulse = relativeSpeed * Utils.ShotPowerModifier(relativeSpeed) * alignment;
+            Vec3 scoringDirection = slice.Location.FlatDirection(shot.ShotTarget);
+            if (!ControlMath.Finite(scoringDirection) || scoringDirection.Length() < 0.001f)
+                scoringDirection = ControlMath.FlatUnit(shot.ShotDirection, car.Forward);
 
-            return System.Math.Clamp(existing + impulse, 0f, Ball.MaxSpeed);
+            // This mirrors the contact-strength term used inside the shot solvers. It intentionally
+            // estimates useful goalward launch speed, not total post-impact velocity or spin.
+            Vec3 carriedVelocity = (plannedCarVelocity * 6f + slice.Velocity) / 7f;
+            float launch = carriedVelocity.Dot(scoringDirection) +
+                relativeSpeed * Utils.ShotPowerModifier(relativeSpeed);
+
+            return System.Math.Clamp(launch, 0f, Ball.MaxSpeed);
         }
 
         /// <summary>
