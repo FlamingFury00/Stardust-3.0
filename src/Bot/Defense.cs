@@ -236,6 +236,33 @@ namespace Bot
                 : (ControlMath.Finite(car) && MathF.Abs(car.x - goal.x) > 70f ? MathF.Sign(car.x - goal.x) : 1f);
             float farPostX = goal.x - ballSign * safePost;
 
+            float carProgress = ControlMath.Finite(car)
+                ? GoalSideProgress(car, flatBall, flatGoal)
+                : 0f;
+            float carDistance = ControlMath.Finite(car)
+                ? car.FlatDist(flatBall)
+                : float.PositiveInfinity;
+
+            // If we are still ahead of and very close to the ball, going straight to the far post
+            // can cut directly through the ball. First side-step around the play, then normal
+            // shadowing/far-post recovery can resume on the next planning cycle.
+            if (carProgress < 0f && carDistance < 1050f)
+            {
+                Vec3 lateralAxis = new Vec3(-goalward.y, goalward.x, 0f);
+                float sideSign = MathF.Sign((car - flatBall).Flatten().Dot(lateralAxis));
+                if (sideSign == 0f)
+                    sideSign = MathF.Abs(car.x - flatBall.x) > 40f
+                        ? MathF.Sign(car.x - flatBall.x)
+                        : (flatBall.x >= goal.x ? 1f : -1f);
+
+                Vec3 bypass = flatBall + goalward * 430f + lateralAxis * sideSign * 760f;
+                float wall = Field.Width * 0.5f - 220f;
+                bypass.x = System.Math.Clamp(bypass.x, -wall, wall);
+                bypass.y = side * System.Math.Clamp(
+                    bypass.y * side, -goalDepth + 180f, goalDepth - 180f);
+                return new Vec3(bypass.x, bypass.y, 17f);
+            }
+
             float desiredProgress = System.Math.Clamp(goalDistance * 0.72f, 850f, 2200f);
             if (goalDistance < 1100f)
                 desiredProgress = MathF.Max(280f, goalDistance - 170f);
@@ -363,8 +390,16 @@ namespace Bot
                 if (!IsGoalSide(car.Location, slice.Location, goal, -100f))
                     continue;
 
-                float eta = Drive.GetEta(car, slice.Location);
-                if (!float.IsFinite(eta) || eta > time + 0.07f)
+                float routeEta = Drive.GetEta(car, slice.Location);
+                Vec3 toSlice = ControlMath.FlatUnit(slice.Location - car.Location, car.Forward);
+                float heading = car.Forward.FlatNorm().Dot(toSlice);
+                float forward = MathF.Max(0f, car.Velocity.Dot(toSlice));
+                float directEta = heading > 0.72f
+                    ? DrivePhysics.TravelTime(
+                        car.Location.FlatDist(slice.Location), forward, car.Boost)
+                    : float.PositiveInfinity;
+                float eta = MathF.Min(routeEta, directEta + 0.08f);
+                if (!float.IsFinite(eta) || eta > time + 0.14f)
                     continue;
 
                 target = Field.LimitToNearestSurface(slice.Location);
@@ -425,6 +460,39 @@ namespace Bot
             // out of our half and the opponent contact window is long.
             bool ballSafelyUpfield = defensiveDepth < -900f;
             return ballSafelyUpfield && frame.OpponentEta > 2.5f;
+        }
+
+        /// <summary>
+        /// Fast recovery is allowed only when the committed dodge corridor stays clear of the ball.
+        /// A recovery flip while still ahead of and close to the ball can become an own-goal shot,
+        /// because the flip is largely ballistic and cannot steer around a late collision.
+        /// </summary>
+        public static bool CanFastRecover(Car car, Vec3 ball, Vec3 target, Vec3 goal)
+        {
+            if (car == null || !ControlMath.Finite(car.Location) || !ControlMath.Finite(car.Velocity) ||
+                !ControlMath.Finite(ball) || !ControlMath.Finite(target) || !ControlMath.Finite(goal))
+                return false;
+
+            float routeLength = car.Location.FlatDist(target);
+            float ballDistance = car.Location.FlatDist(ball);
+            if (routeLength < 1500f || ballDistance < 780f)
+                return false;
+
+            float progress = GoalSideProgress(car.Location, ball, goal);
+            if (progress < 0f && ballDistance < 1250f)
+                return false;
+
+            Vec3 route = ControlMath.FlatUnit(target - car.Location, car.Forward);
+            Vec3 relative = (ball - car.Location).Flatten();
+            float along = relative.Dot(route);
+            Vec3 lateralVec = relative - route * along;
+            float lookAhead = MathF.Min(routeLength, 1750f);
+
+            // Keep a full car+ball-width corridor around the first part of the dodge path.
+            if (along > -120f && along < lookAhead + 180f && lateralVec.Length() < 520f)
+                return false;
+
+            return true;
         }
 
         /// <summary>
