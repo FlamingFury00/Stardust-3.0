@@ -22,6 +22,7 @@ namespace Bot
 
         private readonly DefensiveDrive drive;
         private readonly JumpSequence jumps = new(0.16f);
+        private readonly BoostGate airBoost = new();
         private bool jumping;
         private bool doubleJump;
         private float jumpStarted = float.NaN;
@@ -33,7 +34,8 @@ namespace Bot
             GuardTarget = crossing;
             drive = new DefensiveDrive(
                 car, crossing, Car.MaxSpeed, 0f,
-                holdPosition: true, allowDodges: false);
+                holdPosition: false, allowDodges: false,
+                allowBoost: true);
         }
 
         public void Run(RUBot bot)
@@ -54,20 +56,47 @@ namespace Bot
             }
 
             GuardTarget = Defense.EmergencyTarget(Crossing, bot.OurGoal.Location);
+            float guardDistance = car.Location.FlatDist(GuardTarget);
+
+            // If an emergency begins while already airborne, do not wait passively for a landing.
+            // Fly toward the predicted crossing itself; this is especially important for saves where
+            // the car is still carrying useful lateral velocity after a failed/contested aerial.
+            if (!car.IsGrounded && !jumping)
+            {
+                float horizon = System.Math.Clamp(timeRemaining, 0.10f, 1.20f);
+                Vec3 acceleration = PossessionControl.FlightAtHorizon(
+                    car, Crossing, Vec3.Zero, horizon);
+                Vec3 nose = ControlMath.Unit(acceleration, car.Forward);
+                ControlMath.Aim(car, bot.Controller, nose, Vec3.Up);
+                bot.Controller.Throttle = 1f;
+                bot.Controller.Handbrake = false;
+                bot.Controller.Jump = false;
+                bot.Controller.Boost = airBoost.Step(
+                    Game.Time,
+                    acceleration.Dot(car.Forward),
+                    car.Forward.Dot(nose),
+                    car.Boost,
+                    false);
+                return;
+            }
 
             if (!jumping)
             {
+                bool fastTravel = guardDistance > 1050f && timeRemaining > 0.72f;
                 drive.Target = GuardTarget;
                 drive.CruiseSpeed = Car.MaxSpeed;
-                drive.TerminalSpeed = 0f;
-                drive.HoldPosition = true;
-                drive.AllowDodges = false;
+                drive.TerminalSpeed = fastTravel ? 850f : 0f;
+                drive.HoldPosition = !fastTravel;
+                drive.AllowBoost = fastTravel;
+                drive.AllowDodges = fastTravel &&
+                    Defense.CanFastRecover(
+                        car, Ball.Location, GuardTarget, bot.OurGoal.Location);
                 drive.Run(bot);
 
                 // A low crossing is best covered by staying on the wheels. For an elevated crossing,
                 // start the jump only once lateral positioning is close enough and the vertical
                 // flight time matches the remaining shot time.
-                if (Crossing.z <= 155f || !car.IsGrounded)
+                if (Crossing.z <= 155f)
                     return;
 
                 float blockHeight = System.Math.Clamp(Crossing.z - 120f, 35f, 430f);
