@@ -1,0 +1,37 @@
+name: Defense replay validation
+on:
+  pull_request:
+    branches: [beta]
+  push:
+    branches: [beta]
+permissions:
+  contents: read
+concurrency:
+  group: defense-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  defense:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Archive the exact source under test
+        run: |
+          mkdir -p validation-artifacts
+          git rev-parse HEAD > validation-artifacts/commit.txt
+          git archive --format=tar.gz --output=validation-artifacts/source.tar.gz HEAD
+      - uses: actions/upload-artifact@v7
+        with:
+          name: defense-source-${{ github.run_id }}
+          path: validation-artifacts/
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Prepare schema generator
+        run: chmod +x src/generate-flatbuffers.sh src/flatbuffers-schema/binaries/flatc
+      - name: Build and validate team defense
+        run: dotnet run --project tests/Stardust.TeamDefense/Stardust.TeamDefense.csproj --configuration Release
