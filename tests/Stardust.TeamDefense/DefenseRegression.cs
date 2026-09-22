@@ -175,6 +175,56 @@ internal static class DefenseRegression
                 "large ETA lead overrode lost goal-side position");
         });
 
+        test("log-v13: own-half diagonal geometry cannot fake goal-side", () =>
+        {
+            Vec3 car = new(-239.9f, -608.4f, 17f);
+            Vec3 ball = new(1963.9f, -1685.9f, 91.5f);
+
+            Check(Defense.IsGoalSide(car, ball, blueGoal),
+                "fixture stopped reproducing the diagonal false positive");
+            Check(!Defense.IsTacticallyGoalSide(car, ball, blueGoal, 10f),
+                "car 1077 uu upfield of an own-half ball was still treated as goal-side");
+        });
+
+        test("log-v13: imminent opponent touch is the loose-ball attack deadline", () =>
+        {
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.90f,
+                OpponentEta = 0.90f,
+                PressureTime = 0.10f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true
+            };
+
+            float loose = Defense.AttackDeadline(frame, controlledPossession: false);
+            Check(loose >= 0.10f && loose <= 0.30f,
+                $"0.10 s pressure still allowed a late loose-ball shot: {loose}");
+
+            float controlled = Defense.AttackDeadline(frame, controlledPossession: true);
+            Check(controlled > 1.0f,
+                $"controlled possession lost its continuation window: {controlled}");
+        });
+
+        test("log-v13: solo refill is blocked while the opponent owns the race", () =>
+        {
+            Car car = CarAt(-2609.84f, 1082f);
+            Vec3 ball = new(-2485.82f, 2493.79f, 237.89f);
+            var frame = new TacticalFrame
+            {
+                MyEta = 2.9583f,
+                OpponentEta = 1.5333f,
+                FreeTime = -1.425f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true
+            };
+
+            Check(!Defense.CanRefill(frame, car, ball, blueGoal, pressure: false),
+                "lost 1v1 race still detoured to a pad instead of staying in the play");
+        });
+
         test("defense-v3: last man challenges a won race but not a lost race", () =>
         {
             Car car = CarAt(0, -3000);
@@ -748,6 +798,26 @@ internal static class DefenseRegression
                 "fixture no longer reproduces diagonal goal-side false positive");
             Check(!Defense.IsTacticallyGoalSide(car, ball, blueGoal),
                 "deep defense still trusted diagonal progress over field depth");
+        });
+
+        test("log-v13: near-vertical own-box JumpShot is not an attack", () =>
+        {
+            Car car = CarAt(731.79f, -4832.41f);
+            car.Velocity = new Vec3(841.33f, -673.97f, 0.27f);
+            var bot = World(new Vec3(1003.67f, -4722.9f, 102.18f), car);
+            Set(typeof(Game), nameof(Game.Time), null!, 87.3917f);
+
+            var slice = new BallSlice(
+                87.7164f,
+                new Vec3(1002.70f, -5022.04f, 99.97f),
+                new Vec3(-3.04f, -924f, 70f));
+            var shot = new JumpShot(
+                car, slice, new Vec3(730.742f, 5212f, 220f));
+
+            Check(Tactics.FlatShotAuthority(shot) < 0.52f,
+                $"fixture stopped reproducing the steep shot: {Tactics.FlatShotAuthority(shot)}");
+            Check(!Tactics.AttackContactIsSane(bot, slice, shot),
+                "steep defensive-box pop was still accepted as an offensive commitment");
         });
 
         test("scenario-v11: pressured goal-mouth possession forces a clear", () =>
