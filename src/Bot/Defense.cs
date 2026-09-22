@@ -23,9 +23,10 @@ namespace Bot
 
         // GroundEta intentionally models a drivable loose-ball race. When an opponent becomes
         // airborne it can temporarily jump far above the independently detected next-touch clock.
-        // Treat only a large disagreement as a stale race estimate so normal near-tie pressure
-        // keeps the challenge hysteresis that makes 1v1 defense decisive rather than timid.
-        public const float PressureEtaDisagreement = 0.85f;
+        // Blend continuously across a disagreement band: coherent near-ties keep the race estimate,
+        // while a clearly stale ground-only estimate yields to the next-touch clock.
+        public const float PressureEtaBlendStart = 0.55f;
+        public const float PressureEtaBlendFull = 0.95f;
 
         private static float Side(Vec3 goal) => goal.y < 0 ? -1 : 1;
 
@@ -111,9 +112,19 @@ namespace Bot
                 return race;
 
             float pressure = MathF.Max(0f, frame.PressureTime);
-            return !float.IsFinite(race) || pressure + PressureEtaDisagreement < race
-                ? pressure
-                : race;
+            if (!float.IsFinite(race))
+                return pressure;
+
+            float disagreement = race - pressure;
+            if (disagreement <= PressureEtaBlendStart)
+                return race;
+            if (disagreement >= PressureEtaBlendFull)
+                return pressure;
+
+            float blend = SmoothStep(
+                (disagreement - PressureEtaBlendStart) /
+                (PressureEtaBlendFull - PressureEtaBlendStart));
+            return Lerp(race, pressure, blend);
         }
 
         public static float EffectiveFreeTime(TacticalFrame frame)
