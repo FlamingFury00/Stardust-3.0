@@ -819,6 +819,49 @@ internal static class DefenseRegression
                 "steep defensive-box pop was still accepted as an offensive commitment");
         });
 
+        test("possession-v16: interruptible routine shot yields to controlled ground carry", () =>
+        {
+            Car car = CarAt(0f, 0f);
+            car.Velocity = new Vec3(0f, 600f, 0f);
+            car.Orientation = new Mat3x3(
+                new Vec3(0f, MathF.PI / 2f, 0f));
+
+            Vec3 ballLocation = car.Location + car.Forward * 20f + car.Up * 153f;
+            Vec3 ballVelocity = car.Velocity;
+            var bot = World(ballLocation, car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, ballVelocity);
+            Set(typeof(Game), nameof(Game.Time), null!, 80f);
+
+            var slice = new BallSlice(
+                80.45f, ballLocation + ballVelocity * 0.45f, ballVelocity);
+            Set(typeof(Ball), nameof(Ball.Prediction), null!,
+                new RedUtils.BallPrediction
+                {
+                    Slices = new[]
+                    {
+                        new BallSlice(80f, ballLocation, ballVelocity),
+                        slice
+                    }
+                });
+
+            var routine = new GroundShot(
+                car, slice, new Vec3(0f, 5212f, 240f));
+            bot.Action = routine;
+
+            Check(PossessionControl.HasControlledPossession(
+                    car, Ball.MainBall),
+                "fixture stopped reproducing controlled ground possession");
+            Check(routine.Interruptible,
+                "fixture routine shot unexpectedly became committed");
+
+            bot.Run();
+
+            Check(bot.Action is GroundDribble,
+                $"interruptible routine shot still monopolized possession state: {bot.Action?.GetType().Name}");
+            Check(bot.Decision.Contains("ground carry", StringComparison.Ordinal),
+                $"ground possession takeover was not exposed: {bot.Decision}");
+        });
+
         test("possession-v16: supervisor interrupts pre-dodge JumpShot for air carry", () =>
         {
             Car car = CarAt(0f, 1500f);
