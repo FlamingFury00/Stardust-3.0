@@ -16,6 +16,20 @@ namespace Bot
         public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
         public int TelemetryHz { get; init; } = ReadTelemetryHz();
 
+        public bool DebugUi { get; init; } =
+            Environment.GetEnvironmentVariable("STARDUST_DEBUG") == "1";
+        public bool DebugOpenBrowser { get; init; } =
+            Environment.GetEnvironmentVariable("STARDUST_DEBUG_OPEN") != "0";
+        public int DebugPort { get; init; } = ReadInt("STARDUST_DEBUG_PORT", 49152, 1024, 65500);
+        public bool ScenarioRecording { get; init; } =
+            Environment.GetEnvironmentVariable("STARDUST_SCENARIOS") == "1" ||
+            Environment.GetEnvironmentVariable("STARDUST_DEBUG") == "1";
+        public int ScenarioHz { get; init; } = ReadInt("STARDUST_SCENARIO_HZ", 20, 2, 60);
+        public float ScenarioPreSeconds { get; init; } =
+            ReadFloat("STARDUST_SCENARIO_PRE_SECONDS", 8f, 2f, 20f);
+        public string ScenarioDirectory { get; init; } =
+            Environment.GetEnvironmentVariable("STARDUST_SCENARIO_DIR");
+
         public bool TelemetryDisabled => TelemetrySetting == "0";
         public bool TelemetryExplicit => TelemetrySetting != null;
 
@@ -23,6 +37,25 @@ namespace Bot
         {
             string raw = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
             return int.TryParse(raw, out int hz) ? System.Math.Clamp(hz, 1, 30) : 10;
+        }
+
+        private static int ReadInt(string name, int fallback, int min, int max)
+        {
+            string raw = Environment.GetEnvironmentVariable(name);
+            return int.TryParse(raw, out int value)
+                ? System.Math.Clamp(value, min, max)
+                : fallback;
+        }
+
+        private static float ReadFloat(string name, float fallback, float min, float max)
+        {
+            string raw = Environment.GetEnvironmentVariable(name);
+            return float.TryParse(raw,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out float value) && float.IsFinite(value)
+                ? System.Math.Clamp(value, min, max)
+                : fallback;
         }
     }
 
@@ -39,6 +72,8 @@ namespace Bot
         private bool defending, countering, pressured;
         private Shot defensiveShot;
         private readonly StardustTelemetry telemetry;
+        private readonly StardustScenarioRecorder scenarioRecorder;
+        private readonly StardustDebugDashboard debugDashboard;
 
         public bool RawCanChallenge { get; private set; }
         public bool ChallengeCommitted { get; private set; }
@@ -54,6 +89,17 @@ namespace Bot
                 (productionEntry || Options.TelemetryExplicit);
             telemetry = new StardustTelemetry(
                 telemetryEnabled, Options.TelemetryHz, Options.TelemetryConsole, Options.TelemetryFile);
+
+            scenarioRecorder = new StardustScenarioRecorder(
+                Options.ScenarioRecording,
+                Options.ScenarioHz,
+                Options.ScenarioPreSeconds,
+                Options.ScenarioDirectory);
+            debugDashboard = new StardustDebugDashboard(
+                Options.DebugUi,
+                Options.DebugPort,
+                Options.DebugOpenBrowser,
+                scenarioRecorder);
         }
 
         public override void Run()
@@ -583,7 +629,15 @@ namespace Bot
             }
         }
 
-        protected override void OnOutputReady() => telemetry.Sample(this);
+        protected override void OnPacketReady() =>
+            scenarioRecorder?.OnPacket(this);
+
+        protected override void OnOutputReady()
+        {
+            telemetry.Sample(this);
+            if (Options.DebugUi)
+                debugDashboard.Publish(StardustDebugSnapshot.CaptureLive(this));
+        }
 
         // Retained for compatibility with the original Shadow action.
         public bool IsBack() => CanDefend(Me, OurGoal.Location) || Situation.FirstMan == Index;

@@ -664,6 +664,76 @@ internal static class DefenseRegression
                 "blocked 1.2 s setup was incorrectly forced into a shot");
         });
 
+        test("debug-v1: live snapshot exposes objective, target, checks, and world state", () =>
+        {
+            Car car = CarAt(0, -2500);
+            var bot = World(new Vec3(300, -1900, 100), car);
+            bot.Action = new DefensiveDrive(
+                car, new Vec3(0, -4100, 17), 2200f, 500f,
+                holdPosition: false, allowDodges: true);
+            Set(typeof(Stardust), nameof(Stardust.Decision), bot,
+                "defend / recover behind ball");
+
+            DebugLiveSnapshot live = StardustDebugSnapshot.CaptureLive(bot);
+
+            Check(live.Objective == "Restore goal-side position",
+                $"unexpected debugger objective: {live.Objective}");
+            Check(live.Target != null && live.Target.P[1] == -4100f,
+                "debugger omitted action target");
+            Check(live.Checks != null && live.Cars?.Count == 1,
+                "debugger omitted tactical checks or world cars");
+            Check(live.Explanation.Contains("goal-side", StringComparison.Ordinal),
+                "debugger omitted decision explanation");
+        });
+
+        test("debug-v1: manual and conceded captures write replayable scenario files", () =>
+        {
+            string directory = Path.Combine(
+                Path.GetTempPath(), $"stardust-scenario-regression-{Guid.NewGuid():N}");
+            try
+            {
+                Car car = CarAt(0, -2500);
+                var bot = World(new Vec3(0, -1800, 100), car);
+                var recorder = new StardustScenarioRecorder(
+                    enabled: true, hz: 20f, preSeconds: 8f,
+                    requestedDirectory: directory);
+
+                Set(typeof(Game), nameof(Game.Scores), null!, new uint[] { 0, 0 });
+                Set(typeof(Game), nameof(Game.Time), null!, 10f);
+                recorder.OnPacket(bot);
+
+                recorder.RequestManualSave();
+                Set(typeof(Game), nameof(Game.Time), null!, 10.05f);
+                recorder.OnPacket(bot);
+
+                string[] manual = Directory.GetFiles(directory, "manual-*.json");
+                Check(manual.Length == 1, "manual scenario capture was not written");
+                using (var doc = System.Text.Json.JsonDocument.Parse(
+                    File.ReadAllText(manual[0])))
+                {
+                    Check(doc.RootElement.GetProperty("schema").GetInt32() == 1,
+                        "scenario schema missing");
+                    Check(doc.RootElement.GetProperty("frames").GetArrayLength() >= 1,
+                        "scenario timeline empty");
+                    Check(doc.RootElement.GetProperty("replay_frame_index").GetInt32() >= 0,
+                        "scenario replay frame missing");
+                }
+
+                Set(typeof(Game), nameof(Game.Scores), null!, new uint[] { 0, 1 });
+                Set(typeof(Game), nameof(Game.Time), null!, 10.10f);
+                recorder.OnPacket(bot);
+
+                string[] conceded = Directory.GetFiles(directory, "conceded-*.json");
+                Check(conceded.Length == 1,
+                    "opponent score increment did not auto-save a conceded scenario");
+            }
+            finally
+            {
+                try { Directory.Delete(directory, recursive: true); } catch { }
+                Set(typeof(Game), nameof(Game.Scores), null!, new uint[] { 0, 0 });
+            }
+        });
+
         test("telemetry: file JSONL is rate-limited and includes actual control/target", () =>
         {
             string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");

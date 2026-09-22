@@ -81,6 +81,7 @@ namespace RedUtils
                 DeltaTime = clock.Step(packet.MatchInfo.SecondsElapsed);
                 ClockReset = clock.Discontinuity;
                 Process(packet);
+                OnPacketReady();
                 bool playing = packet.Balls.Count > 0 && !Me.IsDemolished &&
                     (Game.MatchPhase == MatchPhase.Active || IsKickoff);
                 if (!playing)
@@ -148,6 +149,13 @@ namespace RedUtils
                 shotClaimActive = false;
             }
         }
+        /// <summary>
+        /// Optional post-packet hook. This runs after world state has been updated, including during
+        /// goal/replay phases where no controller output is produced. Diagnostics may observe or
+        /// request development-only state setting, but must not mutate gameplay during normal runs.
+        /// </summary>
+        protected virtual void OnPacketReady() { }
+
         /// <summary>
         /// Optional post-action hook. At this point Controller has been sanitized and is the command
         /// that will be returned for the frame. Instrumentation must never mutate gameplay state.

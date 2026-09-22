@@ -46,23 +46,50 @@ Set environment variables **before starting the bot process**:
 | `STARDUST_FLIP_RESETS` | disabled | Set `1` to enable experimental reset attempts within an aerial carry |
 | `STARDUST_TRACE` | disabled | Set `1` to log human-readable strategy transitions and ETA estimates |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
-| `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
+| `STARDUST_TELEMETRY_HZ` | `10` | Legacy JSONL telemetry samples per second; clamped to 1–30 Hz |
+| `STARDUST_DEBUG` | disabled | Set `1` to start the live local tactical debugger and scenario recorder |
+| `STARDUST_DEBUG_OPEN` | enabled with debugger | Set `0` to prevent automatically opening the dashboard in the default browser |
+| `STARDUST_DEBUG_PORT` | `49152` | Preferred loopback port; Stardust tries the next 9 ports if occupied |
+| `STARDUST_SCENARIOS` | disabled | Set `1` to record scenarios without starting the live dashboard |
+| `STARDUST_SCENARIO_HZ` | `20` | Rolling world-state capture rate; clamped to 2–60 Hz |
+| `STARDUST_SCENARIO_PRE_SECONDS` | `8` | Seconds retained before a concession/manual capture; clamped to 2–20 |
+| `STARDUST_SCENARIO_DIR` | auto | Optional output directory for captured scenarios |
 
 Example in PowerShell, before launching the bot from that environment:
 
 ```powershell
-$env:STARDUST_TRACE = "1"
-$env:STARDUST_TELEMETRY = "1"
-$env:STARDUST_TELEMETRY_HZ = "10"
+$env:STARDUST_DEBUG = "1"
+$env:STARDUST_SCENARIO_HZ = "20"
+$env:STARDUST_SCENARIO_PRE_SECONDS = "8"
+
+# Optional legacy logs / experimental mechanics:
+$env:STARDUST_TELEMETRY = "0"
 $env:STARDUST_FLIP_RESETS = "1"
 ```
 
 
-Structured telemetry is designed for real-match debugging without per-tick console spam. Each sampled line starts with `STARDUST_JSON ` followed by one JSON object. Decision changes emit immediately; regular frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. The frame is recorded after the action runs and after controller sanitization, so `controller` represents the actual command returned for that frame.
+### Live tactical debugger and scenario capture
 
-For defensive diagnosis the payload includes car/ball position and velocity, current action and target, target/car goal-side progress, nearest opponent-to-ball state, role/decision, ETAs, free time, pre-contact pressure, predicted goal crossing, rank/cover/last-back flags, challenge permission, defensive-drive terminal/cruise/hold state, boost, and controller axes/buttons. Non-finite tactical times are omitted instead of emitting invalid JSON. Telemetry disables itself after its first serialization error so diagnostics cannot destabilize gameplay.
+With `STARDUST_DEBUG=1`, Stardust starts a zero-dependency HTTP dashboard bound only to `127.0.0.1` and opens it in the default browser unless `STARDUST_DEBUG_OPEN=0`. The console prints the exact `STARDUST_DEBUG_READY url=...` address. The dashboard updates roughly every controller sample and shows:
 
-When sharing a match log for analysis, keep the complete contiguous block of `STARDUST_JSON` lines from roughly 5–10 seconds before the defensive mistake through a few seconds after it. Including the replay or a screen recording alongside the log makes timing/contact interpretation substantially stronger.
+- a scaled field view with all cars, the ball, current target, and bot-to-target line;
+- the current supervisor decision, objective, and a human-readable explanation of why that state exists;
+- car speed/boost/goal-side progress, ball speed and latest touch, ETAs, free time, pressure and goal-threat clocks;
+- possession, challenge, goal-side, open-lane, emergency, counter-threat, and fast-recovery checks;
+- actual sanitized controller output and the active mechanic/subaction;
+- captured scenarios with **Save current buffer** and **Replay** buttons.
+
+The dashboard server uses a loopback TCP listener rather than a platform-specific UI toolkit, so the normal bot build remains cross-platform and gains no desktop/NuGet dependency.
+
+Scenario recording keeps a rolling physics buffer even during goal/replay phases, where normal controller output may stop. When the opponent score increments, Stardust automatically writes a `conceded-*.json` capture containing the configured pre-goal window. Manual captures use the same format. Each frame contains the tactical snapshot plus ball location/velocity/angular velocity, every car's location/velocity/angular velocity/rotation/boost/jump state, boost-pad state, gravity, score and match phase. The capture records a pre-score `replay_frame_index` intended as the deterministic reproduction point.
+
+When RLBot state setting is enabled, the dashboard **Replay** button restores the captured replay frame's ball and car physics/rotation/boost through RLBot's game-state API. Boost-pad timers and historical planner state are retained in the file for diagnosis but are not currently written back by the C# state-setting builder.
+
+If Stardust is running from a source checkout, captures default to `scenarios/captured/` at the repository root. Packaged builds fall back to a `scenarios/captured/` directory beside the executable. Override either with `STARDUST_SCENARIO_DIR`.
+
+### Legacy JSONL telemetry
+
+The existing `STARDUST_TELEMETRY=1` JSONL stream remains available for automation and offline parsing. Each sampled line starts with `STARDUST_JSON `; decision changes emit immediately and frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. The live debugger is the preferred interactive workflow, while JSONL is useful for bulk analysis or attaching a single machine-readable file to an issue.
 
 A reset attempt is not selected on every aerial: it requires adequate height, fuel, proximity, low relative speed, an already spent flip, and apparent opponent separation. A confirmed reset additionally needs a recent own touch with the wheels facing the ball and persistent flags showing that the flip was restored. Neither a normal airborne state nor a touch by another player is sufficient. Unsuccessful attempts time out into replanning/recovery.
 
