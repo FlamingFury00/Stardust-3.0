@@ -20,6 +20,18 @@ Test("drive: ground boost alignment uses yaw rather than pitch", () =>
     Near(Drive.GroundHeadingError(0.4f, 0.05f), 0.05f, 0.0001f);
 });
 
+Test("speed flip: planning speed converts boost fuel to time and stays physical", () =>
+{
+    float noBoost = Drive.SpeedFlipPlanningSpeed(900f, 0f);
+    float thirtyBoost = Drive.SpeedFlipPlanningSpeed(900f, 30f);
+    Check(noBoost >= 1399f && noBoost <= 1410f,
+        $"unexpected no-boost planning speed {noBoost:F1}");
+    Check(thirtyBoost > noBoost && thirtyBoost < 1900f,
+        $"30 boost produced implausible planning speed {thirtyBoost:F1}");
+    Check(Drive.SpeedFlipPlanningSpeed(2200f, 100f) <= Car.MaxSpeed,
+        "speedflip planning exceeded max car speed");
+});
+
 Test("drive: close straight path stays finite and approximately straight", () =>
 {
     var car = new Car

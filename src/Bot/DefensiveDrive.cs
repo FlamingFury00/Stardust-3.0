@@ -17,20 +17,24 @@ namespace Bot
         public float CruiseSpeed { get; set; }
         public float TerminalSpeed { get; set; }
         public bool HoldPosition { get; set; }
+        public bool AllowDodges { get; set; }
         public bool Holding { get; private set; }
+        public string MobilityAction => drive.Action?.GetType().Name;
 
         private readonly Drive drive;
 
         public DefensiveDrive(Car car, Vec3 target, float cruiseSpeed = 1800f,
-            float terminalSpeed = 0f, bool holdPosition = false)
+            float terminalSpeed = 0f, bool holdPosition = false, bool allowDodges = false)
         {
             Target = target;
             CruiseSpeed = cruiseSpeed;
             TerminalSpeed = terminalSpeed;
             HoldPosition = holdPosition;
-            drive = new Drive(car, target, MathF.Max(1f, cruiseSpeed), allowDodges: false, wasteBoost: false)
+            AllowDodges = allowDodges;
+            drive = new Drive(car, target, MathF.Max(1f, cruiseSpeed), allowDodges, wasteBoost: false)
             {
-                AllowHandbrake = false
+                AllowHandbrake = false,
+                DodgeMinSpeed = allowDodges ? 650f : 850f
             };
         }
 
@@ -85,21 +89,34 @@ namespace Bot
             else if (onFloor && MathF.Abs(forwardSpeed) < 220f && (along > 170f || distance > 1650f))
                 drive.Backwards = false;
 
+            bool fastTravel = AllowDodges && !HoldPosition && onFloor &&
+                distance > 1350f && !drive.Backwards && CruiseSpeed >= 2050f;
+
             drive.Target = Target;
             drive.TargetSpeed = MathF.Max(1f, speed);
-            drive.AllowDodges = false;
+            drive.AllowDodges = fastTravel;
+            drive.DodgeMinSpeed = fastTravel ? 650f : 850f;
             drive.AllowHandbrake = false;
             drive.WasteBoost = false;
             drive.Run(bot);
 
+            bool mobilityCommitted = drive.Action != null && !drive.Action.Finished;
+
             // Generic Drive has a 400 uu/s minimum in its tight-turn branch. Override only that
             // terminal regime while preserving its mature route/surface steering everywhere else.
-            if (onFloor && speed < 430f)
+            if (!mobilityCommitted && onFloor && speed < 430f)
                 bot.Throttle(speed, drive.Backwards);
 
-            bot.Controller.Handbrake = false;
-            bot.Controller.Jump = false;
-            if (speed < 1800f || distance < 950f || drive.Backwards)
+            // Normal defensive driving suppresses jump/powerslide so a parking controller cannot
+            // accidentally leave the ground. Once Drive has intentionally committed a speedflip,
+            // dodge, wavedash, or half-flip, preserve that subaction's exact controller sequence.
+            if (!mobilityCommitted)
+            {
+                bot.Controller.Handbrake = false;
+                bot.Controller.Jump = false;
+            }
+
+            if (!mobilityCommitted && (speed < 1800f || distance < 950f || drive.Backwards))
                 bot.Controller.Boost = false;
         }
     }

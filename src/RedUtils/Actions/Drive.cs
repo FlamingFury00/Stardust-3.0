@@ -24,6 +24,11 @@ namespace RedUtils
 		public bool WasteBoost;
 		/// <summary>Whether this drive may powerslide. Disable for precise goal-mouth parking.</summary>
 		public bool AllowHandbrake = true;
+		/// <summary>
+		/// Minimum ground speed before a forward dodge/speedflip may be selected. Normal routes keep
+		/// the conservative 850 uu/s threshold; urgent long recovery routes can lower it.
+		/// </summary>
+		public float DodgeMinSpeed = 850f;
 		/// <summary>This action's subaction, which could be a dodge, halfflip, speedflip, etc</summary>
 		public IAction Action;
 
@@ -152,7 +157,9 @@ namespace RedUtils
 				Vec3 predictedLocation = bot.Me.LocationAfterDodge();
 				// Estimates how much time we have to dodge
 				float timeLeft = bot.Me.Location.FlatDist(finalTarget) / MathF.Max(carSpeed + 500, 1410);
-				float speedFlipTimeLeft = bot.Me.Location.FlatDist(finalTarget) / MathF.Max(carSpeed + 500 + MathF.Min(bot.Me.Boost, 40) * Car.BoostAccel / 2, 1410);
+				float speedFlipPlanningSpeed = SpeedFlipPlanningSpeed(carSpeed, bot.Me.Boost);
+				float speedFlipTimeLeft = bot.Me.Location.FlatDist(finalTarget) /
+					MathF.Max(speedFlipPlanningSpeed, 1410f);
 
 				if (AllowDodges && Field.InField(predictedLocation, 50) && carSpeed < 2000 && bot.Me.Location.z < 600 && Game.Gravity.z < -500 && MathF.Abs(bot.Me.Velocity.Dot(bot.Me.Up)) < 100)
 				{
@@ -162,7 +169,13 @@ namespace RedUtils
 						if (TargetSpeed > 100 + forwardSpeed)
 						{
 							// When we're moving forward, and need extra speed, look for dodges, speedflips, and wavedashes
-							if (bot.Me.Location.z < 200 && bot.Me.IsGrounded && carSpeed > 850 && bot.Me.Forward.FlatAngle(bot.Me.Location.Direction(finalTarget)) < 0.12f && timeOnGround > 0.15f)
+							float dodgeMinSpeed = float.IsFinite(DodgeMinSpeed)
+								? System.Math.Clamp(DodgeMinSpeed, 400f, 1400f)
+								: 850f;
+							if (bot.Me.Location.z < 200 && bot.Me.IsGrounded &&
+								carSpeed > dodgeMinSpeed &&
+								bot.Me.Forward.FlatAngle(bot.Me.Location.Direction(finalTarget)) < 0.12f &&
+								timeOnGround > 0.15f)
 							{
 								// If we are on the ground, we rule out wavedashes, and look at dodges
 								Dodge dodge = new Dodge(bot.Me.Location.FlatDirection(Target));
@@ -338,6 +351,25 @@ namespace RedUtils
 
 			// If none of those apply, just return the target
 			return finalTarget;
+		}
+
+		/// <summary>
+		/// Conservative speed used only to decide whether a route is long enough to justify a
+		/// speedflip. Boost is fuel measured in boost-points, not seconds; convert it through
+		/// BoostConsumption before applying BoostAccel. The old expression multiplied raw boost
+		/// points directly by acceleration and could predict tens of thousands of uu/s.
+		/// </summary>
+		public static float SpeedFlipPlanningSpeed(float speed, float boost)
+		{
+			if (!float.IsFinite(speed) || !float.IsFinite(boost))
+				return 1410f;
+
+			float availableBoostTime = System.Math.Clamp(boost, 0f, 100f) /
+				Car.BoostConsumption;
+			float planningBoostTime = MathF.Min(availableBoostTime, 0.35f);
+			return System.Math.Clamp(
+				MathF.Max(0f, speed) + 500f + Car.BoostAccel * planningBoostTime,
+				0f, Car.MaxSpeed);
 		}
 
 		/// <summary>Ground heading error for steering/boost gates. Pitch is intentionally ignored.</summary>
