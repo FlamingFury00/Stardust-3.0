@@ -523,8 +523,8 @@ namespace Bot
             // Safe acquisition with real free time is itself a tactical objective. The previous
             // ordering made this branch unreachable whenever SelectShot found any valid contact,
             // which is why telemetry showed dozens of dribble-ready states becoming routine shots.
-            bool preferGroundControl = canDribble && !underPressure &&
-                !forceFinishOpportunity && tacticalFreeTime >= 0.22f;
+            bool preferGroundControl = PossessionControl.PreferGroundControl(
+                Situation, canDribble, underPressure, forceFinishOpportunity);
             if (preferGroundControl)
             {
                 Action = new GroundDribble();
