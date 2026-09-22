@@ -21,6 +21,13 @@ namespace Bot
         public const float ArrivalRadius = 70f;
         public const float ShallowNetDepth = 60f;
 
+        // GroundEta intentionally models a drivable loose-ball race. When an opponent becomes
+        // airborne it can temporarily jump far above the independently detected next-touch clock.
+        // Blend continuously across a disagreement band: coherent near-ties keep the race estimate,
+        // while a clearly stale ground-only estimate yields to the next-touch clock.
+        public const float PressureEtaBlendStart = 0.55f;
+        public const float PressureEtaBlendFull = 0.95f;
+
         private static float Side(Vec3 goal) => goal.y < 0 ? -1 : 1;
 
         private static float SmoothStep(float value)
@@ -87,6 +94,83 @@ namespace Bot
             ControlMath.Finite(point) && ControlMath.Finite(goal)
                 ? point.y * Side(goal)
                 : float.NegativeInfinity;
+
+        /// <summary>
+        /// Best estimate of when the opponent can make the next meaningful contact. GroundEta is
+        /// retained for ordinary race ownership, but a much earlier pressure clock wins when the
+        /// two models disagree by enough to indicate an airborne / non-ground contact.
+        /// </summary>
+        public static float OpponentContactEta(TacticalFrame frame)
+        {
+            if (frame == null)
+                return float.PositiveInfinity;
+
+            float race = float.IsFinite(frame.OpponentEta)
+                ? MathF.Max(0f, frame.OpponentEta)
+                : float.PositiveInfinity;
+            if (!float.IsFinite(frame.PressureTime))
+                return race;
+
+            float pressure = MathF.Max(0f, frame.PressureTime);
+            if (!float.IsFinite(race))
+                return pressure;
+
+            float disagreement = race - pressure;
+            if (disagreement <= PressureEtaBlendStart)
+                return race;
+            if (disagreement >= PressureEtaBlendFull)
+                return pressure;
+
+            float blend = SmoothStep(
+                (disagreement - PressureEtaBlendStart) /
+                (PressureEtaBlendFull - PressureEtaBlendStart));
+            return Lerp(race, pressure, blend);
+        }
+
+        public static float EffectiveFreeTime(TacticalFrame frame)
+        {
+            if (frame == null || !float.IsFinite(frame.MyEta))
+                return float.NegativeInfinity;
+
+            float opponentContact = OpponentContactEta(frame);
+            return float.IsFinite(opponentContact)
+                ? opponentContact - frame.MyEta
+                : float.PositiveInfinity;
+        }
+
+        /// <summary>
+        /// A grounded car sitting behind its own goal line must first clear the mouth before taking
+        /// a loose-ball commitment. This prevents challenge hysteresis from turning a save position
+        /// into an outward race through the goal volume.
+        /// </summary>
+        public static bool NeedsGoalExit(Car car, Vec3 goal, float margin = 85f)
+        {
+            if (car == null || !car.IsGrounded ||
+                !ControlMath.Finite(car.Location) || !ControlMath.Finite(goal))
+                return false;
+
+            float side = Side(goal);
+            float line = MathF.Abs(goal.y);
+            float depth = car.Location.y * side;
+            bool insideMouth = MathF.Abs(car.Location.x - goal.x) <
+                Goal.Width * 0.5f + 210f;
+            return insideMouth && depth > line + MathF.Max(0f, margin);
+        }
+
+        public static Vec3 GoalExitTarget(Car car, Vec3 goal)
+        {
+            if (!ControlMath.Finite(goal))
+                goal = new Vec3(0f, -5120f, 0f);
+
+            float side = Side(goal);
+            float line = MathF.Abs(goal.y);
+            float safeHalfWidth = MathF.Max(0f, Goal.Width * 0.5f - 180f);
+            float x = car != null && ControlMath.Finite(car.Location)
+                ? System.Math.Clamp(car.Location.x,
+                    goal.x - safeHalfWidth, goal.x + safeHalfWidth)
+                : goal.x;
+            return new Vec3(x, side * (line - 320f), 17f);
+        }
 
         public static bool ClearDirectionIsSafe(Vec3 direction, Vec3 goal, float margin = 0.12f)
         {
@@ -341,8 +425,13 @@ namespace Bot
         public static bool CanChallenge(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal)
         {
             if (frame == null || car == null || car.IsDemolished || frame.TeamRank != 0 ||
+                NeedsGoalExit(car, goal) ||
                 !IsTacticallyGoalSide(car.Location, ball, goal, 10f) ||
-                !float.IsFinite(frame.MyEta) || !float.IsFinite(frame.OpponentEta))
+                !float.IsFinite(frame.MyEta))
+                return false;
+
+            float opponentContactEta = OpponentContactEta(frame);
+            if (!float.IsFinite(opponentContactEta))
                 return false;
 
             float ballDistance = car.Location.Dist(ball);
@@ -359,7 +448,7 @@ namespace Bot
             if (imminentPressure && goalDistance < 3300f && ballDistance < 1850f)
             {
                 float allowedDeficit = frame.TeamCount <= 1 ? 0.22f : 0.15f;
-                if (frame.MyEta <= frame.OpponentEta + allowedDeficit)
+                if (frame.MyEta <= opponentContactEta + allowedDeficit)
                     return true;
             }
 
@@ -374,7 +463,7 @@ namespace Bot
             if (frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
                 requiredMargin += 0.04f;
 
-            return frame.FreeTime >= requiredMargin;
+            return opponentContactEta - frame.MyEta >= requiredMargin;
         }
 
         /// <summary>
@@ -385,8 +474,13 @@ namespace Bot
         public static bool CanContinueChallenge(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal)
         {
             if (frame == null || car == null || car.IsDemolished || frame.TeamRank != 0 ||
-                !float.IsFinite(frame.MyEta) || !float.IsFinite(frame.OpponentEta) ||
+                NeedsGoalExit(car, goal) ||
+                !float.IsFinite(frame.MyEta) ||
                 !IsTacticallyGoalSide(car.Location, ball, goal, -120f))
+                return false;
+
+            float opponentContactEta = OpponentContactEta(frame);
+            if (!float.IsFinite(opponentContactEta))
                 return false;
 
             float distance = car.Location.Dist(ball);
@@ -398,7 +492,17 @@ namespace Bot
             if (frame.TeamCount > 1 && frame.LastBack && !frame.HasCover)
                 allowedDeficit -= 0.08f;
 
-            return frame.MyEta <= frame.OpponentEta + allowedDeficit;
+            // Hysteresis should absorb estimator jitter, not preserve a clearly losing challenge
+            // across the own box. With no cover, cap how far behind the next-contact clock the
+            // defender may remain committed; low boost tightens that cap again.
+            bool criticalOwnBox = OwnDepth(ball, goal) > 3300f || goalDistance < 2350f;
+            if (criticalOwnBox && !frame.HasCover)
+                allowedDeficit = MathF.Min(allowedDeficit,
+                    frame.TeamCount <= 1 ? 0.16f : 0.10f);
+            if (criticalOwnBox && car.Boost < 8f && distance > 650f)
+                allowedDeficit = MathF.Min(allowedDeficit, 0.10f);
+
+            return frame.MyEta <= opponentContactEta + allowedDeficit;
         }
 
         /// <summary>
@@ -595,6 +699,28 @@ namespace Bot
                 continuation -= 0.08f;
 
             return System.Math.Clamp(contactClock + continuation, 0f, 3f);
+        }
+
+        /// <summary>
+        /// Hard deadline for defensive planning. Unlike ordinary attack ownership, defense must
+        /// respect every credible way the state can change before the untouched ball prediction:
+        /// opponent race ETA, short-horizon pressure/contact ETA, and the current goal-threat clock.
+        /// </summary>
+        public static float DefensiveDeadline(float dangerTime, TacticalFrame frame)
+        {
+            if (!float.IsFinite(dangerTime))
+                return 0f;
+
+            float earliest = MathF.Max(0f, dangerTime);
+            if (frame != null)
+            {
+                if (float.IsFinite(frame.OpponentEta))
+                    earliest = MathF.Min(earliest, MathF.Max(0f, frame.OpponentEta));
+                if (float.IsFinite(frame.PressureTime))
+                    earliest = MathF.Min(earliest, MathF.Max(0f, frame.PressureTime));
+            }
+
+            return MathF.Max(0.05f, earliest - 0.025f);
         }
 
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)

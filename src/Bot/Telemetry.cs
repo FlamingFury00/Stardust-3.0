@@ -304,8 +304,10 @@ namespace Bot
                 {
                     ["my_eta"] = Num(frame.MyEta),
                     ["opponent_eta"] = Num(frame.OpponentEta),
+                    ["opponent_contact_eta"] = Num(Defense.OpponentContactEta(frame)),
                     ["teammate_eta"] = Num(frame.TeammateEta),
                     ["free_time"] = Num(frame.FreeTime),
+                    ["effective_free_time"] = Num(Defense.EffectiveFreeTime(frame)),
                     ["pressure_time"] = Num(frame.PressureTime),
                     ["goal_threat_time"] = Num(threat),
                     ["counter_threat_time"] = Num(bot.CounterThreatTime),

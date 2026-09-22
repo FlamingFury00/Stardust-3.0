@@ -218,7 +218,7 @@ namespace Bot
             if (emergency || counterDanger)
             {
                 float dangerTime = emergency ? threat : counterThreat;
-                float deadline = MathF.Max(0.05f, dangerTime - 0.025f);
+                float deadline = Defense.DefensiveDeadline(dangerTime, Situation);
                 bool clearSide = Defense.IsDepthGoalSide(
                     Me.Location, Ball.Location, OurGoal.Location, -100f);
 
@@ -370,10 +370,23 @@ namespace Bot
                 }
             }
 
+            // A car physically behind its own goal line must clear the mouth before the normal
+            // loose-ball attack planner is allowed to take over. Emergency touches above already
+            // outrank this gate, so this only prevents hysteresis-driven outbound races from inside net.
+            if (Defense.NeedsGoalExit(Me, OurGoal.Location))
+            {
+                Vec3 exit = Defense.GoalExitTarget(Me, OurGoal.Location);
+                GuardTo(exit, Car.MaxSpeed, 900f, false,
+                    allowDodges: false, allowBoost: true);
+                SetDecision("defend / exit net");
+                return;
+            }
+
             bool controlledPossession =
                 PossessionControl.HasControlledPossession(Me, Ball.MainBall) ||
                 PossessionControl.HasAirControl(Me, Ball.MainBall);
             bool canChallenge = ChallengeCommitted;
+            float tacticalFreeTime = Defense.EffectiveFreeTime(Situation);
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
             bool forceFinishOpportunity = Tactics.CanForceFinishOpportunity(
@@ -402,7 +415,7 @@ namespace Bot
                 }
 
                 bool retain = Action is GroundCatch
-                    ? Situation.TeamRank == 0 && (canChallenge || Situation.FreeTime >= -0.12f)
+                    ? Situation.TeamRank == 0 && (canChallenge || tacticalFreeTime >= -0.12f)
                     : PossessionControl.ShouldRetainPossession(
                         Situation, Me, Ball.MainBall, OurGoal.Location);
 
@@ -473,7 +486,7 @@ namespace Bot
                 PossessionControl.CanAcquireGround(
                     Situation, Me, Ball.MainBall, OurGoal.Location);
             bool canDribble = canPossessGround &&
-                GroundDribble.CanStart(Me, Ball.MainBall, Situation.FreeTime);
+                GroundDribble.CanStart(Me, Ball.MainBall, tacticalFreeTime);
 
             // A direct scoring contact outranks continuing a dribble. Otherwise preserve controlled
             // possession and use its pressure-triggered outplays.
@@ -540,7 +553,7 @@ namespace Bot
 
             if (canChallenge)
             {
-                if (underPressure || Situation.FreeTime < 0.35f)
+                if (underPressure || tacticalFreeTime < 0.35f)
                 {
                     Vec3 contact = Tactics.PressureChallengeTarget(
                         Me, Ball.Prediction, Ball.MainBall, TheirGoal.Location,
@@ -703,7 +716,7 @@ namespace Bot
             if (Options.Trace)
             {
                 Console.WriteLine(FormattableString.Invariant(
-                    $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2} last_back={Situation.LastBack} cover={Situation.HasCover} goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
+                    $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} contact={Defense.OpponentContactEta(Situation):F2} free={Defense.EffectiveFreeTime(Situation):F2} pressure={Situation.PressureTime:F2} last_back={Situation.LastBack} cover={Situation.HasCover} goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
             }
         }
 

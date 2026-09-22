@@ -40,6 +40,34 @@ namespace Bot
                 allowBoost: true);
         }
 
+        /// <summary>
+        /// Required flat speed to cover the remaining goal-mouth displacement with a small contact
+        /// reserve. This turns save urgency into a time-to-crossing quantity instead of a fixed
+        /// distance threshold.
+        /// </summary>
+        public static float RequiredTravelSpeed(float distance, float timeRemaining)
+        {
+            if (!float.IsFinite(distance) || !float.IsFinite(timeRemaining) ||
+                distance <= 0f)
+                return 0f;
+
+            float usable = MathF.Max(0.05f, timeRemaining - 0.08f);
+            return System.Math.Clamp(distance / usable, 0f, Car.MaxSpeed);
+        }
+
+        public static bool NeedsFastTravel(float distance, float timeRemaining)
+        {
+            if (!float.IsFinite(distance) || !float.IsFinite(timeRemaining) ||
+                distance <= 420f || timeRemaining <= 0f)
+                return false;
+
+            // Never fall back into parking mode merely because the crossing is extremely close.
+            // At that point the required speed saturates, but continuing maximum useful lateral
+            // travel is still strictly better than braking short of an uncovered part of the mouth.
+            float required = RequiredTravelSpeed(distance, timeRemaining);
+            return distance > 1050f || required > 700f;
+        }
+
         public void Run(RUBot bot)
         {
             if (bot == null || !ControlMath.Finite(Crossing) ||
@@ -87,14 +115,17 @@ namespace Bot
             if (!jumping)
             {
                 AirborneFlight = false;
-                bool fastTravel = guardDistance > 1050f && timeRemaining > 0.72f;
+                float requiredSpeed = RequiredTravelSpeed(guardDistance, timeRemaining);
+                bool fastTravel = NeedsFastTravel(guardDistance, timeRemaining);
                 FastTravel = fastTravel;
                 drive.Target = GuardTarget;
                 drive.CruiseSpeed = Car.MaxSpeed;
-                drive.TerminalSpeed = fastTravel ? 850f : 0f;
+                drive.TerminalSpeed = fastTravel
+                    ? System.Math.Clamp(requiredSpeed * 0.72f, 650f, 1350f)
+                    : 0f;
                 drive.HoldPosition = !fastTravel;
                 drive.AllowBoost = fastTravel;
-                drive.AllowDodges = fastTravel &&
+                drive.AllowDodges = fastTravel && timeRemaining > 0.95f &&
                     Defense.CanFastRecover(
                         car, Ball.Location, GuardTarget, bot.OurGoal.Location);
                 drive.Run(bot);

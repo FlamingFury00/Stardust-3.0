@@ -92,7 +92,7 @@ namespace Bot
             bool closeControl = ball.location.z < 360f && local.x > -140f && local.x < 560f &&
                 MathF.Abs(local.y) < 240f && local.Length() < 620f && relativeSpeed < 1050f;
 
-            return closeControl && frame.FreeTime >= -0.16f;
+            return closeControl && Defense.EffectiveFreeTime(frame) >= -0.16f;
         }
 
         public static bool CanAcquireGround(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
@@ -109,7 +109,7 @@ namespace Bot
             float requiredProgress = ownDepth > 3800f ? 35f : -40f;
             bool safeGeometry = Defense.IsTacticallyGoalSide(
                 car.Location, ball.location, ownGoal, requiredProgress);
-            return safeGeometry && frame.FreeTime >= -0.10f;
+            return safeGeometry && Defense.EffectiveFreeTime(frame) >= -0.10f;
         }
 
         public static bool CanAcquireAir(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
@@ -121,7 +121,7 @@ namespace Bot
                 return true;
 
             return Defense.IsGoalSide(car.Location, ball.location, ownGoal, -100f) &&
-                frame.FreeTime >= -0.08f;
+                Defense.EffectiveFreeTime(frame) >= -0.08f;
         }
 
         /// <summary>

@@ -81,6 +81,169 @@ Test("opponent model: player facing and driving away does not create pressure", 
     Check(float.IsPositiveInfinity(pressure), $"retreating opponent created false pressure: {pressure}");
 });
 
+Test("log-v14: airborne pressure overrides stale loose-ball ground ETA", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 2.1661f,
+        OpponentEta = 2.4827f,
+        PressureTime = 0.1372f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true,
+        HasCover = false
+    };
+    var car = new Car
+    {
+        Index = 0,
+        Team = 0,
+        Location = new Vec3(-625.9f, -5081.5f, 17f),
+        Velocity = new Vec3(-500f, -300f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, -2.4f, 0f)),
+        IsGrounded = true,
+        Boost = 0f
+    };
+    Vec3 ball = new(-1804f, -3952f, 97f);
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    float contactEta = Defense.OpponentContactEta(frame);
+    Check(MathF.Abs(contactEta - 0.1372f) < 0.001f,
+        $"stale ground ETA still won over imminent contact: {contactEta:F4}");
+    Check(Defense.EffectiveFreeTime(frame) < -1.9f,
+        $"effective race still looked winnable: {Defense.EffectiveFreeTime(frame):F3}");
+    Check(!Defense.CanChallenge(frame, car, ball, goal),
+        "imminent airborne opponent touch still opened a fresh challenge");
+    Check(!Defense.CanContinueChallenge(frame, car, ball, goal),
+        "challenge hysteresis survived an imminent opponent touch by over two seconds");
+});
+
+Test("log-v14: ordinary near-tie pressure keeps committed challenge hysteresis", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 0.95f,
+        OpponentEta = 0.70f,
+        PressureTime = 0.20f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true,
+        HasCover = false
+    };
+    var car = new Car
+    {
+        Index = 0,
+        Team = 0,
+        Location = new Vec3(0f, -3000f, 17f),
+        Velocity = Vec3.Zero,
+        Orientation = new Mat3x3(new Vec3(0f, -MathF.PI / 2f, 0f)),
+        IsGrounded = true,
+        Boost = 30f
+    };
+    Vec3 ball = new(0f, -2200f, 100f);
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Check(MathF.Abs(Defense.OpponentContactEta(frame) - 0.70f) < 0.001f,
+        "normal pressure incorrectly replaced a coherent race ETA");
+    Check(Defense.CanContinueChallenge(frame, car, ball, goal),
+        "contact-clock fusion made normal committed defense passive");
+});
+
+Test("log-v14: contact ETA fusion is continuous through the disagreement band", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 1.0f,
+        OpponentEta = 1.20f,
+        PressureTime = 0.64f
+    };
+
+    float justInside = Defense.OpponentContactEta(frame);
+    frame.PressureTime = 0.63f;
+    float slightlyEarlier = Defense.OpponentContactEta(frame);
+    Check(justInside <= 1.20f && justInside >= 0.64f,
+        $"blended contact ETA left its source interval: {justInside:F4}");
+    Check(slightlyEarlier <= justInside,
+        $"earlier pressure made fused opponent contact later: {justInside:F4} -> {slightlyEarlier:F4}");
+    Check(justInside - slightlyEarlier < 0.10f,
+        $"contact ETA fusion still contains a hard tactical jump: {justInside:F4} -> {slightlyEarlier:F4}");
+});
+
+Test("log-v14: car behind own goal line exits before loose-ball commitment", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 2.9576f,
+        OpponentEta = 2.6410f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true,
+        HasCover = false
+    };
+    var car = new Car
+    {
+        Index = 0,
+        Team = 0,
+        Location = new Vec3(-514.6f, -5345.9f, 17f),
+        Velocity = new Vec3(69.8f, -807.5f, 13.5f),
+        Orientation = new Mat3x3(new Vec3(0f, -1.4224f, 0f)),
+        IsGrounded = true,
+        Boost = 0f
+    };
+    Vec3 ball = new(791.7f, -4834.8f, 173.1f);
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Check(Defense.NeedsGoalExit(car, goal),
+        "observed deep-net state was not recognized as requiring an exit");
+    Check(!Defense.CanChallenge(frame, car, ball, goal),
+        "deep-net car was still allowed to start a loose-ball challenge");
+    Check(!Defense.CanContinueChallenge(frame, car, ball, goal),
+        "deep-net challenge hysteresis was still retained");
+
+    Vec3 exit = Defense.GoalExitTarget(car, goal);
+    Check(exit.y > goal.y && exit.y < -4500f,
+        $"exit target did not cross the goal line into the field: {exit}");
+    Check(MathF.Abs(exit.x) < Goal.Width * 0.5f,
+        $"exit target risked a goal post: {exit}");
+});
+
+Test("log-v14: urgent sub-threshold goal-line save keeps travel speed", () =>
+{
+    const float distance = 960f;
+    const float timeRemaining = 0.895f;
+
+    float required = GoalLineSave.RequiredTravelSpeed(distance, timeRemaining);
+    Check(required > 1100f,
+        $"observed save geometry understated required travel speed: {required:F0}");
+    Check(GoalLineSave.NeedsFastTravel(distance, timeRemaining),
+        "960 uu / 0.895 s save still fell into parking mode");
+    Check(!GoalLineSave.NeedsFastTravel(distance, 2.2f),
+        "early 960 uu positioning incorrectly stayed in emergency travel mode");
+    Check(GoalLineSave.NeedsFastTravel(600f, 0.08f),
+        "last-100-ms save incorrectly fell back into parking mode");
+});
+
+Test("log-v14: emergency planning deadline stops at imminent opponent touch", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 1.0581f,
+        OpponentEta = 1.6913f,
+        PressureTime = 0.44f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+
+    float deadline = Defense.DefensiveDeadline(1.80f, frame);
+    Check(deadline >= 0.40f && deadline <= 0.44f,
+        $"1.8 s untouched threat ignored 0.44 s opponent contact: {deadline:F3}");
+
+    frame.PressureTime = float.PositiveInfinity;
+    deadline = Defense.DefensiveDeadline(1.20f, frame);
+    Check(deadline > 1.15f && deadline < 1.20f,
+        $"clean untouched threat lost its own crossing deadline: {deadline:F3}");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
