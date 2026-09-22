@@ -191,9 +191,8 @@ namespace Bot
                 !emergency && !counterDanger &&
                 Options.AerialCarry &&
                 Action is JumpShot &&
-                !Me.IsGrounded &&
-                PossessionControl.HasAirControl(Me, Ball.MainBall) &&
-                AerialCarry.CanStart(Me, Ball.MainBall, airOpponentWindow);
+                PossessionControl.CanHandoffShotToAirCarry(
+                    Me, Ball.MainBall, airOpponentWindow);
 
             // Do not acknowledge a tactical edge until a physically committed flip/dodge can be
             // interrupted. Otherwise the event is consumed while the old action keeps running.
