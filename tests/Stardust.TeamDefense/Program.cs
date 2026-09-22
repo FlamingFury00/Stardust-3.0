@@ -198,6 +198,8 @@ Test("log-v14: urgent sub-threshold goal-line save keeps travel speed", () =>
         "960 uu / 0.895 s save still fell into parking mode");
     Check(!GoalLineSave.NeedsFastTravel(distance, 2.2f),
         "early 960 uu positioning incorrectly stayed in emergency travel mode");
+    Check(GoalLineSave.NeedsFastTravel(600f, 0.08f),
+        "last-100-ms save incorrectly fell back into parking mode");
 });
 
 Test("log-v14: emergency planning deadline stops at imminent opponent touch", () =>
