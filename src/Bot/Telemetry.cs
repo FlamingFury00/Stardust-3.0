@@ -229,7 +229,7 @@ namespace Bot
                 };
             }
 
-            object actionDetail = ActionDetail(bot.Action);
+            object actionDetail = ActionDetail(bot.Action, me);
             Vec3 reference = Defense.ReferenceBall(
                 Ball.Prediction, ball.location, goal, Game.Time);
 
@@ -250,7 +250,7 @@ namespace Bot
 
             var output = new Dictionary<string, object>
             {
-                ["schema"] = 6,
+                ["schema"] = 7,
                 ["build"] = typeof(Stardust).Assembly.ManifestModule.ModuleVersionId.ToString("N"),
                 ["seq"] = sequence++,
                 ["kind"] = kind,
@@ -381,7 +381,7 @@ namespace Bot
             }
         }
 
-        private static object ActionDetail(IAction action)
+        private static object ActionDetail(IAction action, Car car)
         {
             switch (action)
             {
@@ -419,7 +419,10 @@ namespace Bot
                         ["contact_p"] = shot.Slice == null ? null : Vec(shot.Slice.Location),
                         ["shot_target"] = Vec(shot.ShotTarget),
                         ["target_p"] = Vec(shot.TargetLocation),
-                        ["shot_dir"] = Vec(shot.ShotDirection)
+                        ["shot_dir"] = Vec(shot.ShotDirection),
+                        ["predicted_speed"] = Num(
+                            shot.Slice == null ? 0f :
+                            Tactics.EstimateShotSpeed(car, shot.Slice, shot))
                     };
                 case GoalLineSave save:
                     return new Dictionary<string, object>
@@ -437,7 +440,8 @@ namespace Bot
                     {
                         ["target_p"] = Vec(clear.Target),
                         ["clear_dir"] = Vec(clear.ClearDirection),
-                        ["committed"] = clear.Committed
+                        ["committed"] = clear.Committed,
+                        ["ground_block"] = clear.GroundBlock
                     };
                 default:
                     return null;
