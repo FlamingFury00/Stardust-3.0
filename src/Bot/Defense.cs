@@ -62,6 +62,23 @@ namespace Bot
         public static bool IsDepthGoalSide(Vec3 point, Vec3 ball, Vec3 goal, float buffer = 0f) =>
             GoalDepthProgress(point, ball, goal) >= buffer;
 
+        /// <summary>
+        /// Tactical goal-side test. In the defensive third, field depth is authoritative: lateral
+        /// displacement must not make an upfield car look safely behind the ball. Farther upfield,
+        /// the ball-to-goal projection remains useful for diagonal challenge geometry.
+        /// </summary>
+        public static bool IsTacticallyGoalSide(
+            Vec3 point, Vec3 ball, Vec3 goal, float buffer = 0f)
+        {
+            float ballOwnDepth = OwnDepth(ball, goal);
+            if (!float.IsFinite(ballOwnDepth))
+                return false;
+
+            return ballOwnDepth > 1800f
+                ? IsDepthGoalSide(point, ball, goal, buffer)
+                : IsGoalSide(point, ball, goal, buffer);
+        }
+
         public static float OwnDepth(Vec3 point, Vec3 goal) =>
             ControlMath.Finite(point) && ControlMath.Finite(goal)
                 ? point.y * Side(goal)
@@ -83,7 +100,7 @@ namespace Bot
         {
             if (car == null || car.IsDemolished || !car.IsGrounded || car.Location.z > 300 ||
                 !ControlMath.Finite(car.Location) || !ControlMath.Finite(car.Velocity) ||
-                !IsGoalSide(car.Location, ball, goal))
+                !IsTacticallyGoalSide(car.Location, ball, goal))
                 return false;
 
             Vec3 goalward = ControlMath.FlatUnit(goal - ball, new Vec3(0, Side(goal), 0));
@@ -92,7 +109,7 @@ namespace Bot
                 return false;
 
             Vec3 future = car.Location + car.Velocity * 0.22f;
-            if (!IsGoalSide(future, ball, goal))
+            if (!IsTacticallyGoalSide(future, ball, goal))
                 return false;
 
             float side = Side(goal);
@@ -320,7 +337,7 @@ namespace Bot
         public static bool CanChallenge(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal)
         {
             if (frame == null || car == null || car.IsDemolished || frame.TeamRank != 0 ||
-                !IsGoalSide(car.Location, ball, goal, 10f) ||
+                !IsTacticallyGoalSide(car.Location, ball, goal, 10f) ||
                 !float.IsFinite(frame.MyEta) || !float.IsFinite(frame.OpponentEta))
                 return false;
 
@@ -365,7 +382,7 @@ namespace Bot
         {
             if (frame == null || car == null || car.IsDemolished || frame.TeamRank != 0 ||
                 !float.IsFinite(frame.MyEta) || !float.IsFinite(frame.OpponentEta) ||
-                !IsGoalSide(car.Location, ball, goal, -120f))
+                !IsTacticallyGoalSide(car.Location, ball, goal, -120f))
                 return false;
 
             float distance = car.Location.Dist(ball);
