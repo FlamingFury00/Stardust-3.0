@@ -278,7 +278,8 @@ namespace Bot
                     defensiveShot = null;
                 }
 
-                if (Action != null && !(Action is GoalLineSave))
+                if (Action is Shot selectedClear &&
+                    ReferenceEquals(selectedClear, defensiveShot))
                 {
                     SetDecision(emergency
                         ? "defend / emergency clear"
@@ -313,6 +314,23 @@ namespace Bot
 
                 if (!emergency)
                 {
+                    if (Defense.TryThreatStagingTarget(
+                            Me, Ball.Prediction,
+                            OurGoal.Location, TheirGoal.Location,
+                            Game.Time, deadline,
+                            out Vec3 stage, out float stageTime))
+                    {
+                        bool fastStage = Defense.CanFastRecover(
+                            Me, Ball.Location, stage, OurGoal.Location);
+                        GuardTo(stage, Car.MaxSpeed, 850f, false,
+                            allowDodges: fastStage,
+                            allowBoost: true);
+                        SetDecision(stageTime < 1.60f
+                            ? "defend / counter intercept staging"
+                            : "defend / counter trajectory staging");
+                        return;
+                    }
+
                     Vec3 counterReference = Defense.ReferenceBall(
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
                     bool counterGoalSide = Defense.IsGoalSide(
@@ -324,11 +342,11 @@ namespace Bot
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
-                    bool fastCounterRecovery = !counterGoalSide &&
-                        Defense.CanFastRecover(
-                            Me, Ball.Location, counterSupport, OurGoal.Location);
-                    GuardTo(counterSupport, 2250f, 650f, false,
-                        allowDodges: fastCounterRecovery);
+                    bool fastCounterRecovery = Defense.CanFastRecover(
+                        Me, Ball.Location, counterSupport, OurGoal.Location);
+                    GuardTo(counterSupport, 2250f, 750f, false,
+                        allowDodges: fastCounterRecovery,
+                        allowBoost: true);
                     SetDecision(counterGoalSide
                         ? "defend / counter shadow"
                         : "defend / counter recover");
@@ -472,7 +490,8 @@ namespace Bot
             }
 
             Shot attack = priorityAttack;
-            BallSlice catchSlice = canPossessGround && Ball.Location.z > 175f
+            BallSlice catchSlice = canPossessGround && !forceFinishOpportunity &&
+                Ball.Location.z > 175f
                 ? GroundCatch.FindCatch(Me)
                 : null;
 
@@ -588,7 +607,8 @@ namespace Bot
                 Defense.CanFastRecover(
                     Me, Ball.Location, support, OurGoal.Location);
             GuardTo(support, cruise, terminal, hold,
-                allowDodges: fastRecovery);
+                allowDodges: fastRecovery,
+                allowBoost: recoveringGoalSide && support.FlatDist(Me.Location) > 1800f);
 
             if (exitingGoal)
                 SetDecision("defend / exit net");
