@@ -18,6 +18,7 @@ namespace Bot
         public float TerminalSpeed { get; set; }
         public bool HoldPosition { get; set; }
         public bool AllowDodges { get; set; }
+        public bool AllowBoost { get; set; }
         public bool Holding { get; private set; }
         public string MobilityAction => drive.Action?.GetType().Name;
 
@@ -97,7 +98,7 @@ namespace Bot
             drive.AllowDodges = fastTravel;
             drive.DodgeMinSpeed = fastTravel ? 650f : 850f;
             drive.AllowHandbrake = false;
-            drive.WasteBoost = false;
+            drive.WasteBoost = AllowBoost;
             drive.Run(bot);
 
             bool mobilityCommitted = drive.Action != null && !drive.Action.Finished;
@@ -116,7 +117,8 @@ namespace Bot
                 bot.Controller.Jump = false;
             }
 
-            if (!mobilityCommitted && (speed < 1800f || distance < 950f || drive.Backwards))
+            if (!AllowBoost && !mobilityCommitted &&
+                (speed < 1800f || distance < 950f || drive.Backwards))
                 bot.Controller.Boost = false;
         }
     }
