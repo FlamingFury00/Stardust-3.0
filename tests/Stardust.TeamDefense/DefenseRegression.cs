@@ -155,6 +155,8 @@ internal static class DefenseRegression
                 $"planner retained an upfield defensive target: {action.Target}");
             Check(bot.Decision == "defend / recover behind ball",
                 $"unexpected decision: {bot.Decision}");
+            Check(action.AllowDodges,
+                "long goal-side recovery did not enable fast-travel dodges");
         });
 
         test("defense-v3: first man cannot attack from ahead of the ball", () =>
@@ -537,6 +539,42 @@ internal static class DefenseRegression
                 "goal-line possession was allowed to flick across the box");
         });
 
+        test("log-v6: long defensive recovery selects speedflip while precision guard stays grounded", () =>
+        {
+            Car car = CarAt(0, 0);
+            car.Velocity = new Vec3(0, -900, 0);
+            var bot = World(new Vec3(0, 1200, 100), car);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 0.10f);
+
+            var recovery = new DefensiveDrive(
+                car, new Vec3(0, -3500, 17), 2200f, 500f,
+                holdPosition: false, allowDodges: true);
+            for (int i = 0; i < 3; i++)
+            {
+                Set(typeof(Game), nameof(Game.Time), null!, 20f + i * 0.10f);
+                bot.Controller = new ControllerStateT();
+                recovery.Run(bot);
+            }
+
+            Check(recovery.MobilityAction == "SpeedFlip",
+                $"long aligned recovery selected {recovery.MobilityAction ?? "no mobility action"}");
+
+            var precise = new DefensiveDrive(
+                car, new Vec3(0, -3500, 17), 2200f, 500f,
+                holdPosition: false, allowDodges: false);
+            for (int i = 0; i < 3; i++)
+            {
+                Set(typeof(Game), nameof(Game.Time), null!, 21f + i * 0.10f);
+                bot.Controller = new ControllerStateT();
+                precise.Run(bot);
+            }
+
+            Check(precise.MobilityAction == null,
+                $"precision defense unexpectedly selected {precise.MobilityAction}");
+            Check(!bot.Controller.Jump,
+                "precision defense leaked a jump input");
+        });
+
         test("telemetry: file JSONL is rate-limited and includes actual control/target", () =>
         {
             string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
@@ -554,7 +592,9 @@ internal static class DefenseRegression
 
                 var car = CarAt(0, -3000);
                 var bot = World(new Vec3(0, -2000, 100), car);
-                bot.Action = new DefensiveDrive(car, new Vec3(0, -4100, 17), 1800f, 500f);
+                bot.Action = new DefensiveDrive(
+                    car, new Vec3(0, -4100, 17), 2200f, 500f,
+                    holdPosition: false, allowDodges: true);
                 bot.Controller.Throttle = 0.75f;
                 bot.Controller.Steer = -0.25f;
 
@@ -572,7 +612,7 @@ internal static class DefenseRegression
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
                 var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 3, "telemetry schema missing");
+                Check(root.GetProperty("schema").GetInt32() == 4, "telemetry schema missing");
                 Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
                 Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
                     "telemetry did not capture actual sanitized controller output");
@@ -586,6 +626,10 @@ internal static class DefenseRegression
                     "telemetry omitted raw challenge state");
                 Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
                     "telemetry omitted committed challenge state");
+                Check(root.GetProperty("action_detail").GetProperty("allow_dodges").GetBoolean(),
+                    "telemetry omitted defensive fast-travel state");
+                Check(root.GetProperty("action_detail").TryGetProperty("mobility_action", out _),
+                    "telemetry omitted defensive mobility subaction");
             }
             finally
             {
