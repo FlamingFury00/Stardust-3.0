@@ -495,7 +495,8 @@ namespace Bot
                 bool canPossessAir = Options.AerialCarry &&
                     PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
                 if (canPossessAir &&
-                    AerialCarry.CanStart(Me, Ball.MainBall, Situation.OpponentEta))
+                    AerialCarry.CanStart(
+                        Me, Ball.MainBall, Defense.OpponentContactEta(Situation)))
                 {
                     Action = new AerialCarry();
                     SetDecision(underPressure
