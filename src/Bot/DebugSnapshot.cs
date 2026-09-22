@@ -352,6 +352,9 @@ namespace Bot
                 case GoalLineSave save:
                     target = save.GuardTarget;
                     return ControlMath.Finite(target);
+                case EmergencyClear clear:
+                    target = clear.Target;
+                    return ControlMath.Finite(target);
                 case Shot shot:
                     target = shot.TargetLocation;
                     return ControlMath.Finite(target);
@@ -402,6 +405,13 @@ namespace Bot
                         ["crossing_time"] = Safe(save.CrossingTime),
                         ["jumping"] = save.Jumping,
                         ["double_jump"] = save.UsesDoubleJump
+                    };
+                case EmergencyClear clear:
+                    return new Dictionary<string, object>
+                    {
+                        ["target"] = V(clear.Target),
+                        ["clear_direction"] = V(clear.ClearDirection),
+                        ["committed"] = clear.Committed
                     };
                 case GetBoost boost:
                     return new Dictionary<string, object>
