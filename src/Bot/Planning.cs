@@ -261,25 +261,25 @@ namespace Bot
             return true;
         }
 
-        public static bool CanSearchAttack(TacticalFrame frame, Car car, Ball ball,
-            Vec3 attackGoal, bool canChallenge, bool controlledPossession)
+        public static bool CanSearchAttack(
+            TacticalFrame frame, Car car, Ball ball, Vec3 attackGoal,
+            bool canChallenge, bool controlledPossession)
         {
             if (canChallenge || controlledPossession)
                 return true;
+            if (CanForceFinishOpportunity(frame, car, ball, attackGoal))
+                return true;
             if (frame == null || car == null || ball == null ||
-                frame.TeamRank != 0 || !ControlMath.Finite(attackGoal))
+                frame.TeamRank != 0 || !ControlMath.Finite(attackGoal) ||
+                !float.IsFinite(frame.FreeTime))
                 return false;
 
-            return ball.location.FlatDist(attackGoal) < 3600f &&
-                frame.FreeTime >= -0.12f &&
-                car.Location.Dist(ball.location) < 1700f;
+            // Slightly negative ETA estimates in the attacking third should not suppress the shot
+            // planner entirely. The selected shot still has to pass its own mechanical validity.
+            return ball.location.FlatDist(attackGoal) < 3200f &&
+                frame.FreeTime >= -0.08f &&
+                car.Location.Dist(ball.location) < 1500f;
         }
-
-        public static bool CanSearchAttack(
-            TacticalFrame frame, Car car, Ball ball, Vec3 attackGoal,
-            bool canChallenge, bool controlledPossession) =>
-            canChallenge || controlledPossession ||
-            CanForceFinishOpportunity(frame, car, ball, attackGoal);
 
         /// <summary>
         /// Offensive-box exception to the conservative loose-ball challenge gate. When the ball is
