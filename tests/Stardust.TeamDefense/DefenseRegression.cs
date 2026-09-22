@@ -575,6 +575,95 @@ internal static class DefenseRegression
                 "precision defense leaked a jump input");
         });
 
+        test("log-v7: close wrong-side recovery routes around the ball and forbids a recovery flip", () =>
+        {
+            Car car = CarAt(-679f, -2778f);
+            car.Velocity = new Vec3(457f, -902f, 0f);
+            Vec3 ball = new(-510f, -2963f, 154f);
+
+            Vec3 target = Defense.RecoveryTarget(car.Location, ball, blueGoal);
+
+            Check(target.x < ball.x - 250f,
+                $"close recovery still crossed through the ball: {target}");
+            Check(Defense.IsGoalSide(target, ball, blueGoal, 250f),
+                $"bypass waypoint was not goal-side: {target}");
+            Check(!Defense.CanFastRecover(car, ball, target, blueGoal),
+                "near-ball wrong-side recovery was allowed to dodge");
+
+            car.Location = new Vec3(2500f, 1500f, 17f);
+            Vec3 safeBall = new(-1800f, -500f, 100f);
+            Vec3 safeTarget = new(2200f, -2600f, 17f);
+            Check(Defense.CanFastRecover(car, safeBall, safeTarget, blueGoal),
+                "clear long recovery corridor was denied fast travel");
+        });
+
+        test("log-v7: elevated goal-line crossing triggers a jump while a low crossing stays grounded", () =>
+        {
+            Car car = CarAt(0f, -5060f);
+            car.Orientation = new Mat3x3(new Vec3(0, -MathF.PI / 2, 0));
+            var bot = World(new Vec3(0f, -4900f, 400f), car);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
+            Set(typeof(Game), nameof(Game.Time), null!, 10f);
+
+            var high = new GoalLineSave(
+                car, new Vec3(0f, -5120f, 442f), 10.50f);
+            bot.Controller = new ControllerStateT();
+            high.Run(bot);
+            Check(high.Jumping && bot.Controller.Jump,
+                "442 uu crossing did not start a goal-line jump");
+
+            var low = new GoalLineSave(
+                car, new Vec3(0f, -5120f, 130f), 10.50f);
+            bot.Controller = new ControllerStateT();
+            low.Run(bot);
+            Check(!low.Jumping && !bot.Controller.Jump,
+                "low goal-line crossing unnecessarily left the ground");
+        });
+
+        test("log-v7: imminent opponent-half finish outranks possession", () =>
+        {
+            Car car = CarAt(1880f, 1870f);
+            Car defender = CarAt(800f, 4250f, 1, 1);
+            var bot = World(new Vec3(1900f, 2070f, 150f), car, defender);
+            Set(typeof(Game), nameof(Game.Time), null!, 10f);
+
+            var slice = new BallSlice(
+                10.40f, new Vec3(1900f, 2070f, 150f), Vec3.Zero);
+            var shot = new GroundShot(car, slice, new Vec3(0f, 5120f, 120f));
+            var frame = new TacticalFrame
+            {
+                TeamRank = 0,
+                TeamCount = 1,
+                MyEta = 0.25f,
+                OpponentEta = 2.0f
+            };
+
+            Check(Tactics.PreferImmediateShot(bot, shot, frame),
+                "0.40 s direct finish was subordinated to possession");
+        });
+
+        test("log-v7: slow blocked setup does not force a speculative boom", () =>
+        {
+            Car car = CarAt(0f, 500f);
+            Car defender = CarAt(0f, 2500f, 1, 1);
+            var bot = World(new Vec3(0f, 1000f, 150f), car, defender);
+            Set(typeof(Game), nameof(Game.Time), null!, 20f);
+
+            var slice = new BallSlice(
+                21.20f, new Vec3(0f, 1000f, 150f), Vec3.Zero);
+            var shot = new GroundShot(car, slice, new Vec3(0f, 5120f, 120f));
+            var frame = new TacticalFrame
+            {
+                TeamRank = 0,
+                TeamCount = 1,
+                MyEta = 0.8f,
+                OpponentEta = 2.2f
+            };
+
+            Check(!Tactics.PreferImmediateShot(bot, shot, frame),
+                "blocked 1.2 s setup was incorrectly forced into a shot");
+        });
+
         test("telemetry: file JSONL is rate-limited and includes actual control/target", () =>
         {
             string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
@@ -612,7 +701,7 @@ internal static class DefenseRegression
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
                 var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 4, "telemetry schema missing");
+                Check(root.GetProperty("schema").GetInt32() == 5, "telemetry schema missing");
                 Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
                 Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
                     "telemetry did not capture actual sanitized controller output");
