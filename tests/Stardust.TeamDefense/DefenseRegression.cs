@@ -809,7 +809,7 @@ internal static class DefenseRegression
                 Environment.SetEnvironmentVariable("STARDUST_SCENARIO_DIR", directory);
 
                 var bot = new Stardust();
-                FieldInfo field = typeof(Stardust).GetField(
+                System.Reflection.FieldInfo field = typeof(Stardust).GetField(
                     "debugDashboard", BindingFlags.NonPublic | BindingFlags.Instance)
                     ?? throw new Exception("debug dashboard field missing");
                 var dashboard = field.GetValue(bot) as StardustDebugDashboard;
