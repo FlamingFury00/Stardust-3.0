@@ -321,6 +321,24 @@ namespace Bot
         /// low-value/slow contacts, but an imminent goal-directed hit in the attacking half should
         /// not be converted into another catch or dribble setup.
         /// </summary>
+        /// <summary>
+        /// Fraction of a planned contact direction that actually acts in the field plane.
+        /// Near-vertical "shots" beside our own goal are mechanically valid JumpShots, but they
+        /// surrender horizontal clearance authority and were observed turning into dangerous
+        /// sideways/own-goal touches despite nominally aiming at the opponent net.
+        /// </summary>
+        public static float FlatShotAuthority(Shot shot)
+        {
+            if (shot == null || !ControlMath.Finite(shot.ShotDirection))
+                return 0f;
+
+            float total = shot.ShotDirection.Length();
+            if (!float.IsFinite(total) || total < 0.001f)
+                return 0f;
+            return System.Math.Clamp(
+                shot.ShotDirection.Flatten().Length() / total, 0f, 1f);
+        }
+
         public static bool PreferImmediateShot(RUBot bot, Shot shot, TacticalFrame frame)
         {
             if (bot == null || shot == null || shot.Slice == null ||
@@ -330,6 +348,11 @@ namespace Bot
 
             float contactTime = shot.Slice.Time - Game.Time;
             if (!float.IsFinite(contactTime) || contactTime <= 0f || contactTime > 1.35f)
+                return false;
+
+            // A finish has to have real horizontal authority. This avoids classifying a steep
+            // pop/jump beside a wall or goal line as an immediate scoring commitment.
+            if (FlatShotAuthority(shot) < 0.42f)
                 return false;
 
             Vec3 attackGoal = bot.TheirGoal.Location;
@@ -559,6 +582,30 @@ namespace Bot
                         if (emergency && !Defense.ClearDirectionIsSafe(
                                 candidate.ShotDirection, bot.OurGoal.Location, 0.08f))
                             return;
+
+                        if (!emergency)
+                        {
+                            float ownDepth = Defense.OwnDepth(
+                                slice.Location, bot.OurGoal.Location);
+                            float ownGoalDistance = slice.Location.FlatDist(
+                                bot.OurGoal.Location);
+                            float flatAuthority = FlatShotAuthority(candidate);
+
+                            // In our defensive third, do not call a nearly vertical pop an
+                            // "attack". The 1-1 concession selected a JumpShot at ~100 uu ball
+                            // height with only ~0.17 planar authority; the real touch then carried
+                            // the ball laterally/toward our own goal instead of producing a clear.
+                            bool defensiveThird = ownDepth > 2600f ||
+                                ownGoalDistance < 2700f;
+                            if (defensiveThird && flatAuthority < 0.52f)
+                                return;
+
+                            if (ownGoalDistance < 1800f &&
+                                !Defense.ClearDirectionIsSafe(
+                                    candidate.ShotDirection,
+                                    bot.OurGoal.Location, 0.22f))
+                                return;
+                        }
 
                         lowMechanicValid |= candidate is GroundShot || candidate is JumpShot;
 
