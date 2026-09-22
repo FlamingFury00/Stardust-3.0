@@ -19,6 +19,8 @@ namespace Bot
         public Vec3 GuardTarget { get; private set; }
         public bool Jumping => jumping;
         public bool UsesDoubleJump => doubleJump;
+        public bool FastTravel { get; private set; }
+        public bool AirborneFlight { get; private set; }
 
         private readonly DefensiveDrive drive;
         private readonly JumpSequence jumps = new(0.16f);
@@ -63,6 +65,8 @@ namespace Bot
             // the car is still carrying useful lateral velocity after a failed/contested aerial.
             if (!car.IsGrounded && !jumping)
             {
+                AirborneFlight = true;
+                FastTravel = false;
                 float horizon = System.Math.Clamp(timeRemaining, 0.10f, 1.20f);
                 Vec3 acceleration = PossessionControl.FlightAtHorizon(
                     car, Crossing, Vec3.Zero, horizon);
@@ -82,7 +86,9 @@ namespace Bot
 
             if (!jumping)
             {
+                AirborneFlight = false;
                 bool fastTravel = guardDistance > 1050f && timeRemaining > 0.72f;
+                FastTravel = fastTravel;
                 drive.Target = GuardTarget;
                 drive.CruiseSpeed = Car.MaxSpeed;
                 drive.TerminalSpeed = fastTravel ? 850f : 0f;
