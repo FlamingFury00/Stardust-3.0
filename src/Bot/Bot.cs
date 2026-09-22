@@ -224,14 +224,16 @@ namespace Bot
 
                 // If the dangerous ball is already within contact distance, touching it away
                 // from our net outranks driving toward a remote goal-line waypoint.
-                if (emergency && EmergencyClear.CanStart(
-                        Me, Ball.MainBall, OurGoal.Location, threat))
+                if (EmergencyClear.CanStart(
+                        Me, Ball.MainBall, OurGoal.Location, dangerTime))
                 {
                     if (!(Action is EmergencyClear) || Action.Finished)
                         Action = new EmergencyClear(
                             Me, OurGoal.Location, TheirGoal.Location);
                     defensiveShot = null;
-                    SetDecision("defend / emergency touch clear");
+                    SetDecision(emergency
+                        ? "defend / emergency touch clear"
+                        : "defend / counter touch clear");
                     return;
                 }
 
@@ -295,6 +297,20 @@ namespace Bot
                     return;
                 }
 
+                if (Defense.TryThreatStagingTarget(
+                    Me, Ball.Prediction, OurGoal.Location, TheirGoal.Location,
+                    Game.Time, deadline, out Vec3 stage, out _))
+                {
+                    bool fastStage = Defense.CanFastRecover(
+                        Me, Ball.Location, stage, OurGoal.Location);
+                    GuardTo(stage, Car.MaxSpeed, 900f, false,
+                        allowDodges: fastStage, allowBoost: true);
+                    SetDecision(emergency
+                        ? "defend / emergency trajectory block"
+                        : "defend / counter trajectory block");
+                    return;
+                }
+
                 if (!emergency)
                 {
                     Vec3 counterReference = Defense.ReferenceBall(
@@ -338,7 +354,13 @@ namespace Bot
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
-            bool canOwnAttack = canChallenge || controlledPossession;
+            bool attackingThird =
+                Ball.Location.FlatDist(TheirGoal.Location) < 3600f;
+            bool opportunisticAttack = Situation.TeamRank == 0 &&
+                attackingThird && Situation.FreeTime >= -0.12f &&
+                Me.Location.Dist(Ball.Location) < 1700f;
+            bool canOwnAttack =
+                canChallenge || controlledPossession || opportunisticAttack;
             Shot priorityAttack = canOwnAttack
                 ? Tactics.SelectShot(
                     this, false, Situation.OpponentEta, HasClaim, attackDeadline)
@@ -371,7 +393,7 @@ namespace Bot
 
             if (Action is Shot shot)
             {
-                if (canChallenge && shot.IsPredictionValid() &&
+                if (canOwnAttack && shot.IsPredictionValid() &&
                     shot.Slice.Time - Game.Time <= attackDeadline &&
                     !HasTeammateEarlierShot(shot.Slice.Time))
                     return;
@@ -604,7 +626,7 @@ namespace Bot
         }
 
         private void GuardTo(Vec3 destination, float cruiseSpeed, float terminalSpeed,
-            bool holdPosition, bool allowDodges = false)
+            bool holdPosition, bool allowDodges = false, bool allowBoost = false)
         {
             if (!ControlMath.Finite(destination))
                 destination = OurGoal.Location;
@@ -616,11 +638,12 @@ namespace Bot
                 guard.TerminalSpeed = terminalSpeed;
                 guard.HoldPosition = holdPosition;
                 guard.AllowDodges = allowDodges;
+                guard.AllowBoost = allowBoost;
             }
             else
             {
                 Action = new DefensiveDrive(Me, destination, cruiseSpeed,
-                    terminalSpeed, holdPosition, allowDodges);
+                    terminalSpeed, holdPosition, allowDodges, allowBoost);
             }
         }
 
