@@ -78,6 +78,32 @@ Test("possession flight: identical ballistic motion needs no control acceleratio
         $"identical ballistic motion requested {acceleration} ({acceleration.Length():F1} uu/s^2) of control");
 });
 
+Test("ground catch: successful settle hands directly into GroundDribble", () =>
+{
+    Set(typeof(Game), nameof(Game.Time), null, 0f);
+    var car = new Car
+    {
+        Location = new Vec3(0f, 0f, 17f),
+        Velocity = new Vec3(0f, 500f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, MathF.PI / 2f, 0f)),
+        Boost = 30f,
+        IsGrounded = true
+    };
+    Vec3 ballLocation = car.Location + car.Forward * 20f + car.Up * 150f;
+    SetBall(ballLocation, car.Velocity, new BallPrediction
+    {
+        Slices = new[] { new BallSlice(0.30f, ballLocation, car.Velocity) }
+    });
+
+    var bot = Probe(car);
+    var catchAction = new GroundCatch();
+    bot.Action = catchAction;
+    catchAction.Run(bot);
+
+    Check(bot.Action is GroundDribble,
+        $"settled catch returned to supervisor instead of chaining possession: {bot.Action?.GetType().Name ?? "null"}");
+});
+
 Test("ground dribble: pre-contact pressure triggers the flick window", () =>
 {
     Set(typeof(Game), nameof(Game.Time), null, 0f);
