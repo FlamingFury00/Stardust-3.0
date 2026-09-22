@@ -468,7 +468,7 @@ internal static class DefenseRegression
                 $"unexpected possession decision: {bot.Decision}");
         });
 
-        test("attack-v4: pressure extends commitment beyond opponent loose-ball ETA", () =>
+        test("attack-v4: imminent pressure constrains loose-ball shot but not possession", () =>
         {
             var frame = new TacticalFrame
             {
@@ -482,10 +482,10 @@ internal static class DefenseRegression
 
             float normal = Defense.AttackDeadline(frame);
             float possession = Defense.AttackDeadline(frame, controlledPossession: true);
-            Check(normal > frame.OpponentEta,
-                $"pressure still shortened the attack horizon: {normal}");
-            Check(possession >= normal + 0.25f,
-                $"controlled possession did not receive continuation time: {possession}");
+            Check(normal < frame.OpponentEta,
+                $"imminent touch still allowed the old long loose-ball horizon: {normal}");
+            Check(possession > frame.OpponentEta,
+                $"controlled possession lost its continuation time: {possession}");
         });
 
         test("attack-v4: fallback challenge approaches from behind the ball", () =>
