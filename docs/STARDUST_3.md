@@ -47,10 +47,10 @@ Set environment variables **before starting the bot process**:
 | `STARDUST_TRACE` | disabled | Set `1` to log human-readable strategy transitions and ETA estimates |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Legacy JSONL telemetry samples per second; clamped to 1–30 Hz |
-| `STARDUST_DEBUG` | disabled | Set `1` to start the live local tactical debugger and scenario recorder |
+| `STARDUST_DEBUG` | enabled for the normal packaged bot | Set `0` to disable the live local tactical debugger; test/probe instances stay quiet unless explicitly enabled |
 | `STARDUST_DEBUG_OPEN` | enabled with debugger | Set `0` to prevent automatically opening the dashboard in the default browser |
 | `STARDUST_DEBUG_PORT` | `49152` | Preferred loopback port; Stardust tries the next 9 ports if occupied |
-| `STARDUST_SCENARIOS` | disabled | Set `1` to record scenarios without starting the live dashboard |
+| `STARDUST_SCENARIOS` | enabled for the normal packaged bot | Set `0` to disable automatic scenario capture; set `1` to force it on for a probe/test launch |
 | `STARDUST_SCENARIO_HZ` | `20` | Rolling world-state capture rate; clamped to 2–60 Hz |
 | `STARDUST_SCENARIO_PRE_SECONDS` | `8` | Seconds retained before a concession/manual capture; clamped to 2–20 |
 | `STARDUST_SCENARIO_DIR` | auto | Optional output directory for captured scenarios |
@@ -70,7 +70,7 @@ $env:STARDUST_FLIP_RESETS = "1"
 
 ### Live tactical debugger and scenario capture
 
-With `STARDUST_DEBUG=1`, Stardust starts a zero-dependency HTTP dashboard bound only to `127.0.0.1` and opens it in the default browser unless `STARDUST_DEBUG_OPEN=0`. The console prints the exact `STARDUST_DEBUG_READY url=...` address. The dashboard updates roughly every controller sample and shows:
+The normal packaged Stardust bot now starts the debugger automatically, so it no longer depends on environment variables being propagated through the RLBot manager. Set `STARDUST_DEBUG=0` to opt out. The debugger is a zero-dependency HTTP dashboard bound only to `127.0.0.1` and opens in the default browser unless `STARDUST_DEBUG_OPEN=0`. The console prints the exact `STARDUST_DEBUG_READY url=...` address. The dashboard updates roughly every controller sample and shows:
 
 - a scaled field view with all cars, the ball, current target, and bot-to-target line;
 - the current supervisor decision, objective, and a human-readable explanation of why that state exists;

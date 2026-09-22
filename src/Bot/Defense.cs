@@ -48,6 +48,34 @@ namespace Bot
             GoalSideProgress(point, ball, goal) >= buffer;
 
         /// <summary>
+        /// Signed progress toward our goal using only the field-depth axis. This stricter check is
+        /// used for emergency contacts: a car far sideways must not be treated as "behind" a ball
+        /// merely because the diagonal ball-to-goal-center projection happens to be positive.
+        /// </summary>
+        public static float GoalDepthProgress(Vec3 point, Vec3 ball, Vec3 goal)
+        {
+            if (!ControlMath.Finite(point) || !ControlMath.Finite(ball) || !ControlMath.Finite(goal))
+                return float.NegativeInfinity;
+            return (point.y - ball.y) * Side(goal);
+        }
+
+        public static bool IsDepthGoalSide(Vec3 point, Vec3 ball, Vec3 goal, float buffer = 0f) =>
+            GoalDepthProgress(point, ball, goal) >= buffer;
+
+        public static float OwnDepth(Vec3 point, Vec3 goal) =>
+            ControlMath.Finite(point) && ControlMath.Finite(goal)
+                ? point.y * Side(goal)
+                : float.NegativeInfinity;
+
+        public static bool ClearDirectionIsSafe(Vec3 direction, Vec3 goal, float margin = 0.12f)
+        {
+            if (!ControlMath.Finite(direction) || !ControlMath.Finite(goal))
+                return false;
+            Vec3 awayFromGoal = new Vec3(0f, -Side(goal), 0f);
+            return ControlMath.FlatUnit(direction, awayFromGoal).Dot(awayFromGoal) >= margin;
+        }
+
+        /// <summary>
         /// A teammate only counts as usable cover if it remains in the ball-to-mouth shooting corridor
         /// after a short momentum projection. Merely being deeper on the field is not enough.
         /// </summary>
@@ -385,13 +413,18 @@ namespace Bot
                 if (slice.Location.z > 185f)
                     continue;
 
-                // Never approach an emergency ball from substantially upfield: this is exactly the
-                // geometry which can turn a "clear" into an own-goal acceleration.
-                if (!IsGoalSide(car.Location, slice.Location, goal, -100f))
+                // A raw drive-to-ball fallback is only safe when the car is truly deeper than
+                // the future contact on the goal-to-goal axis and its approach travels away from
+                // the own goal. Otherwise chasing the future slice can literally become an own-goal.
+                if (!IsDepthGoalSide(car.Location, slice.Location, goal, 40f))
+                    continue;
+
+                Vec3 toSlice = ControlMath.FlatUnit(slice.Location - car.Location, car.Forward);
+                Vec3 ownGoalAxis = new Vec3(0f, Side(goal), 0f);
+                if (toSlice.Dot(ownGoalAxis) > -0.08f)
                     continue;
 
                 float routeEta = Drive.GetEta(car, slice.Location);
-                Vec3 toSlice = ControlMath.FlatUnit(slice.Location - car.Location, car.Forward);
                 float heading = car.Forward.FlatNorm().Dot(toSlice);
                 float forward = MathF.Max(0f, car.Velocity.Dot(toSlice));
                 float directEta = heading > 0.72f

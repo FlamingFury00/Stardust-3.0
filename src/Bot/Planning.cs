@@ -299,6 +299,40 @@ namespace Bot
             return immediateBoom || closeFinish || openNet || pressuredRelease;
         }
 
+        /// <summary>
+        /// In the defensive third, an imminent clean clear outranks a soft catch/dribble when the
+        /// opponent is closing. This is the "best defense is attack" gate: convert pressure into
+        /// field position instead of preserving fragile possession beside our own net.
+        /// </summary>
+        public static bool PreferDefensiveClear(RUBot bot, Shot shot, TacticalFrame frame)
+        {
+            if (bot == null || shot == null || shot.Slice == null || frame == null ||
+                !float.IsFinite(shot.Slice.Time) ||
+                !ControlMath.Finite(shot.Slice.Location) ||
+                !ControlMath.Finite(shot.ShotDirection))
+                return false;
+
+            float contactTime = shot.Slice.Time - Game.Time;
+            if (!float.IsFinite(contactTime) || contactTime <= 0f || contactTime > 0.90f)
+                return false;
+
+            float ownDepth = Defense.OwnDepth(
+                shot.Slice.Location, bot.OurGoal.Location);
+            float goalDistance = shot.Slice.Location.FlatDist(bot.OurGoal.Location);
+            bool deep = ownDepth > 2850f || goalDistance < 2450f;
+            if (!deep)
+                return false;
+
+            bool pressure = frame.UnderPressure ||
+                (float.IsFinite(frame.OpponentEta) && frame.OpponentEta < 1.55f) ||
+                goalDistance < 1500f;
+            if (!pressure)
+                return false;
+
+            return Defense.ClearDirectionIsSafe(
+                shot.ShotDirection, bot.OurGoal.Location, 0.18f);
+        }
+
         /// <summary>Compatibility wrapper: stationary defensive parking has zero terminal speed.</summary>
         public static float GuardSpeed(Car car, Vec3 target, float cruiseSpeed) =>
             Defense.DriveSpeed(car, target, cruiseSpeed, 0f);
@@ -360,10 +394,11 @@ namespace Bot
                 next = slice.Time + 0.06f;
                 evaluated++;
 
-                if (emergency &&
-                    !Defense.IsGoalSide(bot.Me.Location, slice.Location, bot.OurGoal.Location, -100f))
-                    continue;
-                if (!target.Fits(slice.Location) || (!emergency && claimed(slice.Time)))
+                // Emergency clears are allowed to intercept an inbound future slice even when
+                // the current car position is not behind that future slice yet. Safety is enforced
+                // on the resulting contact direction instead of a static pre-contact position test.
+                if ((!emergency && !target.Fits(slice.Location)) ||
+                    (!emergency && claimed(slice.Time)))
                     continue;
 
                 Ball after = slice.ToBall();
@@ -391,6 +426,10 @@ namespace Bot
                     cost = 0.8f;
                 }
                 if (!candidate.IsValid(bot.Me))
+                    continue;
+
+                if (emergency && !Defense.ClearDirectionIsSafe(
+                        candidate.ShotDirection, bot.OurGoal.Location, 0.08f))
                     continue;
 
                 float score = -t - cost -
