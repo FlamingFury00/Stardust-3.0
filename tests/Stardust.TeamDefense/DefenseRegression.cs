@@ -790,6 +790,133 @@ internal static class DefenseRegression
                 "marginal deep-box possession remained sticky under pressure");
         });
 
+        test("scenario-v10: close counter-threat starts emergency clear before hard horizon", () =>
+        {
+            Car car = CarAt(-254f, -815f);
+            Ball ball = new(
+                new Vec3(-396f, -775f, 93f),
+                new Vec3(-53f, -1542f, 10f));
+
+            Check(EmergencyClear.CanStart(
+                    car, ball, blueGoal, 4.466f),
+                "179 uu goal-bound counter threat waited for the 2.5 s emergency horizon");
+        });
+
+        test("scenario-v10: low point-blank emergency commits instead of chasing a moving target", () =>
+        {
+            Car car = CarAt(1618.57f, -4923.37f);
+            car.Velocity = new Vec3(-219f, 22f, 0f);
+            var bot = World(
+                new Vec3(1380.12f, -4658.33f, 109.13f), car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+                new Vec3(-1492f, -982f, 82f));
+            Set(typeof(Game), nameof(Game.Time), null!, 20f);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
+
+            var clear = new EmergencyClear(
+                car, blueGoal, new Vec3(0f, 5120f, 0f));
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+            Check(clear.Committed,
+                "368 uu low emergency still remained an uncommitted drive chase");
+
+            Set(typeof(Game), nameof(Game.Time), null!, 20.01f);
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+            Check(bot.Controller.Jump,
+                "committed low emergency did not begin its contact jump");
+        });
+
+        test("scenario-v10: counter threat stages behind a future ball instead of shallow parking", () =>
+        {
+            Car car = CarAt(0f, -1500f);
+            car.Orientation = new Mat3x3(new Vec3(0f, -MathF.PI / 2f, 0f));
+            car.Velocity = new Vec3(0f, -1200f, 0f);
+            car.Boost = 30f;
+            var prediction = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(30.80f,
+                        new Vec3(0f, -2200f, 93f),
+                        new Vec3(0f, -1500f, 0f)),
+                    new BallSlice(31.25f,
+                        new Vec3(0f, -2875f, 93f),
+                        new Vec3(0f, -1500f, 0f))
+                }
+            };
+
+            Check(Defense.TryThreatStagingTarget(
+                    car, prediction, blueGoal, new Vec3(0f, 5120f, 0f),
+                    30f, 1.30f, out Vec3 stage, out float contact),
+                "reachable future threat staging point was not found");
+            Check(stage.y < -2200f,
+                $"staging point was not behind the future ball: {stage}");
+            Check(contact <= 1.30f,
+                $"staging contact exceeded deadline: {contact}");
+        });
+
+        test("scenario-v10: distant goal-line save travels fast and airborne save stays active", () =>
+        {
+            Set(typeof(Game), nameof(Game.Time), null!, 40f);
+
+            Car ground = CarAt(450f, -1773f);
+            ground.Velocity = new Vec3(-128f, 274f, 0f);
+            ground.Boost = 23f;
+            var groundBot = World(
+                new Vec3(-525f, -3300f, 93f), ground);
+            var travel = new GoalLineSave(
+                ground, new Vec3(-647f, -5120f, 93f), 42.46f);
+            groundBot.Controller = new ControllerStateT();
+            travel.Run(groundBot);
+            Check(travel.FastTravel,
+                "3k+ uu goal-line route still used parking mode");
+
+            Car air = CarAt(-2211f, -4587f);
+            air.Location = new Vec3(-2211f, -4587f, 113f);
+            air.IsGrounded = false;
+            air.Velocity = new Vec3(-1400f, -12f, 395f);
+            air.Boost = 20f;
+            var airBot = World(
+                new Vec3(-2646f, -4599f, 464f), air);
+            var aerial = new GoalLineSave(
+                air, new Vec3(-5f, -5120f, 206f), 41.93f);
+            airBot.Controller = new ControllerStateT();
+            aerial.Run(airBot);
+            Check(aerial.AirborneFlight,
+                "airborne emergency save still waited passively for landing");
+            Check(MathF.Abs(airBot.Controller.Pitch) +
+                  MathF.Abs(airBot.Controller.Yaw) +
+                  MathF.Abs(airBot.Controller.Roll) > 0.01f,
+                "airborne emergency save produced no attitude command");
+        });
+
+        test("scenario-v10: near-tie at opponent goal still searches for a finish", () =>
+        {
+            Car car = CarAt(-1365f, 4865f);
+            Ball ball = new(
+                new Vec3(-1529f, 5029f, 306f),
+                new Vec3(-318f, 0f, -242f));
+            var frame = new TacticalFrame
+            {
+                TeamRank = 0,
+                TeamCount = 1,
+                MyEta = 0.5832f,
+                OpponentEta = 0.5832f,
+                LastBack = true
+            };
+
+            Check(Tactics.CanSearchAttack(
+                    frame, car, ball, new Vec3(0f, 5120f, 0f),
+                    canChallenge: false, controlledPossession: false),
+                "opponent-box tie still suppressed shot search and forced catch");
+            Check(!Tactics.CanSearchAttack(
+                    frame, car, new Ball(new Vec3(0f, 0f, 100f), Vec3.Zero),
+                    new Vec3(0f, 5120f, 0f),
+                    canChallenge: false, controlledPossession: false),
+                "near-tie shot-search exception leaked into midfield");
+        });
+
         test("debug-v2: packaged bot enables debugger without shell flag propagation", () =>
         {
             string? oldAgent = Environment.GetEnvironmentVariable("RLBOT_AGENT_ID");

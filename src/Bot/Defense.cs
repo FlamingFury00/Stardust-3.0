@@ -443,6 +443,74 @@ namespace Bot
         }
 
         /// <summary>
+        /// Find a reachable staging point on the goal-side of a future low-ball slice. Unlike a
+        /// static shadow waypoint, this target moves deeper with a goal-bound trajectory and sets up
+        /// a fieldward clear instead of parking while the ball rolls past.
+        /// </summary>
+        public static bool TryThreatStagingTarget(Car car, BallPrediction prediction,
+            Vec3 ownGoal, Vec3 attackGoal, float now, float deadline,
+            out Vec3 target, out float contactTime)
+        {
+            target = ownGoal;
+            contactTime = float.PositiveInfinity;
+            if (car == null || car.IsDemolished || !float.IsFinite(now) ||
+                !float.IsFinite(deadline) || deadline <= 0f ||
+                !ControlMath.Finite(ownGoal) || !ControlMath.Finite(attackGoal))
+                return false;
+
+            BallSlice[] slices = prediction.Slices;
+            if (slices == null || slices.Length == 0)
+                return false;
+
+            float next = now + 0.12f;
+            Vec3 fieldward = new Vec3(0f, -Side(ownGoal), 0f);
+            foreach (BallSlice slice in slices)
+            {
+                if (slice == null || !float.IsFinite(slice.Time) ||
+                    !ControlMath.Finite(slice.Location) || slice.Time < next)
+                    continue;
+
+                float t = slice.Time - now;
+                if (t > deadline)
+                    break;
+                next = slice.Time + 0.06f;
+
+                if (slice.Location.z > 270f)
+                    continue;
+
+                Vec3 clear = ControlMath.FlatUnit(
+                    attackGoal - slice.Location, fieldward);
+                if (!ClearDirectionIsSafe(clear, ownGoal, 0.16f))
+                    clear = fieldward;
+
+                Vec3 stage = Field.LimitToNearestSurface(
+                    slice.Location - clear * 165f);
+                if (!ControlMath.Finite(stage) ||
+                    !IsDepthGoalSide(stage, slice.Location, ownGoal, 85f))
+                    continue;
+
+                float routeEta = Drive.GetEta(car, stage);
+                Vec3 toStage = ControlMath.FlatUnit(stage - car.Location, car.Forward);
+                float heading = car.Forward.FlatNorm().Dot(toStage);
+                float forward = MathF.Max(0f, car.Velocity.Dot(toStage));
+                float directEta = heading > 0.68f
+                    ? DrivePhysics.TravelTime(
+                        car.Location.FlatDist(stage), forward, car.Boost)
+                    : float.PositiveInfinity;
+                float eta = MathF.Min(routeEta, directEta + 0.06f);
+
+                if (!float.IsFinite(eta) || eta > t + 0.12f)
+                    continue;
+
+                target = stage;
+                contactTime = t;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Offensive contact horizon. Opponent ETA is a loose-ball estimate, so it is used as a
         /// pressure reference rather than a hard possession-killing deadline. Controlled possession
         /// receives a larger continuation window; emergency saves bypass this function entirely.

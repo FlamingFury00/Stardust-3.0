@@ -18,19 +18,22 @@ namespace Bot
         public float TerminalSpeed { get; set; }
         public bool HoldPosition { get; set; }
         public bool AllowDodges { get; set; }
+        public bool AllowBoost { get; set; }
         public bool Holding { get; private set; }
         public string MobilityAction => drive.Action?.GetType().Name;
 
         private readonly Drive drive;
 
         public DefensiveDrive(Car car, Vec3 target, float cruiseSpeed = 1800f,
-            float terminalSpeed = 0f, bool holdPosition = false, bool allowDodges = false)
+            float terminalSpeed = 0f, bool holdPosition = false,
+            bool allowDodges = false, bool allowBoost = false)
         {
             Target = target;
             CruiseSpeed = cruiseSpeed;
             TerminalSpeed = terminalSpeed;
             HoldPosition = holdPosition;
             AllowDodges = allowDodges;
+            AllowBoost = allowBoost;
             drive = new Drive(car, target, MathF.Max(1f, cruiseSpeed), allowDodges, wasteBoost: false)
             {
                 AllowHandbrake = false,
@@ -97,7 +100,7 @@ namespace Bot
             drive.AllowDodges = fastTravel;
             drive.DodgeMinSpeed = fastTravel ? 650f : 850f;
             drive.AllowHandbrake = false;
-            drive.WasteBoost = false;
+            drive.WasteBoost = AllowBoost;
             drive.Run(bot);
 
             bool mobilityCommitted = drive.Action != null && !drive.Action.Finished;
@@ -116,7 +119,8 @@ namespace Bot
                 bot.Controller.Jump = false;
             }
 
-            if (!mobilityCommitted && (speed < 1800f || distance < 950f || drive.Backwards))
+            if (!AllowBoost && !mobilityCommitted &&
+                (speed < 1800f || distance < 950f || drive.Backwards))
                 bot.Controller.Boost = false;
         }
     }

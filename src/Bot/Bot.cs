@@ -224,14 +224,16 @@ namespace Bot
 
                 // If the dangerous ball is already within contact distance, touching it away
                 // from our net outranks driving toward a remote goal-line waypoint.
-                if (emergency && EmergencyClear.CanStart(
-                        Me, Ball.MainBall, OurGoal.Location, threat))
+                if (EmergencyClear.CanStart(
+                        Me, Ball.MainBall, OurGoal.Location, dangerTime))
                 {
                     if (!(Action is EmergencyClear) || Action.Finished)
                         Action = new EmergencyClear(
                             Me, OurGoal.Location, TheirGoal.Location);
                     defensiveShot = null;
-                    SetDecision("defend / emergency touch clear");
+                    SetDecision(emergency
+                        ? "defend / emergency touch clear"
+                        : "defend / counter touch clear");
                     return;
                 }
 
@@ -276,7 +278,8 @@ namespace Bot
                     defensiveShot = null;
                 }
 
-                if (Action != null && !(Action is GoalLineSave))
+                if (Action is Shot selectedClear &&
+                    ReferenceEquals(selectedClear, defensiveShot))
                 {
                     SetDecision(emergency
                         ? "defend / emergency clear"
@@ -295,6 +298,20 @@ namespace Bot
                     return;
                 }
 
+                if (Defense.TryThreatStagingTarget(
+                    Me, Ball.Prediction, OurGoal.Location, TheirGoal.Location,
+                    Game.Time, deadline, out Vec3 stage, out _))
+                {
+                    bool fastStage = Defense.CanFastRecover(
+                        Me, Ball.Location, stage, OurGoal.Location);
+                    GuardTo(stage, Car.MaxSpeed, 900f, false,
+                        allowDodges: fastStage, allowBoost: true);
+                    SetDecision(emergency
+                        ? "defend / emergency trajectory block"
+                        : "defend / counter trajectory block");
+                    return;
+                }
+
                 if (!emergency)
                 {
                     Vec3 counterReference = Defense.ReferenceBall(
@@ -308,11 +325,11 @@ namespace Bot
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
-                    bool fastCounterRecovery = !counterGoalSide &&
-                        Defense.CanFastRecover(
-                            Me, Ball.Location, counterSupport, OurGoal.Location);
-                    GuardTo(counterSupport, 2250f, 650f, false,
-                        allowDodges: fastCounterRecovery);
+                    bool fastCounterRecovery = Defense.CanFastRecover(
+                        Me, Ball.Location, counterSupport, OurGoal.Location);
+                    GuardTo(counterSupport, 2250f, 750f, false,
+                        allowDodges: fastCounterRecovery,
+                        allowBoost: true);
                     SetDecision(counterGoalSide
                         ? "defend / counter shadow"
                         : "defend / counter recover");
@@ -338,7 +355,11 @@ namespace Bot
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
-            bool canOwnAttack = canChallenge || controlledPossession;
+            bool forceFinishOpportunity = Tactics.CanForceFinishOpportunity(
+                Situation, Me, Ball.MainBall, TheirGoal.Location);
+            bool canOwnAttack = Tactics.CanSearchAttack(
+                Situation, Me, Ball.MainBall, TheirGoal.Location,
+                canChallenge, controlledPossession);
             Shot priorityAttack = canOwnAttack
                 ? Tactics.SelectShot(
                     this, false, Situation.OpponentEta, HasClaim, attackDeadline)
@@ -371,7 +392,7 @@ namespace Bot
 
             if (Action is Shot shot)
             {
-                if (canChallenge && shot.IsPredictionValid() &&
+                if (canOwnAttack && shot.IsPredictionValid() &&
                     shot.Slice.Time - Game.Time <= attackDeadline &&
                     !HasTeammateEarlierShot(shot.Slice.Time))
                     return;
@@ -454,7 +475,8 @@ namespace Bot
             }
 
             Shot attack = priorityAttack;
-            BallSlice catchSlice = canPossessGround && Ball.Location.z > 175f
+            BallSlice catchSlice = canPossessGround && !forceFinishOpportunity &&
+                Ball.Location.z > 175f
                 ? GroundCatch.FindCatch(Me)
                 : null;
 
@@ -570,7 +592,8 @@ namespace Bot
                 Defense.CanFastRecover(
                     Me, Ball.Location, support, OurGoal.Location);
             GuardTo(support, cruise, terminal, hold,
-                allowDodges: fastRecovery);
+                allowDodges: fastRecovery,
+                allowBoost: recoveringGoalSide && support.FlatDist(Me.Location) > 1800f);
 
             if (exitingGoal)
                 SetDecision("defend / exit net");
@@ -604,7 +627,7 @@ namespace Bot
         }
 
         private void GuardTo(Vec3 destination, float cruiseSpeed, float terminalSpeed,
-            bool holdPosition, bool allowDodges = false)
+            bool holdPosition, bool allowDodges = false, bool allowBoost = false)
         {
             if (!ControlMath.Finite(destination))
                 destination = OurGoal.Location;
@@ -616,11 +639,12 @@ namespace Bot
                 guard.TerminalSpeed = terminalSpeed;
                 guard.HoldPosition = holdPosition;
                 guard.AllowDodges = allowDodges;
+                guard.AllowBoost = allowBoost;
             }
             else
             {
                 Action = new DefensiveDrive(Me, destination, cruiseSpeed,
-                    terminalSpeed, holdPosition, allowDodges);
+                    terminalSpeed, holdPosition, allowDodges, allowBoost);
             }
         }
 

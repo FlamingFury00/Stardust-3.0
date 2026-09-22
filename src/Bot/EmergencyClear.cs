@@ -47,7 +47,7 @@ namespace Bot
         {
             if (car == null || ball == null || car.IsDemolished ||
                 !car.IsGrounded || !float.IsFinite(threatTime) ||
-                threatTime < 0f || threatTime > 1.40f ||
+                threatTime < 0f || threatTime > 4.50f ||
                 !ControlMath.Finite(car.Location) ||
                 !ControlMath.Finite(ball.location) ||
                 !ControlMath.Finite(ownGoal))
@@ -119,12 +119,16 @@ namespace Bot
                 drive.WasteBoost = true;
                 drive.Run(bot);
 
-                // Low balls can be blocked on the wheels. For a raised ball, commit to a short
-                // jump/backflip/forward-flip in the safe clear direction before it passes the car.
+                // Do not let the "low ball" path become a moving target the car chases until
+                // it has already passed. Point-blank low threats also need a committed dodge.
                 bool raised = ball.location.z > 125f;
-                bool imminent = distance < 420f ||
-                    (distance < 520f && elapsed > 0.10f);
-                if (raised && imminent)
+                float threat = bot is Stardust stardust
+                    ? stardust.EmergencyThreatTime
+                    : float.PositiveInfinity;
+                bool hardUrgency = float.IsFinite(threat) && threat < 0.58f;
+                bool imminent = distance < 390f ||
+                    (distance < 500f && elapsed > 0.08f && (raised || hardUrgency));
+                if (imminent)
                 {
                     committed = true;
                     committedAt = Game.Time;

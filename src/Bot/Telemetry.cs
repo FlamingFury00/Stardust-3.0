@@ -393,6 +393,7 @@ namespace Bot
                         ["hold_position"] = defense.HoldPosition,
                         ["holding"] = defense.Holding,
                         ["allow_dodges"] = defense.AllowDodges,
+                        ["allow_boost"] = defense.AllowBoost,
                         ["mobility_action"] = defense.MobilityAction
                     };
                 case Drive drive:
@@ -427,7 +428,9 @@ namespace Bot
                         ["crossing_time"] = Num(save.CrossingTime, 3),
                         ["guard_p"] = Vec(save.GuardTarget),
                         ["jumping"] = save.Jumping,
-                        ["double_jump"] = save.UsesDoubleJump
+                        ["double_jump"] = save.UsesDoubleJump,
+                        ["fast_travel"] = save.FastTravel,
+                        ["airborne_flight"] = save.AirborneFlight
                     };
                 case EmergencyClear clear:
                     return new Dictionary<string, object>

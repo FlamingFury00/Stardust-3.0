@@ -261,6 +261,61 @@ namespace Bot
             return true;
         }
 
+        public static bool CanSearchAttack(
+            TacticalFrame frame, Car car, Ball ball, Vec3 attackGoal,
+            bool canChallenge, bool controlledPossession)
+        {
+            if (canChallenge || controlledPossession)
+                return true;
+            if (CanForceFinishOpportunity(frame, car, ball, attackGoal))
+                return true;
+            if (frame == null || car == null || ball == null ||
+                frame.TeamRank != 0 || !ControlMath.Finite(attackGoal) ||
+                !float.IsFinite(frame.FreeTime))
+                return false;
+
+            // Slightly negative ETA estimates in the attacking third should not suppress the shot
+            // planner entirely. The selected shot still has to pass its own mechanical validity.
+            return ball.location.FlatDist(attackGoal) < 3200f &&
+                frame.FreeTime >= -0.08f &&
+                car.Location.Dist(ball.location) < 1500f;
+        }
+
+        /// <summary>
+        /// Offensive-box exception to the conservative loose-ball challenge gate. When the ball is
+        /// already near the opponent goal and the race is effectively tied, Stardust should still
+        /// search for a finish instead of demoting the play into a cushion catch.
+        /// </summary>
+        public static bool CanForceFinishOpportunity(
+            TacticalFrame frame, Car car, Ball ball, Vec3 attackGoal)
+        {
+            if (frame == null || car == null || ball == null ||
+                car.IsDemolished || frame.TeamRank != 0 ||
+                !ControlMath.Finite(car.Location) ||
+                !ControlMath.Finite(ball.location) ||
+                !ControlMath.Finite(attackGoal) ||
+                !float.IsFinite(frame.MyEta) ||
+                !float.IsFinite(frame.OpponentEta))
+                return false;
+
+            float goalDistance = ball.location.FlatDist(attackGoal);
+            float carDistance = car.Location.FlatDist(ball.location);
+            if (goalDistance > 1900f || carDistance > 1750f)
+                return false;
+
+            float raceDeficit = frame.MyEta - frame.OpponentEta;
+            if (raceDeficit > 0.20f)
+                return false;
+
+            Vec3 toGoal = ControlMath.FlatUnit(
+                attackGoal - ball.location, car.Forward);
+            float movingGoalward = ball.velocity.Dot(toGoal);
+            bool mouthPressure = goalDistance < 1250f;
+            bool usableMotion = movingGoalward > -650f;
+
+            return mouthPressure || usableMotion;
+        }
+
         /// <summary>
         /// A high-value direct finish outranks keeping possession. Possession is still preferred for
         /// low-value/slow contacts, but an imminent goal-directed hit in the attacking half should
