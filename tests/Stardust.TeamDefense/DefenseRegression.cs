@@ -999,6 +999,35 @@ internal static class DefenseRegression
                 "low emergency unnecessarily jumped and surrendered steering");
         });
 
+        test("log-v16: high emergency uses vertical second jump before any contact dodge", () =>
+        {
+            Car car = CarAt(-887.94f, -3395.55f);
+            car.Location = new Vec3(-887.94f, -3395.55f, 24.52f);
+            car.Velocity = new Vec3(-817.08f, 1284.35f, 303.84f);
+            car.Orientation = new Mat3x3(
+                new Vec3(-0.0099f, 2.1544f, -0.0002f));
+            car.IsGrounded = false;
+
+            var bot = World(
+                new Vec3(-884.31f, -3234.36f, 323.16f), car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+                new Vec3(176.64f, -1035.76f, -633.91f));
+            Set(typeof(Game), nameof(Game.Time), null!, 35f);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
+
+            var clear = new EmergencyClear(
+                car, blueGoal, new Vec3(0f, 5120f, 0f));
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+
+            Check(clear.Committed,
+                "high close emergency did not commit immediately");
+            Check(clear.NeutralSecondJump,
+                "car far below high emergency did not reserve a neutral vertical second jump");
+            Check(!clear.DirectionalDodgeAllowed,
+                "car ~250 uu below contact armed a fieldward directional dodge");
+        });
+
         test("scenario-v11: raised point-blank emergency jumps on the first action tick", () =>
         {
             Car car = CarAt(1638.9f, -4293.6f);
