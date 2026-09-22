@@ -379,6 +379,7 @@ namespace Bot
                         ["hold"] = defense.HoldPosition,
                         ["holding"] = defense.Holding,
                         ["allow_dodges"] = defense.AllowDodges,
+                        ["allow_boost"] = defense.AllowBoost,
                         ["mobility"] = defense.MobilityAction
                     };
                 case Drive drive:
