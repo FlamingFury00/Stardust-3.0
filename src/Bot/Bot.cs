@@ -179,10 +179,37 @@ namespace Bot
             if (threatEdge || pressureEdge)
                 nextPlan = float.NegativeInfinity;
 
+            // A JumpShot often creates exactly the airborne state needed for a controlled
+            // continuation. Before its final dodge, permit a narrow handoff into AerialCarry when
+            // the ball is already inside the true air-control envelope. This restores the PR4-era
+            // possession continuation that later non-interruptible shot handling suppressed.
+            float airOpponentWindow = MathF.Min(
+                float.IsFinite(pressureTime) ? pressureTime : 6f,
+                Situation != null && float.IsFinite(Situation.OpponentEta)
+                    ? Situation.OpponentEta : 6f);
+            bool shotToCarryHandoff =
+                !emergency && !counterDanger &&
+                Options.AerialCarry &&
+                Action is JumpShot &&
+                !Me.IsGrounded &&
+                PossessionControl.HasAirControl(Me, Ball.MainBall) &&
+                AerialCarry.CanStart(Me, Ball.MainBall, airOpponentWindow);
+
             // Do not acknowledge a tactical edge until a physically committed flip/dodge can be
             // interrupted. Otherwise the event is consumed while the old action keeps running.
-            if (Action != null && !Action.Interruptible)
+            // The possession handoff above is the one deliberate exception: it occurs before the
+            // JumpShot creates its Dodge replacement, so no committed dodge is being cancelled.
+            if (Action != null && !Action.Interruptible && !shotToCarryHandoff)
                 return;
+
+            if (shotToCarryHandoff)
+            {
+                Action = new AerialCarry();
+                SetDecision(float.IsFinite(pressureTime)
+                    ? "mechanic / pressured aerial carry handoff"
+                    : "mechanic / aerial carry handoff");
+                return;
+            }
 
             defending = emergency;
             countering = counterDanger;
