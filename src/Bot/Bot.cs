@@ -314,23 +314,6 @@ namespace Bot
 
                 if (!emergency)
                 {
-                    if (Defense.TryThreatStagingTarget(
-                            Me, Ball.Prediction,
-                            OurGoal.Location, TheirGoal.Location,
-                            Game.Time, deadline,
-                            out Vec3 stage, out float stageTime))
-                    {
-                        bool fastStage = Defense.CanFastRecover(
-                            Me, Ball.Location, stage, OurGoal.Location);
-                        GuardTo(stage, Car.MaxSpeed, 850f, false,
-                            allowDodges: fastStage,
-                            allowBoost: true);
-                        SetDecision(stageTime < 1.60f
-                            ? "defend / counter intercept staging"
-                            : "defend / counter trajectory staging");
-                        return;
-                    }
-
                     Vec3 counterReference = Defense.ReferenceBall(
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
                     bool counterGoalSide = Defense.IsGoalSide(
@@ -372,6 +355,8 @@ namespace Bot
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
+            bool forceFinishOpportunity = Tactics.CanForceFinishOpportunity(
+                Situation, Me, Ball.MainBall, TheirGoal.Location);
             bool canOwnAttack = Tactics.CanSearchAttack(
                 Situation, Me, Ball.MainBall, TheirGoal.Location,
                 canChallenge, controlledPossession);
