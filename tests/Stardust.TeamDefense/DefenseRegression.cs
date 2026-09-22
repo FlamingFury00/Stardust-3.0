@@ -819,6 +819,39 @@ internal static class DefenseRegression
                 "steep defensive-box pop was still accepted as an offensive commitment");
         });
 
+        test("possession-v16: broad immediate shot does not break midfield control", () =>
+        {
+            Car car = CarAt(0f, 700f);
+            car.Velocity = new Vec3(0f, 700f, 0f);
+            var bot = World(new Vec3(0f, 1200f, 100f), car);
+            Set(typeof(Game), nameof(Game.Time), null!, 60f);
+
+            var routineSlice = new BallSlice(
+                60.50f, new Vec3(0f, 1200f, 100f), new Vec3(0f, 300f, 0f));
+            var routine = new GroundShot(
+                car, routineSlice, new Vec3(0f, 5212f, 240f));
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.35f,
+                OpponentEta = 1.20f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true
+            };
+
+            Check(Tactics.PreferImmediateShot(bot, routine, frame),
+                "fixture stopped reproducing the broad immediate-shot preference");
+            Check(!Tactics.PreferPossessionFinish(bot, routine, frame),
+                "routine offensive-half hit still qualified to break possession");
+
+            var closeSlice = new BallSlice(
+                60.50f, new Vec3(0f, 4250f, 100f), new Vec3(0f, 300f, 0f));
+            var close = new GroundShot(
+                car, closeSlice, new Vec3(0f, 5212f, 240f));
+            Check(Tactics.PreferPossessionFinish(bot, close, frame),
+                "point-blank scoring contact failed to outrank possession");
+        });
+
         test("scenario-v11: pressured goal-mouth possession forces a clear", () =>
         {
             Car car = CarAt(1389.2f, -4957.55f);
