@@ -677,7 +677,7 @@ internal static class DefenseRegression
                 "upfield lateral car was allowed to take an emergency clear");
         });
 
-        test("log-v9: close inbound shot produces an away-from-goal scripted clear", () =>
+        test("log-v9: close inbound shot commits an away-from-goal emergency touch", () =>
         {
             Car car = CarAt(-755.6f, -4577.8f);
             car.Velocity = new Vec3(-83.5f, 303.7f, 0.3f);
@@ -690,24 +690,34 @@ internal static class DefenseRegression
                 {
                     Slices = new[]
                     {
-                        new BallSlice(108.725f,
-                            new Vec3(-371.2f, -4656.5f, 115.4f),
-                            new Vec3(1480f, -705f, -410f)),
-                        new BallSlice(108.925f,
-                            new Vec3(-105.8f, -4769.9f, 128.2f),
-                            new Vec3(1270f, -520f, 180f))
+                        new BallSlice(108.525f,
+                            new Vec3(-668.4f, -4515f, 192.8f),
+                            new Vec3(1490f, -710f, -320f))
                     }
                 });
             Set(typeof(Game), nameof(Game.Time), null!, 108.458f);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
 
-            Shot clear = Tactics.SelectShot(
-                bot, true, 2.48f, _ => false, 1.15f);
+            Check(EmergencyClear.CanStart(
+                    car, Ball.MainBall, blueGoal, 1.15f),
+                "225 uu / 1.15 s emergency still did not authorize a direct touch");
 
-            Check(clear != null,
-                "close 1.15 s goal threat still fell through to passive goal-line coverage");
+            var clear = new EmergencyClear(
+                car, blueGoal, new Vec3(0f, 5120f, 0f));
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+            Check(clear.Committed,
+                "raised point-blank threat did not commit the emergency jump");
+
+            Set(typeof(Game), nameof(Game.Time), null!, 108.466f);
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+
+            Check(bot.Controller.Jump,
+                "emergency clear committed but did not leave the ground");
             Check(Defense.ClearDirectionIsSafe(
-                    clear.ShotDirection, blueGoal, 0.08f),
-                $"emergency shot direction was not a clear: {clear.ShotDirection}");
+                    clear.ClearDirection, blueGoal, 0.20f),
+                $"emergency touch direction aimed back at own goal: {clear.ClearDirection}");
         });
 
         test("log-v9: raw emergency interceptor refuses an own-goal chase", () =>
