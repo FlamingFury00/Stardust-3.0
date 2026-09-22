@@ -160,7 +160,14 @@ namespace Bot
             // A distant ball that is rapidly moving away is not a carry start; boosting after it
             // just burns the recovery budget.
             float closing = relativeVelocity.Dot(ControlMath.Unit(delta, Vec3.Up));
-            float allowedSeparation = distance < 220f ? -420f : -220f;
+
+            // With a healthy boost reserve and a long opponent window, allow the controller to
+            // recapture a softly separating ball after an aerial touch. This restores the PR4-style
+            // continuation window without accepting truly runaway balls.
+            bool recoveryWindow = car.Boost >= 30f && opponentEta > 1.20f;
+            float allowedSeparation = recoveryWindow
+                ? -520f
+                : distance < 220f ? -420f : -220f;
             return closing >= allowedSeparation;
         }
         public void Run(RUBot bot)
@@ -170,16 +177,24 @@ namespace Bot
             float distance = delta.Length();
             float separationClosing = (car.Velocity - Ball.Velocity)
                 .Dot(ControlMath.Unit(delta, Vec3.Up));
+            float opponentWindow = bot is Stardust carryBot
+                ? Defense.OpponentContactEta(carryBot.Situation)
+                : float.PositiveInfinity;
+            bool recoveryWindow = car.Boost >= 30f &&
+                float.IsFinite(opponentWindow) && opponentWindow > 1.20f;
+            float separationFloor = recoveryWindow ? -560f : -360f;
+
             if (car.IsGrounded || distance > 900f || Ball.Location.z < 180f ||
                 Game.Time - started > 4f ||
                 (car.Boost <= 0f && distance > 220f) ||
-                (distance > 360f && separationClosing < -360f))
+                (distance > 360f && separationClosing < separationFloor))
             {
                 Finished = true;
                 return;
             }
             if (bot is Stardust stardust && stardust.Options.FlipResets &&
-                stardust.Situation.OpponentEta > 1.2f && FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
+                Defense.OpponentContactEta(stardust.Situation) > 1.2f &&
+                FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
             { bot.Action = new FlipReset(bot.Jump); return; }
             const float horizon = 0.12f;
             Ball prediction = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);

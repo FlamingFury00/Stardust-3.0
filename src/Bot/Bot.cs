@@ -179,10 +179,38 @@ namespace Bot
             if (threatEdge || pressureEdge)
                 nextPlan = float.NegativeInfinity;
 
+            // A JumpShot often creates exactly the airborne state needed for a controlled
+            // continuation. Before its final dodge, permit a narrow handoff into AerialCarry when
+            // the ball is already inside the true air-control envelope. This restores the PR4-era
+            // possession continuation that later non-interruptible shot handling suppressed.
+            float airOpponentWindow = MathF.Min(
+                float.IsFinite(pressureTime) ? pressureTime : 6f,
+                Situation != null && float.IsFinite(Situation.OpponentEta)
+                    ? Situation.OpponentEta : 6f);
+            JumpShot handoffShot = Action as JumpShot;
+            bool shotToCarryHandoff =
+                !emergency && !counterDanger &&
+                Options.AerialCarry &&
+                handoffShot != null &&
+                !Tactics.PreferPossessionFinish(this, handoffShot, Situation) &&
+                PossessionControl.CanHandoffShotToAirCarry(
+                    Me, Ball.MainBall, airOpponentWindow);
+
             // Do not acknowledge a tactical edge until a physically committed flip/dodge can be
             // interrupted. Otherwise the event is consumed while the old action keeps running.
-            if (Action != null && !Action.Interruptible)
+            // The possession handoff above is the one deliberate exception: it occurs before the
+            // JumpShot creates its Dodge replacement, so no committed dodge is being cancelled.
+            if (Action != null && !Action.Interruptible && !shotToCarryHandoff)
                 return;
+
+            if (shotToCarryHandoff)
+            {
+                Action = new AerialCarry();
+                SetDecision(float.IsFinite(pressureTime)
+                    ? "mechanic / pressured aerial carry handoff"
+                    : "mechanic / aerial carry handoff");
+                return;
+            }
 
             defending = emergency;
             countering = counterDanger;
@@ -400,16 +428,37 @@ namespace Bot
                 : null;
             bool finishNow = Tactics.PreferImmediateShot(
                 this, priorityAttack, Situation);
+            bool possessionFinish = Tactics.PreferPossessionFinish(
+                this, priorityAttack, Situation);
             bool defensiveBoom = Tactics.PreferDefensiveClear(
                 this, priorityAttack, Situation);
 
+            // Evaluate mechanic availability before deciding whether an already-selected shot gets
+            // another planning interval. Previously Shot retention returned here first, so a routine
+            // intercept could monopolize a state that had become safely dribble/carry-ready.
+            bool canPossessGroundNow = Me.IsGrounded && Options.GroundControl &&
+                PossessionControl.CanAcquireGround(
+                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool groundDribbleReadyNow = canPossessGroundNow &&
+                GroundDribble.CanStart(Me, Ball.MainBall, tacticalFreeTime);
+            bool preferGroundControlNow = PossessionControl.PreferGroundControl(
+                Situation, groundDribbleReadyNow, underPressure, forceFinishOpportunity);
+
+            float opponentContactWindow = Defense.OpponentContactEta(Situation);
+            bool canPossessAirNow = !Me.IsGrounded && Options.AerialCarry &&
+                PossessionControl.CanAcquireAir(
+                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool airCarryReadyNow = canPossessAirNow &&
+                AerialCarry.CanStart(
+                    Me, Ball.MainBall, opponentContactWindow);
+
             if (Action is IPossessionAction possession)
             {
-                if (finishNow || defensiveBoom)
+                if (possessionFinish || defensiveBoom)
                 {
                     Action = priorityAttack;
-                    SetDecision(finishNow
-                        ? "attack / finish now"
+                    SetDecision(possessionFinish
+                        ? "attack / possession finish"
                         : "attack / defensive boom");
                     return;
                 }
@@ -426,10 +475,22 @@ namespace Bot
 
             if (Action is Shot shot)
             {
-                if (canOwnAttack && shot.IsPredictionValid() &&
+                bool currentShotMustFinish =
+                    Tactics.PreferPossessionFinish(this, shot, Situation) ||
+                    Tactics.PreferDefensiveClear(this, shot, Situation);
+                bool groundPossessionTakeover =
+                    groundDribbleReadyNow &&
+                    (controlledPossession || preferGroundControlNow);
+                bool yieldToPossession =
+                    !currentShotMustFinish &&
+                    (groundPossessionTakeover || airCarryReadyNow);
+
+                if (!yieldToPossession &&
+                    canOwnAttack && shot.IsPredictionValid() &&
                     shot.Slice.Time - Game.Time <= attackDeadline &&
                     !HasTeammateEarlierShot(shot.Slice.Time))
                     return;
+
                 Action = null;
             }
 
@@ -453,24 +514,31 @@ namespace Bot
 
             if (!Me.IsGrounded)
             {
-                if (finishNow || defensiveBoom)
+                // Preserve an air-control opportunity before a generic "take any shot" finish.
+                // Only a true possession-breaking finish or a required defensive boom may preempt it.
+                if (possessionFinish || defensiveBoom)
                 {
                     Action = priorityAttack;
-                    SetDecision(finishNow
-                        ? "attack / airborne finish"
+                    SetDecision(possessionFinish
+                        ? "attack / airborne possession finish"
                         : "attack / airborne defensive boom");
                     return;
                 }
 
-                bool canPossessAir = Options.AerialCarry &&
-                    PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
-                if (canPossessAir &&
-                    AerialCarry.CanStart(Me, Ball.MainBall, Situation.OpponentEta))
+                bool canPossessAir = canPossessAirNow;
+                if (airCarryReadyNow)
                 {
                     Action = new AerialCarry();
                     SetDecision(underPressure
                         ? "mechanic / pressured aerial carry"
                         : "mechanic / aerial carry");
+                    return;
+                }
+
+                if (finishNow)
+                {
+                    Action = priorityAttack;
+                    SetDecision("attack / airborne finish");
                     return;
                 }
 
@@ -482,19 +550,17 @@ namespace Bot
                 return;
             }
 
-            bool canPossessGround = Options.GroundControl &&
-                PossessionControl.CanAcquireGround(
-                    Situation, Me, Ball.MainBall, OurGoal.Location);
-            bool canDribble = canPossessGround &&
-                GroundDribble.CanStart(Me, Ball.MainBall, tacticalFreeTime);
+            bool canPossessGround = canPossessGroundNow;
+            bool canDribble = groundDribbleReadyNow;
 
-            // A direct scoring contact outranks continuing a dribble. Otherwise preserve controlled
-            // possession and use its pressure-triggered outplays.
-            if (finishNow || defensiveBoom)
+            // A genuinely high-value finish or own-box boom outranks possession. A routine
+            // mechanically-valid hit does not: PR4's possession intent regressed when broad
+            // "finish now" selection began preempting almost every controllable touch.
+            if (possessionFinish || defensiveBoom)
             {
                 Action = priorityAttack;
-                SetDecision(finishNow
-                    ? "attack / finish now"
+                SetDecision(possessionFinish
+                    ? "attack / possession finish"
                     : "attack / defensive boom");
                 return;
             }
@@ -505,6 +571,17 @@ namespace Bot
                 SetDecision(underPressure
                     ? "mechanic / pressured ground carry"
                     : "mechanic / ground carry");
+                return;
+            }
+
+            // Safe acquisition with real free time is itself a tactical objective. The previous
+            // ordering made this branch unreachable whenever SelectShot found any valid contact,
+            // which is why telemetry showed dozens of dribble-ready states becoming routine shots.
+            bool preferGroundControl = preferGroundControlNow;
+            if (preferGroundControl)
+            {
+                Action = new GroundDribble();
+                SetDecision("mechanic / ground carry setup");
                 return;
             }
 

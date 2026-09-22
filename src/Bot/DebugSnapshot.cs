@@ -75,8 +75,10 @@ namespace Bot
     {
         public float MyEta { get; set; }
         public float OpponentEta { get; set; }
+        public float OpponentContactEta { get; set; }
         public float TeammateEta { get; set; }
         public float FreeTime { get; set; }
+        public float EffectiveFreeTime { get; set; }
         public float? PressureTime { get; set; }
         public float? GoalThreatTime { get; set; }
         public float? CounterThreatTime { get; set; }
@@ -106,6 +108,11 @@ namespace Bot
         public bool GoalSide { get; set; }
         public bool ControlledPossession { get; set; }
         public bool AirControl { get; set; }
+        public bool AcquireGround { get; set; }
+        public bool GroundDribbleReady { get; set; }
+        public bool AcquireAir { get; set; }
+        public bool AirCarryReady { get; set; }
+        public bool ShotToAirHandoff { get; set; }
         public bool UnderPressure { get; set; }
         public bool Emergency { get; set; }
         public bool CounterDanger { get; set; }
@@ -191,6 +198,19 @@ namespace Bot
             bool controlled = PossessionControl.HasControlledPossession(
                 bot.Me, ball);
             bool airControl = PossessionControl.HasAirControl(bot.Me, ball);
+            float opponentContactEta = Defense.OpponentContactEta(frame);
+            float effectiveFreeTime = Defense.EffectiveFreeTime(frame);
+            bool acquireGround = PossessionControl.CanAcquireGround(
+                frame, bot.Me, ball, ownGoal);
+            bool groundDribbleReady = acquireGround &&
+                GroundDribble.CanStart(bot.Me, ball, effectiveFreeTime);
+            bool acquireAir = PossessionControl.CanAcquireAir(
+                frame, bot.Me, ball, ownGoal);
+            bool airCarryReady = acquireAir &&
+                AerialCarry.CanStart(bot.Me, ball, opponentContactEta);
+            bool shotToAirHandoff = bot.Action is JumpShot &&
+                PossessionControl.CanHandoffShotToAirCarry(
+                    bot.Me, ball, opponentContactEta);
             bool goalLaneOpen = Tactics.GoalLaneOpen(
                 bot.LivingOpponents, ball.location, bot.TheirGoal.Location);
             bool fastRecovery = hasTarget &&
@@ -217,8 +237,10 @@ namespace Bot
                 {
                     MyEta = Safe(frame.MyEta),
                     OpponentEta = Safe(frame.OpponentEta),
+                    OpponentContactEta = Safe(opponentContactEta),
                     TeammateEta = Safe(frame.TeammateEta),
                     FreeTime = Safe(frame.FreeTime),
+                    EffectiveFreeTime = Safe(effectiveFreeTime),
                     PressureTime = Nullable(frame.PressureTime),
                     GoalThreatTime = Nullable(threat),
                     CounterThreatTime = Nullable(counterThreat),
@@ -246,6 +268,11 @@ namespace Bot
                     GoalSide = goalSide,
                     ControlledPossession = controlled,
                     AirControl = airControl,
+                    AcquireGround = acquireGround,
+                    GroundDribbleReady = groundDribbleReady,
+                    AcquireAir = acquireAir,
+                    AirCarryReady = airCarryReady,
+                    ShotToAirHandoff = shotToAirHandoff,
                     UnderPressure = frame.UnderPressure,
                     Emergency = float.IsFinite(threat),
                     CounterDanger = !float.IsFinite(threat) &&
@@ -406,10 +433,19 @@ namespace Bot
                             : Safe(Tactics.EstimateShotSpeed(car, shot.Slice, shot))
                     };
                 case GoalLineSave save:
+                    float saveDistance = car?.Location.FlatDist(save.GuardTarget) ??
+                        float.PositiveInfinity;
+                    float saveRemaining = save.CrossingTime - Game.Time;
                     return new Dictionary<string, object>
                     {
                         ["crossing"] = V(save.Crossing),
                         ["crossing_time"] = Safe(save.CrossingTime),
+                        ["guard_distance"] = Safe(saveDistance),
+                        ["time_remaining"] = Safe(saveRemaining),
+                        ["required_travel_speed"] = Safe(
+                            GoalLineSave.RequiredTravelSpeed(saveDistance, saveRemaining)),
+                        ["jump_positioned"] = GoalLineSave.IsJumpPositioned(
+                            car, save.GuardTarget),
                         ["jumping"] = save.Jumping,
                         ["double_jump"] = save.UsesDoubleJump,
                         ["fast_travel"] = save.FastTravel,
@@ -421,7 +457,9 @@ namespace Bot
                         ["target"] = V(clear.Target),
                         ["clear_direction"] = V(clear.ClearDirection),
                         ["committed"] = clear.Committed,
-                        ["ground_block"] = clear.GroundBlock
+                        ["ground_block"] = clear.GroundBlock,
+                        ["directional_dodge_allowed"] = clear.DirectionalDodgeAllowed,
+                        ["neutral_second_jump"] = clear.NeutralSecondJump
                     };
                 case GetBoost boost:
                     return new Dictionary<string, object>

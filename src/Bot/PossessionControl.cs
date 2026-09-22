@@ -112,16 +112,52 @@ namespace Bot
             return safeGeometry && Defense.EffectiveFreeTime(frame) >= -0.10f;
         }
 
+        public static bool PreferGroundControl(
+            TacticalFrame frame, bool canDribble, bool underPressure, bool forceFinishOpportunity)
+        {
+            if (frame == null || !canDribble || underPressure || forceFinishOpportunity)
+                return false;
+            return Defense.EffectiveFreeTime(frame) >= 0.22f;
+        }
+
+        public static bool CanHandoffShotToAirCarry(
+            Car car, Ball ball, float opponentWindow)
+        {
+            return car != null && ball != null && !car.IsGrounded &&
+                HasAirControl(car, ball) &&
+                AerialCarry.CanStart(car, ball, opponentWindow);
+        }
+
         public static bool CanAcquireAir(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
         {
-            if (frame == null || car == null || ball == null || frame.TeamRank != 0 || car.IsDemolished)
+            if (frame == null || car == null || ball == null || frame.TeamRank != 0 ||
+                car.IsDemolished || car.IsGrounded ||
+                !ControlMath.Finite(car.Location) || !ControlMath.Finite(car.Velocity) ||
+                !ControlMath.Finite(ball.location) || !ControlMath.Finite(ball.velocity))
                 return false;
 
             if (HasAirControl(car, ball))
                 return true;
 
-            return Defense.IsGoalSide(car.Location, ball.location, ownGoal, -100f) &&
-                Defense.EffectiveFreeTime(frame) >= -0.08f;
+            // Acquisition is wider than established control. After a soft aerial touch the ball can
+            // be slightly behind the nose while still being recoverable with boost; the old strict
+            // HasAirControl envelope forced an immediate Recover and made AerialCarry effectively
+            // disappear from real matches.
+            Vec3 delta = ball.location - car.Location;
+            Vec3 local = car.Local(delta);
+            float distance = delta.Length();
+            float relativeSpeed = (ball.velocity - car.Velocity).Length();
+            if (car.Boost <= 8f || ball.location.z <= 240f ||
+                distance > 720f || relativeSpeed > 1150f ||
+                local.x < -430f || local.z < -180f)
+                return false;
+
+            float ownDepth = Defense.OwnDepth(ball.location, ownGoal);
+            bool safeGeometry =
+                Defense.IsTacticallyGoalSide(car.Location, ball.location, ownGoal, -180f) ||
+                ownDepth < 0f; // opponent half: allow a controlled continuation slightly goal-ahead
+
+            return safeGeometry && Defense.EffectiveFreeTime(frame) >= -0.12f;
         }
 
         /// <summary>

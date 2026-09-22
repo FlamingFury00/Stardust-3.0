@@ -403,6 +403,42 @@ namespace Bot
         }
 
         /// <summary>
+        /// Strong enough scoring opportunity to deliberately give up established possession.
+        /// This is intentionally narrower than PreferImmediateShot: a routine mechanically-valid
+        /// hit in the offensive half must not erase a controlled dribble or air carry.
+        /// </summary>
+        public static bool PreferPossessionFinish(RUBot bot, Shot shot, TacticalFrame frame)
+        {
+            if (bot == null || shot == null || shot.Slice == null ||
+                !float.IsFinite(shot.Slice.Time) ||
+                !ControlMath.Finite(shot.Slice.Location) ||
+                !ControlMath.Finite(shot.ShotDirection))
+                return false;
+
+            float contactTime = shot.Slice.Time - Game.Time;
+            if (!float.IsFinite(contactTime) || contactTime <= 0f || contactTime > 0.95f)
+                return false;
+
+            float goalDistance = shot.Slice.Location.FlatDist(bot.TheirGoal.Location);
+            if (goalDistance > 2450f)
+                return false;
+
+            Vec3 goalAxis = ControlMath.FlatUnit(
+                bot.TheirGoal.Location - shot.Slice.Location, bot.Me.Forward);
+            Vec3 direction = ControlMath.FlatUnit(shot.ShotDirection, goalAxis);
+            if (direction.Dot(goalAxis) < 0.58f)
+                return false;
+
+            bool openLane = GoalLaneOpen(
+                bot.LivingOpponents, shot.Slice.Location, bot.TheirGoal.Location);
+
+            // Point-blank finishes are worth releasing even through a defender; farther out,
+            // require a genuinely open scoring corridor instead of trading possession for a hit.
+            return goalDistance < 1250f ||
+                (openLane && goalDistance < 2450f && contactTime <= 0.82f);
+        }
+
+        /// <summary>
         /// In the defensive third, an imminent clean clear outranks a soft catch/dribble when the
         /// opponent is closing. This is the "best defense is attack" gate: convert pressure into
         /// field position instead of preserving fragile possession beside our own net.

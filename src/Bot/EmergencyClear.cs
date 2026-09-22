@@ -18,6 +18,8 @@ namespace Bot
         public Vec3 ClearDirection { get; private set; }
         public bool Committed => committed;
         public bool GroundBlock { get; private set; }
+        public bool DirectionalDodgeAllowed { get; private set; }
+        public bool NeutralSecondJump { get; private set; }
 
         private readonly Drive drive;
         // A close scoring ball can traverse 250+ uu during a conventional 0.12 s jump hold.
@@ -140,10 +142,30 @@ namespace Bot
 
             GroundBlock = false;
 
+            Vec3 towardBall = ControlMath.Unit(
+                predicted.location - car.Location, car.Forward);
+            Vec3 contactAim = ControlMath.Unit(
+                towardBall * 0.84f + ClearDirection * 0.16f, towardBall);
             ControlMath.Aim(
-                car, bot.Controller, ClearDirection, Vec3.Up);
+                car, bot.Controller, contactAim, Vec3.Up);
+
+            // Contact comes before power. For mid-height balls, one steerable jump is enough.
+            // For genuinely high balls, the second press is often required for vertical reach,
+            // but it must remain a neutral double-jump while the car is still far below the ball.
+            // The 2-1 -> 2-2 trace showed the old fieldward dodge firing ~250 uu below contact,
+            // instantly adding huge +Y speed and removing the car from the goal-mouth play.
+            float verticalGap = predicted.location.z - car.Location.z;
+            bool highContact = predicted.location.z > 235f;
+            bool contactReadyForDodge =
+                highContact &&
+                MathF.Abs(verticalGap) <= 155f &&
+                distance <= 235f &&
+                car.Forward.Dot(towardBall) > 0.30f;
+
+            DirectionalDodgeAllowed = contactReadyForDodge;
+            NeutralSecondJump = highContact && !contactReadyForDodge;
             JumpCommand command = jumps.Step(
-                Game.Time, bot.Jump.CanDodge);
+                Game.Time, highContact && bot.Jump.CanDodge);
 
             bot.Controller.Throttle = 1f;
             bot.Controller.Boost = false;
@@ -152,11 +174,22 @@ namespace Bot
 
             if (command.Dodge)
             {
-                Vec3 local = ControlMath.FlatUnit(
-                    car.Local(ClearDirection), new Vec3(1f, 0f, 0f));
-                bot.Controller.Pitch = -local.x;
-                bot.Controller.Yaw = local.y;
-                bot.Controller.Roll = 0f;
+                if (DirectionalDodgeAllowed)
+                {
+                    Vec3 local = ControlMath.FlatUnit(
+                        car.Local(contactAim), new Vec3(1f, 0f, 0f));
+                    bot.Controller.Pitch = -local.x;
+                    bot.Controller.Yaw = local.y;
+                    bot.Controller.Roll = 0f;
+                }
+                else
+                {
+                    // Neutral second jump: maximize vertical coverage without throwing away
+                    // the lateral/goal-side line that made the save reachable.
+                    bot.Controller.Pitch = 0f;
+                    bot.Controller.Yaw = 0f;
+                    bot.Controller.Roll = 0f;
+                }
             }
 
             if (Game.Time - committedAt > 0.72f ||

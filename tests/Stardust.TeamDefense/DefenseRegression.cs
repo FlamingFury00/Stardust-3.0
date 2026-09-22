@@ -819,6 +819,173 @@ internal static class DefenseRegression
                 "steep defensive-box pop was still accepted as an offensive commitment");
         });
 
+        test("possession-v16: interruptible routine shot yields to controlled ground carry", () =>
+        {
+            Car car = CarAt(0f, 0f);
+            car.Velocity = new Vec3(0f, 600f, 0f);
+            car.Orientation = new Mat3x3(
+                new Vec3(0f, MathF.PI / 2f, 0f));
+
+            Vec3 ballLocation = car.Location + car.Forward * 20f + car.Up * 153f;
+            Vec3 ballVelocity = car.Velocity;
+            var bot = World(ballLocation, car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, ballVelocity);
+            Set(typeof(Game), nameof(Game.Time), null!, 80f);
+
+            var slice = new BallSlice(
+                80.45f, ballLocation + ballVelocity * 0.45f, ballVelocity);
+            Set(typeof(Ball), nameof(Ball.Prediction), null!,
+                new RedUtils.BallPrediction
+                {
+                    Slices = new[]
+                    {
+                        new BallSlice(80f, ballLocation, ballVelocity),
+                        slice
+                    }
+                });
+
+            var routine = new GroundShot(
+                car, slice, new Vec3(0f, 5212f, 240f));
+            bot.Action = routine;
+
+            Check(PossessionControl.HasControlledPossession(
+                    car, Ball.MainBall),
+                "fixture stopped reproducing controlled ground possession");
+            Check(routine.Interruptible,
+                "fixture routine shot unexpectedly became committed");
+
+            bot.Run();
+
+            Check(bot.Action is GroundDribble,
+                $"interruptible routine shot still monopolized possession state: {bot.Action?.GetType().Name}");
+            Check(bot.Decision.Contains("ground carry", StringComparison.Ordinal),
+                $"ground possession takeover was not exposed: {bot.Decision}");
+        });
+
+        test("possession-v16: controlled ground ball reclaims routine shot under pressure", () =>
+        {
+            Car car = CarAt(0f, 0f);
+            car.Velocity = new Vec3(0f, 600f, 0f);
+            car.Orientation = new Mat3x3(
+                new Vec3(0f, MathF.PI / 2f, 0f));
+
+            Vec3 ballLocation = car.Location + car.Forward * 20f + car.Up * 153f;
+            Vec3 ballVelocity = car.Velocity;
+
+            Car opponent = CarAt(0f, 260f, 1, 1);
+            opponent.Orientation = new Mat3x3(
+                new Vec3(0f, -MathF.PI / 2f, 0f));
+            opponent.Velocity = Vec3.Zero;
+            opponent.LastInput = new ControllerStateT();
+
+            var bot = World(ballLocation, car, opponent);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, ballVelocity);
+            Set(typeof(Game), nameof(Game.Time), null!, 82f);
+
+            var slice = new BallSlice(
+                82.40f, ballLocation + ballVelocity * 0.40f, ballVelocity);
+            Set(typeof(Ball), nameof(Ball.Prediction), null!,
+                new RedUtils.BallPrediction
+                {
+                    Slices = new[]
+                    {
+                        new BallSlice(82f, ballLocation, ballVelocity),
+                        slice
+                    }
+                });
+
+            bot.Action = new GroundShot(
+                car, slice, new Vec3(0f, 5212f, 240f));
+
+            float pressure = Tactics.OpponentPressure(
+                new[] { opponent }, Ball.MainBall, blueGoal);
+            Check(float.IsFinite(pressure),
+                "fixture failed to create close opponent pressure");
+            Check(PossessionControl.HasControlledPossession(
+                    car, Ball.MainBall),
+                "fixture lost roof control");
+
+            bot.Run();
+
+            Check(bot.Action is GroundDribble,
+                $"pressure still locked controlled possession inside a routine shot: {bot.Action?.GetType().Name}");
+        });
+
+        test("possession-v16: supervisor interrupts pre-dodge JumpShot for air carry", () =>
+        {
+            Car car = CarAt(0f, 1500f);
+            car.Location = new Vec3(0f, 1500f, 190f);
+            car.Velocity = new Vec3(450f, 0f, 350f);
+            car.Orientation = new Mat3x3(Vec3.Zero);
+            car.IsGrounded = false;
+            car.Boost = 80f;
+
+            Vec3 ballLocation = new(170f, 1500f, 500f);
+            Vec3 ballVelocity = new(300f, 0f, 120f);
+            var bot = World(ballLocation, car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, ballVelocity);
+            Set(typeof(Game), nameof(Game.Time), null!, 70f);
+            Set(typeof(Stardust), nameof(Stardust.Situation), bot, new TacticalFrame
+            {
+                MyEta = 0.6f,
+                OpponentEta = 1.6f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true
+            });
+
+            var slice = new BallSlice(
+                70.45f, ballLocation + ballVelocity * 0.45f, ballVelocity);
+            var shot = new JumpShot(car, slice, new Vec3(0f, 5212f, 260f));
+            typeof(JumpShot).GetProperty(nameof(JumpShot.Interruptible))!
+                .SetValue(shot, false);
+            bot.Action = shot;
+
+            Check(PossessionControl.CanHandoffShotToAirCarry(
+                    car, Ball.MainBall, 1.6f),
+                "fixture stopped reproducing air-carry handoff geometry");
+
+            bot.Run();
+
+            Check(bot.Action is AerialCarry,
+                $"non-interruptible JumpShot still blocked carry handoff: {bot.Action?.GetType().Name}");
+            Check(bot.Decision.Contains("aerial carry handoff", StringComparison.Ordinal),
+                $"handoff did not expose its decision: {bot.Decision}");
+        });
+
+        test("possession-v16: broad immediate shot does not break midfield control", () =>
+        {
+            Car car = CarAt(0f, 700f);
+            car.Velocity = new Vec3(0f, 700f, 0f);
+            var bot = World(new Vec3(0f, 1200f, 100f), car);
+            Set(typeof(Game), nameof(Game.Time), null!, 60f);
+
+            var routineSlice = new BallSlice(
+                60.50f, new Vec3(0f, 1200f, 100f), new Vec3(0f, 300f, 0f));
+            var routine = new GroundShot(
+                car, routineSlice, new Vec3(0f, 5212f, 240f));
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.35f,
+                OpponentEta = 1.20f,
+                TeamRank = 0,
+                TeamCount = 1,
+                LastBack = true
+            };
+
+            Check(Tactics.PreferImmediateShot(bot, routine, frame),
+                "fixture stopped reproducing the broad immediate-shot preference");
+            Check(!Tactics.PreferPossessionFinish(bot, routine, frame),
+                "routine offensive-half hit still qualified to break possession");
+
+            var closeSlice = new BallSlice(
+                60.50f, new Vec3(0f, 4250f, 100f), new Vec3(0f, 300f, 0f));
+            var close = new GroundShot(
+                car, closeSlice, new Vec3(0f, 5212f, 240f));
+            Check(Tactics.PreferPossessionFinish(bot, close, frame),
+                "point-blank scoring contact failed to outrank possession");
+        });
+
         test("scenario-v11: pressured goal-mouth possession forces a clear", () =>
         {
             Car car = CarAt(1389.2f, -4957.55f);
@@ -924,6 +1091,35 @@ internal static class DefenseRegression
                 "low emergency unnecessarily jumped and surrendered steering");
         });
 
+        test("log-v16: high emergency uses vertical second jump before any contact dodge", () =>
+        {
+            Car car = CarAt(-887.94f, -3395.55f);
+            car.Location = new Vec3(-887.94f, -3395.55f, 24.52f);
+            car.Velocity = new Vec3(-817.08f, 1284.35f, 303.84f);
+            car.Orientation = new Mat3x3(
+                new Vec3(-0.0099f, 2.1544f, -0.0002f));
+            car.IsGrounded = false;
+
+            var bot = World(
+                new Vec3(-884.31f, -3234.36f, 323.16f), car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+                new Vec3(176.64f, -1035.76f, -633.91f));
+            Set(typeof(Game), nameof(Game.Time), null!, 35f);
+            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
+
+            var clear = new EmergencyClear(
+                car, blueGoal, new Vec3(0f, 5120f, 0f));
+            bot.Controller = new ControllerStateT();
+            clear.Run(bot);
+
+            Check(clear.Committed,
+                "high close emergency did not commit immediately");
+            Check(clear.NeutralSecondJump,
+                "car far below high emergency did not reserve a neutral vertical second jump");
+            Check(!clear.DirectionalDodgeAllowed,
+                "car ~250 uu below contact armed a fieldward directional dodge");
+        });
+
         test("scenario-v11: raised point-blank emergency jumps on the first action tick", () =>
         {
             Car car = CarAt(1638.9f, -4293.6f);
@@ -944,6 +1140,8 @@ internal static class DefenseRegression
                 "raised close emergency spent an extra planning frame before jumping");
             Check(!clear.GroundBlock,
                 "raised emergency was incorrectly treated as a ground block");
+            Check(!clear.DirectionalDodgeAllowed,
+                "mid-height emergency armed an immediate directional dodge before reaching ball height");
         });
 
         test("scenario-v10: counter threat stages behind a future ball instead of shallow parking", () =>
@@ -1187,8 +1385,13 @@ internal static class DefenseRegression
                     "telemetry did not capture actual sanitized controller output");
                 Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
                     "telemetry did not capture defensive action target");
-                Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
+                var possession = root.GetProperty("possession");
+                Check(possession.TryGetProperty("controlled", out _),
                     "telemetry omitted possession state");
+                Check(possession.TryGetProperty("ground_dribble_ready", out _) &&
+                      possession.TryGetProperty("air_carry_ready", out _) &&
+                      possession.TryGetProperty("shot_to_air_handoff", out _),
+                    "telemetry omitted possession acquisition/handoff diagnostics");
                 Check(root.GetProperty("car_state").TryGetProperty("forward", out _),
                     "telemetry omitted car orientation");
                 Check(root.GetProperty("tactics").TryGetProperty("raw_can_challenge", out _),
