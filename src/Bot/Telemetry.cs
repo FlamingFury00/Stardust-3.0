@@ -454,11 +454,20 @@ namespace Bot
                             Tactics.EstimateShotSpeed(car, shot.Slice, shot))
                     };
                 case GoalLineSave save:
+                    float saveDistance = car?.Location.FlatDist(save.GuardTarget) ??
+                        float.PositiveInfinity;
+                    float saveRemaining = save.CrossingTime - Game.Time;
                     return new Dictionary<string, object>
                     {
                         ["crossing_p"] = Vec(save.Crossing),
                         ["crossing_time"] = Num(save.CrossingTime, 3),
                         ["guard_p"] = Vec(save.GuardTarget),
+                        ["guard_distance"] = Num(saveDistance),
+                        ["time_remaining"] = Num(saveRemaining, 3),
+                        ["required_travel_speed"] = Num(
+                            GoalLineSave.RequiredTravelSpeed(saveDistance, saveRemaining)),
+                        ["jump_positioned"] = GoalLineSave.IsJumpPositioned(
+                            car, save.GuardTarget),
                         ["jumping"] = save.Jumping,
                         ["double_jump"] = save.UsesDoubleJump,
                         ["fast_travel"] = save.FastTravel,
@@ -470,7 +479,8 @@ namespace Bot
                         ["target_p"] = Vec(clear.Target),
                         ["clear_dir"] = Vec(clear.ClearDirection),
                         ["committed"] = clear.Committed,
-                        ["ground_block"] = clear.GroundBlock
+                        ["ground_block"] = clear.GroundBlock,
+                        ["directional_dodge_allowed"] = clear.DirectionalDodgeAllowed
                     };
                 default:
                     return null;
