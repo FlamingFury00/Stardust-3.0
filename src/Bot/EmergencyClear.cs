@@ -142,8 +142,15 @@ namespace Bot
 
             ControlMath.Aim(
                 car, bot.Controller, ClearDirection, Vec3.Up);
+
+            // A mid-height emergency does not need a directional dodge. In the uploaded
+            // 7-2 -> 7-3 concession the second jump fired while the car was still below a
+            // ~160-220 uu ball, adding ~700 uu/s fieldward velocity and carrying the car
+            // completely past the play without a touch. Single-jump blocks preserve steering
+            // and vertical coverage; reserve the committed dodge for genuinely high contacts.
+            bool needsDirectionalDodge = predicted.location.z > 235f;
             JumpCommand command = jumps.Step(
-                Game.Time, bot.Jump.CanDodge);
+                Game.Time, needsDirectionalDodge && bot.Jump.CanDodge);
 
             bot.Controller.Throttle = 1f;
             bot.Controller.Boost = false;
