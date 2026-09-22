@@ -1112,7 +1112,7 @@ internal static class DefenseRegression
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
                 var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 6, "telemetry schema missing");
+                Check(root.GetProperty("schema").GetInt32() == 7, "telemetry schema missing");
                 Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
                 Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
                     "telemetry did not capture actual sanitized controller output");
