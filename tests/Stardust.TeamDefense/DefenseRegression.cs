@@ -215,7 +215,6 @@ internal static class DefenseRegression
             {
                 MyEta = 2.9583f,
                 OpponentEta = 1.5333f,
-                FreeTime = -1.425f,
                 TeamRank = 0,
                 TeamCount = 1,
                 LastBack = true
