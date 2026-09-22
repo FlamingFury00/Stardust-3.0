@@ -468,6 +468,17 @@ namespace Bot
 
             Vec3 plannedCarVelocity =
                 ((shot.TargetLocation - car.Location) / t).Cap(0f, Car.MaxSpeed);
+
+            // A JumpShot finishes with a directional dodge, which contributes a substantial
+            // contact-speed impulse that a plain GroundShot never gets. Include a conservative
+            // fraction of that impulse so the planner can prefer a real power shot.
+            if (shot is JumpShot jump)
+            {
+                Vec3 dodge = ControlMath.Unit(jump.DodgeDirection, shot.ShotDirection);
+                plannedCarVelocity =
+                    (plannedCarVelocity + dodge * 420f).Cap(0f, Car.MaxSpeed);
+            }
+
             Vec3 relative = plannedCarVelocity - slice.Velocity;
             float relativeSpeed = relative.Length();
             if (!float.IsFinite(relativeSpeed))
