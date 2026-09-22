@@ -247,8 +247,8 @@ namespace Bot
             {
                 float dangerTime = emergency ? threat : counterThreat;
                 float deadline = Defense.DefensiveDeadline(dangerTime, Situation);
-                float stagingHorizon = System.Math.Clamp(
-                    MathF.Max(deadline, dangerTime), 0.05f, 3f);
+                float stagingHorizon = Defense.ThreatStagingHorizon(
+                    dangerTime, deadline);
                 bool clearSide = Defense.IsDepthGoalSide(
                     Me.Location, Ball.Location, OurGoal.Location, -100f);
 
