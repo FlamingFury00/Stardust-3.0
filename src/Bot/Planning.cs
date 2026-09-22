@@ -223,6 +223,82 @@ namespace Bot
             return Field.LimitToNearestSurface(target);
         }
 
+        /// <summary>
+        /// Geometric open-net check for a direct ball-to-goal lane. It intentionally ignores opponents
+        /// behind the ball and expands the blocking corridor toward the goal mouth.
+        /// </summary>
+        public static bool GoalLaneOpen(IEnumerable<Car> opponents, Vec3 ball, Vec3 goal)
+        {
+            if (!ControlMath.Finite(ball) || !ControlMath.Finite(goal))
+                return false;
+
+            Vec3 axis = ControlMath.FlatUnit(goal - ball, new Vec3(0, goal.y < ball.y ? -1f : 1f, 0));
+            float length = ball.FlatDist(goal);
+            if (length < 1f)
+                return true;
+
+            if (opponents == null)
+                return true;
+
+            foreach (Car opponent in opponents)
+            {
+                if (opponent == null || opponent.IsDemolished ||
+                    !ControlMath.Finite(opponent.Location) || opponent.Location.z > 520f)
+                    continue;
+
+                Vec3 rel = (opponent.Location - ball).Flatten();
+                float along = rel.Dot(axis);
+                if (along < 80f || along > length + 250f)
+                    continue;
+
+                float fraction = System.Math.Clamp(along / length, 0f, 1f);
+                float halfWidth = 430f + fraction * (Goal.Width * 0.5f - 120f);
+                Vec3 lateral = rel - axis * along;
+                if (lateral.Length() <= halfWidth)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// A high-value direct finish outranks keeping possession. Possession is still preferred for
+        /// low-value/slow contacts, but an imminent goal-directed hit in the attacking half should
+        /// not be converted into another catch or dribble setup.
+        /// </summary>
+        public static bool PreferImmediateShot(RUBot bot, Shot shot, TacticalFrame frame)
+        {
+            if (bot == null || shot == null || shot.Slice == null ||
+                !float.IsFinite(shot.Slice.Time) || !ControlMath.Finite(shot.Slice.Location) ||
+                !ControlMath.Finite(shot.ShotDirection))
+                return false;
+
+            float contactTime = shot.Slice.Time - Game.Time;
+            if (!float.IsFinite(contactTime) || contactTime <= 0f || contactTime > 1.35f)
+                return false;
+
+            Vec3 attackGoal = bot.TheirGoal.Location;
+            Vec3 goalAxis = ControlMath.FlatUnit(
+                attackGoal - shot.Slice.Location, bot.Me.Forward);
+            Vec3 shotDirection = ControlMath.FlatUnit(shot.ShotDirection, goalAxis);
+            float goalward = shotDirection.Dot(goalAxis);
+            if (goalward < 0.42f)
+                return false;
+
+            float side = Field.Side(bot.Team);
+            bool offensiveHalf = shot.Slice.Location.y * side < -250f;
+            float goalDistance = shot.Slice.Location.FlatDist(attackGoal);
+            bool openLane = GoalLaneOpen(bot.LivingOpponents, shot.Slice.Location, attackGoal);
+
+            bool immediateBoom = offensiveHalf && contactTime <= 0.72f && goalDistance < 5000f;
+            bool closeFinish = goalDistance < 3200f && contactTime <= 1.00f;
+            bool openNet = openLane && offensiveHalf && goalDistance < 5200f && contactTime <= 1.25f;
+            bool pressuredRelease = frame?.UnderPressure == true &&
+                offensiveHalf && contactTime <= 0.70f;
+
+            return immediateBoom || closeFinish || openNet || pressuredRelease;
+        }
+
         /// <summary>Compatibility wrapper: stationary defensive parking has zero terminal speed.</summary>
         public static float GuardSpeed(Car car, Vec3 target, float cruiseSpeed) =>
             Defense.DriveSpeed(car, target, cruiseSpeed, 0f);
