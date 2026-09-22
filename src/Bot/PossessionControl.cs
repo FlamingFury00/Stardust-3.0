@@ -63,10 +63,25 @@ namespace Bot
             if (frame == null || car == null || ball == null || car.IsDemolished)
                 return false;
 
-            if (HasControlledPossession(car, ball))
+            float ownDepth = Defense.OwnDepth(ball.location, ownGoal);
+            bool deepPressure = ownDepth > 3000f &&
+                ((float.IsFinite(frame.PressureTime) && frame.PressureTime < 1.20f) ||
+                 (float.IsFinite(frame.OpponentEta) && frame.OpponentEta < 1.30f));
+
+            float roofQuality = RoofControlQuality(car, ball);
+            if (roofQuality >= 0.48f)
+            {
+                // High-quality roof possession can still be carried out of the box, but a marginal
+                // own-box dribble under immediate pressure must not be sticky.
+                if (deepPressure && roofQuality < 0.72f)
+                    return false;
                 return true;
+            }
             if (HasAirControl(car, ball) && (car.Boost > 0f || car.Location.Dist(ball.location) < 230f))
-                return true;
+                return !deepPressure;
+
+            if (deepPressure)
+                return false;
 
             if (frame.TeamRank != 0 || !Defense.IsGoalSide(car.Location, ball.location, ownGoal, -80f))
                 return false;
