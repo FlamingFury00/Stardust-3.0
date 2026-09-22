@@ -349,6 +349,27 @@ namespace Bot
                 return;
             }
 
+            if (Defense.ShouldForceBoxClear(
+                    Situation, Me, Ball.MainBall, OurGoal.Location))
+            {
+                float boxContactWindow = MathF.Min(
+                    float.IsFinite(Situation.PressureTime)
+                        ? Situation.PressureTime : 4.5f,
+                    float.IsFinite(Situation.OpponentEta)
+                        ? Situation.OpponentEta : 4.5f);
+
+                if (EmergencyClear.CanStart(
+                        Me, Ball.MainBall, OurGoal.Location, boxContactWindow))
+                {
+                    if (!(Action is EmergencyClear) || Action.Finished)
+                        Action = new EmergencyClear(
+                            Me, OurGoal.Location, TheirGoal.Location);
+                    defensiveShot = null;
+                    SetDecision("defend / pressured box clear");
+                    return;
+                }
+            }
+
             bool controlledPossession =
                 PossessionControl.HasControlledPossession(Me, Ball.MainBall) ||
                 PossessionControl.HasAirControl(Me, Ball.MainBall);
