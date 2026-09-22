@@ -442,6 +442,7 @@ namespace Bot
                 return "support";
             if (decision.Contains("recover behind ball", StringComparison.Ordinal) ||
                 decision.Contains("exit net", StringComparison.Ordinal) ||
+                decision.Contains("goal-line save", StringComparison.Ordinal) ||
                 decision.Contains("predicted goal", StringComparison.Ordinal))
                 return "recovery";
             return null;
