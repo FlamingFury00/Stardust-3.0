@@ -380,11 +380,6 @@ namespace Bot
             if (!float.IsFinite(contactTime) || contactTime <= 0f || contactTime > 1.35f)
                 return false;
 
-            // A finish has to have real horizontal authority. This avoids classifying a steep
-            // pop/jump beside a wall or goal line as an immediate scoring commitment.
-            if (FlatShotAuthority(shot) < 0.42f)
-                return false;
-
             Vec3 attackGoal = bot.TheirGoal.Location;
             Vec3 goalAxis = ControlMath.FlatUnit(
                 attackGoal - shot.Slice.Location, bot.Me.Forward);
