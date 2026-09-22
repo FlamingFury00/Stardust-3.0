@@ -222,6 +222,19 @@ namespace Bot
                 bool clearSide = Defense.IsDepthGoalSide(
                     Me.Location, Ball.Location, OurGoal.Location, -100f);
 
+                // If the dangerous ball is already within contact distance, touching it away
+                // from our net outranks driving toward a remote goal-line waypoint.
+                if (emergency && EmergencyClear.CanStart(
+                        Me, Ball.MainBall, OurGoal.Location, threat))
+                {
+                    if (!(Action is EmergencyClear) || Action.Finished)
+                        Action = new EmergencyClear(
+                            Me, OurGoal.Location, TheirGoal.Location);
+                    defensiveShot = null;
+                    SetDecision("defend / emergency touch clear");
+                    return;
+                }
+
                 // Before a hard emergency, a clean shot at the opponent net is the strongest clear:
                 // it removes the threat and can score. Only do this from safe goal-side ownership.
                 if (counterDanger && clearSide && ChallengeCommitted)
