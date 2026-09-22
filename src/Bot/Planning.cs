@@ -275,6 +275,12 @@ namespace Bot
                 car.Location.Dist(ball.location) < 1700f;
         }
 
+        public static bool CanSearchAttack(
+            TacticalFrame frame, Car car, Ball ball, Vec3 attackGoal,
+            bool canChallenge, bool controlledPossession) =>
+            canChallenge || controlledPossession ||
+            CanForceFinishOpportunity(frame, car, ball, attackGoal);
+
         /// <summary>
         /// Offensive-box exception to the conservative loose-ball challenge gate. When the ball is
         /// already near the opponent goal and the race is effectively tied, Stardust should still
