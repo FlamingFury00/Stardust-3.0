@@ -21,8 +21,6 @@ namespace Bot
         public bool UsesDoubleJump => doubleJump;
         public bool FastTravel { get; private set; }
         public bool AirborneFlight { get; private set; }
-        public bool FastTravel { get; private set; }
-        public bool AirborneFlight { get; private set; }
 
         private readonly DefensiveDrive drive;
         private readonly JumpSequence jumps = new(0.16f);
