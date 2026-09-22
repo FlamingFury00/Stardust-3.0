@@ -112,6 +112,14 @@ namespace Bot
             return safeGeometry && Defense.EffectiveFreeTime(frame) >= -0.10f;
         }
 
+        public static bool PreferGroundControl(
+            TacticalFrame frame, bool canDribble, bool underPressure, bool forceFinishOpportunity)
+        {
+            if (frame == null || !canDribble || underPressure || forceFinishOpportunity)
+                return false;
+            return Defense.EffectiveFreeTime(frame) >= 0.22f;
+        }
+
         public static bool CanAcquireAir(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
         {
             if (frame == null || car == null || ball == null || frame.TeamRank != 0 ||
