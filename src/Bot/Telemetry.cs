@@ -185,6 +185,38 @@ namespace Bot
             file = null;
         }
 
+        private static Dictionary<string, object> BuildPossession(
+            Stardust bot, TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
+        {
+            float free = Defense.EffectiveFreeTime(frame);
+            float opponentWindow = Defense.OpponentContactEta(frame);
+            bool acquireGround = PossessionControl.CanAcquireGround(
+                frame, car, ball, ownGoal);
+            bool groundDribble = acquireGround &&
+                GroundDribble.CanStart(car, ball, free);
+            bool acquireAir = PossessionControl.CanAcquireAir(
+                frame, car, ball, ownGoal);
+            bool airCarry = acquireAir &&
+                AerialCarry.CanStart(car, ball, opponentWindow);
+            bool shotHandoff = bot?.Action is JumpShot &&
+                PossessionControl.CanHandoffShotToAirCarry(
+                    car, ball, opponentWindow);
+
+            return new Dictionary<string, object>
+            {
+                ["roof_quality"] = Num(PossessionControl.RoofControlQuality(car, ball), 3),
+                ["controlled"] = PossessionControl.HasControlledPossession(car, ball),
+                ["air_control"] = PossessionControl.HasAirControl(car, ball),
+                ["retain"] = PossessionControl.ShouldRetainPossession(
+                    frame, car, ball, ownGoal),
+                ["acquire_ground"] = acquireGround,
+                ["ground_dribble_ready"] = groundDribble,
+                ["acquire_air"] = acquireAir,
+                ["air_carry_ready"] = airCarry,
+                ["shot_to_air_handoff"] = shotHandoff
+            };
+        }
+
         private Dictionary<string, object> Build(Stardust bot, string kind, string previousDecision)
         {
             Car me = bot.Me;
@@ -266,12 +298,7 @@ namespace Bot
                 ["action_interruptible"] = bot.Action?.Interruptible,
                 ["action_finished"] = bot.Action?.Finished,
                 ["role"] = Role(bot.Decision),
-                ["possession"] = new Dictionary<string, object>
-                {
-                    ["roof_quality"] = Num(PossessionControl.RoofControlQuality(me, ball), 3),
-                    ["controlled"] = PossessionControl.HasControlledPossession(me, ball),
-                    ["retain"] = PossessionControl.ShouldRetainPossession(frame, me, ball, goal)
-                },
+                ["possession"] = BuildPossession(bot, frame, me, ball, goal),
                 ["car_state"] = new Dictionary<string, object>
                 {
                     ["p"] = Vec(me.Location),
