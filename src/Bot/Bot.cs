@@ -218,7 +218,7 @@ namespace Bot
             if (emergency || counterDanger)
             {
                 float dangerTime = emergency ? threat : counterThreat;
-                float deadline = MathF.Max(0.05f, dangerTime - 0.025f);
+                float deadline = Defense.DefensiveDeadline(dangerTime, Situation);
                 bool clearSide = Defense.IsDepthGoalSide(
                     Me.Location, Ball.Location, OurGoal.Location, -100f);
 
