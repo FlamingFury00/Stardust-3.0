@@ -173,10 +173,14 @@ namespace Bot
             bool emergency = float.IsFinite(threat);
             bool counterDanger = !emergency && float.IsFinite(counterThreat);
             bool underPressure = float.IsFinite(pressureTime);
-            bool threatEdge = emergency != defending || counterDanger != countering;
+            bool emergencyEdge = emergency != defending;
+            bool counterEdge = counterDanger != countering;
             bool pressureEdge = underPressure != pressured;
 
-            if (threatEdge || pressureEdge)
+            // A long-horizon counter prediction is useful information, but unlike a real <2.5 s
+            // emergency it must not cancel an attack we already own. PR #1 only had the hard
+            // emergency horizon; preserve that aggressive behavior while still replanning quickly.
+            if (emergencyEdge || counterEdge || pressureEdge)
                 nextPlan = float.NegativeInfinity;
 
             // Do not acknowledge a tactical edge until a physically committed flip/dodge can be
@@ -190,7 +194,7 @@ namespace Bot
 
             if (Action is Shot oldShot && !oldShot.IsPredictionValid())
                 Action = null;
-            if (threatEdge)
+            if (emergencyEdge)
             {
                 Action = null;
                 defensiveShot = null;
@@ -215,7 +219,12 @@ namespace Bot
             ChallengeCommitted = RawCanChallenge ||
                 (Game.Time < challengeCommitUntil && challengeSafe);
 
-            if (emergency || counterDanger)
+            // Do not let a 2.5-4.5 s untouched-ball projection override an already committed,
+            // safe first-man challenge. This exact suppression produced "counter shadow/recover"
+            // frames in the uploaded concessions while can_challenge was true.
+            bool counterMustDefend = counterDanger && !ChallengeCommitted;
+
+            if (emergency || counterMustDefend)
             {
                 float dangerTime = emergency ? threat : counterThreat;
                 float deadline = MathF.Max(0.05f, dangerTime - 0.025f);
@@ -237,45 +246,16 @@ namespace Bot
                     return;
                 }
 
-                // Before a hard emergency, a clean shot at the opponent net is the strongest clear:
-                // it removes the threat and can score. Only do this from safe goal-side ownership.
-                if (counterDanger && clearSide && ChallengeCommitted)
+                // PR #1 attacked the dangerous ball before surrendering to the goal line.
+                // The modern SelectShot(emergency=true) already rejects any contact direction that
+                // points back toward our goal, so a separate "must already be goal-side" gate only
+                // suppresses safe clears from lateral/slightly wrong-side positions.
+                if (!(Action is Shot current) || !ReferenceEquals(Action, defensiveShot) ||
+                    current.Slice.Time - Game.Time > deadline)
                 {
-                    Shot counterShot = Tactics.SelectShot(
-                        this, false, Situation.OpponentEta, HasClaim,
-                        MathF.Min(deadline, 1.35f));
-                    if (counterShot != null)
-                    {
-                        float counterContact = counterShot.Slice.Time - Game.Time;
-                        bool directCounter = counterContact <= 0.82f &&
-                            Tactics.GoalLaneOpen(
-                                LivingOpponents, counterShot.Slice.Location, TheirGoal.Location);
-                        if (directCounter || Tactics.PreferImmediateShot(this, counterShot, Situation))
-                        {
-                            Action = counterShot;
-                            defensiveShot = null;
-                            SetDecision("attack / counter-shot clear");
-                            return;
-                        }
-                    }
-                }
-
-                // A formal clear is only legal from approximately goal-side geometry. The uploaded
-                // match contained a probable own-goal acceleration from a wrong-side recovery dodge.
-                if (clearSide)
-                {
-                    if (!(Action is Shot current) || !ReferenceEquals(Action, defensiveShot) ||
-                        current.Slice.Time - Game.Time > deadline)
-                    {
-                        defensiveShot = Tactics.SelectShot(this, true, Situation.OpponentEta,
-                            _ => false, deadline);
-                        Action = defensiveShot;
-                    }
-                }
-                else if (Action is Shot)
-                {
-                    Action = null;
-                    defensiveShot = null;
+                    defensiveShot = Tactics.SelectShot(this, true, Situation.OpponentEta,
+                        _ => false, deadline);
+                    Action = defensiveShot;
                 }
 
                 if (Action is Shot selectedClear &&
