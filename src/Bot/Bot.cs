@@ -316,7 +316,7 @@ namespace Bot
                 {
                     Vec3 counterReference = Defense.ReferenceBall(
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
-                    bool counterGoalSide = Defense.IsGoalSide(
+                    bool counterGoalSide = Defense.IsTacticallyGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
@@ -546,7 +546,8 @@ namespace Bot
 
             Vec3 reference = Defense.ReferenceBall(Ball.Prediction, Ball.Location,
                 OurGoal.Location, Game.Time);
-            bool goalSide = Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location, 20f);
+            bool goalSide = Defense.IsTacticallyGoalSide(
+                Me.Location, Ball.Location, OurGoal.Location, 20f);
             bool recoveringGoalSide = !goalSide;
 
             Vec3 rawSupport = recoveringGoalSide
