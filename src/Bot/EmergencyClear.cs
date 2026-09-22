@@ -158,7 +158,7 @@ namespace Bot
             bool highContact = predicted.location.z > 235f;
             bool contactReadyForDodge =
                 highContact &&
-                verticalGap <= 155f &&
+                MathF.Abs(verticalGap) <= 155f &&
                 distance <= 235f &&
                 car.Forward.Dot(towardBall) > 0.30f;
 
