@@ -862,6 +862,55 @@ internal static class DefenseRegression
                 $"ground possession takeover was not exposed: {bot.Decision}");
         });
 
+        test("possession-v16: controlled ground ball reclaims routine shot under pressure", () =>
+        {
+            Car car = CarAt(0f, 0f);
+            car.Velocity = new Vec3(0f, 600f, 0f);
+            car.Orientation = new Mat3x3(
+                new Vec3(0f, MathF.PI / 2f, 0f));
+
+            Vec3 ballLocation = car.Location + car.Forward * 20f + car.Up * 153f;
+            Vec3 ballVelocity = car.Velocity;
+
+            Car opponent = CarAt(0f, 260f, 1, 1);
+            opponent.Orientation = new Mat3x3(
+                new Vec3(0f, -MathF.PI / 2f, 0f));
+            opponent.Velocity = Vec3.Zero;
+            opponent.LastInput = new ControllerStateT();
+
+            var bot = World(ballLocation, car, opponent);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, ballVelocity);
+            Set(typeof(Game), nameof(Game.Time), null!, 82f);
+
+            var slice = new BallSlice(
+                82.40f, ballLocation + ballVelocity * 0.40f, ballVelocity);
+            Set(typeof(Ball), nameof(Ball.Prediction), null!,
+                new RedUtils.BallPrediction
+                {
+                    Slices = new[]
+                    {
+                        new BallSlice(82f, ballLocation, ballVelocity),
+                        slice
+                    }
+                });
+
+            bot.Action = new GroundShot(
+                car, slice, new Vec3(0f, 5212f, 240f));
+
+            float pressure = Tactics.OpponentPressure(
+                new[] { opponent }, Ball.MainBall, blueGoal);
+            Check(float.IsFinite(pressure),
+                "fixture failed to create close opponent pressure");
+            Check(PossessionControl.HasControlledPossession(
+                    car, Ball.MainBall),
+                "fixture lost roof control");
+
+            bot.Run();
+
+            Check(bot.Action is GroundDribble,
+                $"pressure still locked controlled possession inside a routine shot: {bot.Action?.GetType().Name}");
+        });
+
         test("possession-v16: supervisor interrupts pre-dodge JumpShot for air carry", () =>
         {
             Car car = CarAt(0f, 1500f);
