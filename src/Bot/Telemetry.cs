@@ -201,6 +201,11 @@ namespace Bot
             bool shotHandoff = bot?.Action is JumpShot &&
                 PossessionControl.CanHandoffShotToAirCarry(
                     car, ball, opponentWindow);
+            GroundDribble activeDribble = bot?.Action as GroundDribble;
+            float dribbleAge = activeDribble?.Age ?? float.NaN;
+            bool setupRetain = activeDribble != null &&
+                PossessionControl.CanRetainGroundSetup(
+                    frame, car, ball, ownGoal, dribbleAge);
 
             return new Dictionary<string, object>
             {
@@ -211,6 +216,8 @@ namespace Bot
                     frame, car, ball, ownGoal),
                 ["acquire_ground"] = acquireGround,
                 ["ground_dribble_ready"] = groundDribble,
+                ["ground_dribble_age"] = Num(dribbleAge, 3),
+                ["ground_setup_retain"] = setupRetain,
                 ["acquire_air"] = acquireAir,
                 ["air_carry_ready"] = airCarry,
                 ["shot_to_air_handoff"] = shotHandoff
@@ -437,6 +444,17 @@ namespace Bot
                         ["dodge_min_speed"] = Num(drive.DodgeMinSpeed),
                         ["mobility_action"] = drive.Action?.GetType().Name,
                         ["handbrake_allowed"] = drive.AllowHandbrake
+                    };
+                case GroundCatch catchAction:
+                    return new Dictionary<string, object>
+                    {
+                        ["claim_time"] = Num(catchAction.ClaimTime, 3),
+                        ["lane"] = Vec(catchAction.Lane)
+                    };
+                case GroundDribble dribble:
+                    return new Dictionary<string, object>
+                    {
+                        ["age"] = Num(dribble.Age, 3)
                     };
                 case GetBoost boost:
                     return new Dictionary<string, object>
