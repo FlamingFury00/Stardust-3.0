@@ -255,21 +255,17 @@ Test("log-v16: 400 uu save with 0.33 s remaining stays in travel mode", () =>
         "true arrival-radius save unnecessarily stayed in travel mode");
 });
 
-Test("log-v16: lateral alignment cannot trigger a jump far from the goal plane", () =>
+Test("v20: goal-line fallback exposes no jump-position state", () =>
 {
-    var far = new Car
+    var car = new Car
     {
-        Location = new Vec3(-1000f, -2200f, 17f),
+        Location = new Vec3(-950f, -4850f, 17f),
         IsGrounded = true
     };
     Vec3 guard = new(-537f, -5065f, 17f);
 
-    Check(!GoalLineSave.IsJumpPositioned(far, guard),
-        "car nearly 3k uu upfield was considered jump-positioned");
-
-    far.Location = new Vec3(-950f, -4850f, 17f);
-    Check(GoalLineSave.IsJumpPositioned(far, guard),
-        "real goal-plane coverage was rejected");
+    Check(!GoalLineSave.IsJumpPositioned(car, guard),
+        "position-only GoalLineSave still advertised a jump trigger");
 });
 
 Test("possession-v16: safe dribble acquisition outranks a routine intercept", () =>
@@ -545,6 +541,19 @@ Test("side-defense: slow central ball leaves normal shadow geometry unchanged", 
         $"central low-lateral state incorrectly became a side threat: {weight:F3}");
     Check(shaped.FlatDist(baseTarget) < 1f,
         $"central shadow target was unexpectedly moved: {shaped}");
+});
+
+Test("v20: defensive mobility requires a stable route and cooldown", () =>
+{
+    Check(!DefensiveDrive.ShouldUseMobility(
+            true, false, true, 2600f, false, 2200f, 0.10f, 0f),
+        "unstable recovery route still allowed a mobility flip");
+    Check(!DefensiveDrive.ShouldUseMobility(
+            true, false, true, 2600f, false, 2200f, 0.35f, 0.50f),
+        "cooldown still allowed repeated mobility flips");
+    Check(DefensiveDrive.ShouldUseMobility(
+            true, false, true, 2600f, false, 2200f, 0.35f, 0f),
+        "stable long recovery could no longer use an intentional mobility mechanic");
 });
 
 Test("defensive drive: stale reverse releases when a moving target becomes a real route", () =>
