@@ -80,7 +80,7 @@ namespace Bot
         {
             if (!allowDodges || holdPosition || !onFloor || backwards ||
                 !float.IsFinite(distance) || !float.IsFinite(cruiseSpeed) ||
-                !float.IsFinite(stableFor) || !float.IsFinite(cooldownRemaining))
+                !float.IsFinite(stableFor) || float.IsNaN(cooldownRemaining))
                 return false;
 
             // A defensive speed mechanic is only worth the loss of steering if the route is both
