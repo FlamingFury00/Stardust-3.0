@@ -261,7 +261,8 @@ namespace Bot
                     stableSave.Crossing = crossing;
                     stableSave.CrossingTime = stableCrossingTime;
 
-                    if (Me.Location.Dist(Ball.Location) > 300f &&
+                    if (crossing.z <= 165f &&
+                        Me.Location.Dist(Ball.Location) > 300f &&
                         GoalLineSave.ShouldHoldLine(
                             Me, crossing, stableCrossingTime,
                             OurGoal.Location, Game.Time))
@@ -272,47 +273,9 @@ namespace Bot
                     }
                 }
 
-                // Preserve an already-selected emergency contact through a wider hysteresis
-                // envelope when the alternative goal-line sprint is physically impossible. Fresh
-                // v18 telemetry repeatedly abandoned a 0.4-0.7k uu contact for a 1-2.6k uu line
-                // target with less than a second remaining.
-                if (Action is EmergencyClear activeClear && !activeClear.Finished &&
-                    EmergencyClear.CanContinue(
-                        Me, Ball.MainBall, OurGoal.Location, dangerTime))
-                {
-                    Vec3 guard = Defense.EmergencyTarget(
-                        crossing, OurGoal.Location);
-                    bool lineReachable = emergency &&
-                        GoalLineSave.CanReachGuard(Me, guard, dangerTime);
-                    bool pointBlank = Me.Location.Dist(Ball.Location) <= 560f;
-
-                    if (pointBlank || !lineReachable)
-                    {
-                        defensiveShot = null;
-                        SetDecision(emergency
-                            ? "defend / emergency touch clear"
-                            : "defend / counter touch clear");
-                        return;
-                    }
-                }
-
-                // If the dangerous ball is already within contact distance, touching it away
-                // from our net outranks driving toward a remote goal-line waypoint.
-                if (EmergencyClear.CanStart(
-                        Me, Ball.MainBall, OurGoal.Location, dangerTime))
-                {
-                    if (!(Action is EmergencyClear) || Action.Finished)
-                        Action = new EmergencyClear(
-                            Me, OurGoal.Location, TheirGoal.Location);
-                    defensiveShot = null;
-                    SetDecision(emergency
-                        ? "defend / emergency touch clear"
-                        : "defend / counter touch clear");
-                    return;
-                }
-
-                // Before a hard emergency, a clean shot at the opponent net is the strongest clear:
-                // it removes the threat and can score. Only do this from safe goal-side ownership.
+                // Reusable shot mechanics own ALL elevated defensive contacts. Do this before
+                // any point-blank fallback so a valid GroundShot/JumpShot/DoubleJumpShot/AerialShot
+                // is never replaced by a bespoke jump sequence.
                 if (counterDanger && clearSide && ChallengeCommitted)
                 {
                     Shot counterShot = Tactics.SelectShot(
@@ -334,14 +297,19 @@ namespace Bot
                     }
                 }
 
-                // A formal clear is only legal from approximately goal-side geometry. The uploaded
-                // match contained a probable own-goal acceleration from a wrong-side recovery dodge.
                 if (clearSide)
                 {
-                    if (!(Action is Shot current) || !ReferenceEquals(Action, defensiveShot) ||
-                        current.Slice.Time - Game.Time > deadline)
+                    bool retainDefensiveShot =
+                        Action is Shot current &&
+                        ReferenceEquals(Action, defensiveShot) &&
+                        current.IsPredictionValid() &&
+                        current.Slice.Time - Game.Time > 0f &&
+                        current.Slice.Time - Game.Time <= deadline;
+
+                    if (!retainDefensiveShot)
                     {
-                        defensiveShot = Tactics.SelectShot(this, true, Situation.OpponentEta,
+                        defensiveShot = Tactics.SelectShot(
+                            this, true, Situation.OpponentEta,
                             _ => false, deadline);
                         Action = defensiveShot;
                     }
@@ -358,6 +326,42 @@ namespace Bot
                     SetDecision(emergency
                         ? "defend / emergency clear"
                         : "defend / counter clear");
+                    return;
+                }
+
+                // EmergencyClear is now a wheels-on-ground fallback only. It may continue when a
+                // final-line sprint is impossible, but it yields immediately whenever the normal
+                // shot search can solve the contact.
+                if (Action is EmergencyClear activeClear && !activeClear.Finished &&
+                    EmergencyClear.CanContinue(
+                        Me, Ball.MainBall, OurGoal.Location, dangerTime))
+                {
+                    Vec3 guard = Defense.EmergencyTarget(
+                        crossing, OurGoal.Location);
+                    bool lineReachable = emergency &&
+                        GoalLineSave.CanReachGuard(Me, guard, dangerTime);
+                    bool pointBlank = Me.Location.Dist(Ball.Location) <= 560f;
+
+                    if (pointBlank || !lineReachable)
+                    {
+                        defensiveShot = null;
+                        SetDecision(emergency
+                            ? "defend / low emergency block"
+                            : "defend / low counter block");
+                        return;
+                    }
+                }
+
+                if (EmergencyClear.CanStart(
+                        Me, Ball.MainBall, OurGoal.Location, dangerTime))
+                {
+                    if (!(Action is EmergencyClear) || Action.Finished)
+                        Action = new EmergencyClear(
+                            Me, OurGoal.Location, TheirGoal.Location);
+                    defensiveShot = null;
+                    SetDecision(emergency
+                        ? "defend / low emergency block"
+                        : "defend / low counter block");
                     return;
                 }
 
@@ -417,6 +421,17 @@ namespace Bot
                     return;
                 }
 
+                // No bespoke airborne goalkeeper controller. If the shot solvers could not
+                // prove an aerial contact, use the existing recovery mechanic and replan on landing.
+                if (!Me.IsGrounded)
+                {
+                    if (!(Action is Recover) || Action.Finished)
+                        Action = new Recover();
+                    defensiveShot = null;
+                    SetDecision("recover / emergency landing");
+                    return;
+                }
+
                 float crossingTime = Game.Time + MathF.Max(0f, threat);
                 if (Action is GoalLineSave save && !save.Finished)
                 {
@@ -426,7 +441,7 @@ namespace Bot
                 else
                     Action = new GoalLineSave(Me, crossing, crossingTime);
 
-                SetDecision("defend / goal-line save");
+                SetDecision("defend / goal-line position");
                 return;
             }
 
@@ -439,6 +454,22 @@ namespace Bot
                     float.IsFinite(Situation.OpponentEta)
                         ? Situation.OpponentEta : 4.5f);
 
+                // Same ownership rule outside a formal goal threat: ask the shot mechanics first.
+                // The low EmergencyClear drive is only the no-solver point-blank fallback.
+                float boxDeadline = MathF.Min(1.10f, boxContactWindow);
+                Shot boxClear = boxDeadline > 0.08f
+                    ? Tactics.SelectShot(
+                        this, true, Situation.OpponentEta,
+                        _ => false, boxDeadline)
+                    : null;
+                if (boxClear != null)
+                {
+                    Action = boxClear;
+                    defensiveShot = boxClear;
+                    SetDecision("defend / pressured box mechanic");
+                    return;
+                }
+
                 if (EmergencyClear.CanStart(
                         Me, Ball.MainBall, OurGoal.Location, boxContactWindow))
                 {
@@ -446,7 +477,7 @@ namespace Bot
                         Action = new EmergencyClear(
                             Me, OurGoal.Location, TheirGoal.Location);
                     defensiveShot = null;
-                    SetDecision("defend / pressured box clear");
+                    SetDecision("defend / low pressured box block");
                     return;
                 }
             }
