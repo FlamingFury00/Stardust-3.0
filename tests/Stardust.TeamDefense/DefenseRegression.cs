@@ -598,7 +598,18 @@ internal static class DefenseRegression
             var recovery = new DefensiveDrive(
                 car, new Vec3(0, -3500, 17), 2200f, 500f,
                 holdPosition: false, allowDodges: true);
-            for (int i = 0; i < 3; i++)
+            Check(!DefensiveDrive.ShouldUseMobility(
+                    allowDodges: true, holdPosition: false, onFloor: true,
+                    distance: 3500f, backwards: false, cruiseSpeed: 2200f,
+                    stableFor: 0.10f, cooldownRemaining: 0f),
+                "moving defensive waypoint was allowed to spawn a flip before stabilizing");
+            Check(!DefensiveDrive.ShouldUseMobility(
+                    allowDodges: true, holdPosition: false, onFloor: true,
+                    distance: 3500f, backwards: false, cruiseSpeed: 2200f,
+                    stableFor: 0.30f, cooldownRemaining: 0.60f),
+                "mobility cooldown allowed repeated defensive flips");
+
+            for (int i = 0; i < 5; i++)
             {
                 Set(typeof(Game), nameof(Game.Time), null!, 20f + i * 0.10f);
                 bot.Controller = new ControllerStateT();
@@ -606,7 +617,7 @@ internal static class DefenseRegression
             }
 
             Check(recovery.MobilityAction == "SpeedFlip",
-                $"long aligned recovery selected {recovery.MobilityAction ?? "no mobility action"}");
+                $"stable long recovery selected {recovery.MobilityAction ?? "no mobility action"}");
 
             var precise = new DefensiveDrive(
                 car, new Vec3(0, -3500, 17), 2200f, 500f,
@@ -646,7 +657,7 @@ internal static class DefenseRegression
                 "clear long recovery corridor was denied fast travel");
         });
 
-        test("log-v7: elevated goal-line crossing triggers a jump while a low crossing stays grounded", () =>
+        test("v20: goal-line positioning never manufactures a jump", () =>
         {
             Car car = CarAt(0f, -5060f);
             car.Orientation = new Mat3x3(new Vec3(0, -MathF.PI / 2, 0));
@@ -654,19 +665,16 @@ internal static class DefenseRegression
             Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
             Set(typeof(Game), nameof(Game.Time), null!, 10f);
 
-            var high = new GoalLineSave(
-                car, new Vec3(0f, -5120f, 442f), 10.50f);
-            bot.Controller = new ControllerStateT();
-            high.Run(bot);
-            Check(high.Jumping && bot.Controller.Jump,
-                "442 uu crossing did not start a goal-line jump");
-
-            var low = new GoalLineSave(
-                car, new Vec3(0f, -5120f, 130f), 10.50f);
-            bot.Controller = new ControllerStateT();
-            low.Run(bot);
-            Check(!low.Jumping && !bot.Controller.Jump,
-                "low goal-line crossing unnecessarily left the ground");
+            foreach (float z in new[] { 130f, 442f })
+            {
+                var save = new GoalLineSave(
+                    car, new Vec3(0f, -5120f, z), 10.50f);
+                bot.Controller = new ControllerStateT();
+                save.Run(bot);
+                Check(!save.Jumping && !save.UsesDoubleJump &&
+                      !bot.Controller.Jump,
+                    $"goal-line positioning directly jumped for z={z:F0}");
+            }
         });
 
         test("log-v7: imminent opponent-half finish outranks possession", () =>
@@ -726,7 +734,7 @@ internal static class DefenseRegression
                 "upfield lateral car was allowed to take an emergency clear");
         });
 
-        test("log-v9: close inbound shot commits an away-from-goal emergency touch", () =>
+        test("v20: raised point-blank defense is reserved for shot mechanics", () =>
         {
             Car car = CarAt(-755.6f, -4577.8f);
             car.Velocity = new Vec3(-83.5f, 303.7f, 0.3f);
@@ -734,39 +742,22 @@ internal static class DefenseRegression
             var bot = World(new Vec3(-768.3f, -4467.3f, 212.8f), car);
             Set(typeof(Ball), nameof(Ball.Velocity), null!,
                 new Vec3(1493.8f, -711.3f, -277.8f));
-            Set(typeof(Ball), nameof(Ball.Prediction), null!,
-                new RedUtils.BallPrediction
-                {
-                    Slices = new[]
-                    {
-                        new BallSlice(108.525f,
-                            new Vec3(-668.4f, -4515f, 192.8f),
-                            new Vec3(1490f, -710f, -320f))
-                    }
-                });
             Set(typeof(Game), nameof(Game.Time), null!, 108.458f);
             Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
 
-            Check(EmergencyClear.CanStart(
+            Check(!EmergencyClear.CanStart(
                     car, Ball.MainBall, blueGoal, 1.15f),
-                "225 uu / 1.15 s emergency still did not authorize a direct touch");
+                "raised 212 uu ball was still routed into bespoke EmergencyClear");
 
             var clear = new EmergencyClear(
                 car, blueGoal, new Vec3(0f, 5120f, 0f));
             bot.Controller = new ControllerStateT();
             clear.Run(bot);
-            Check(clear.Committed,
-                "raised point-blank threat did not commit the emergency jump");
-
-            Set(typeof(Game), nameof(Game.Time), null!, 108.466f);
-            bot.Controller = new ControllerStateT();
-            clear.Run(bot);
-
-            Check(bot.Controller.Jump,
-                "emergency clear committed but did not leave the ground");
-            Check(Defense.ClearDirectionIsSafe(
-                    clear.ClearDirection, blueGoal, 0.20f),
-                $"emergency touch direction aimed back at own goal: {clear.ClearDirection}");
+            Check(clear.Finished && !clear.Committed &&
+                  !clear.NeutralSecondJump &&
+                  !clear.DirectionalDodgeAllowed &&
+                  !bot.Controller.Jump,
+                "ground-only emergency fallback still manufactured a raised-ball jump");
         });
 
         test("log-v9: raw emergency interceptor refuses an own-goal chase", () =>
@@ -1113,43 +1104,36 @@ internal static class DefenseRegression
                 $"low block still aimed too far behind the ball: target={clear.Target}, ball={Ball.Location}");
         });
 
-        test("log-v16: high emergency uses vertical second jump before any contact dodge", () =>
+        test("v20: airborne high defense cannot enter EmergencyClear", () =>
         {
             Car car = CarAt(-887.94f, -3395.55f);
             car.Location = new Vec3(-887.94f, -3395.55f, 24.52f);
             car.Velocity = new Vec3(-817.08f, 1284.35f, 303.84f);
-            car.Orientation = new Mat3x3(
-                new Vec3(-0.0099f, 2.1544f, -0.0002f));
             car.IsGrounded = false;
-
-            var bot = World(
-                new Vec3(-884.31f, -3234.36f, 323.16f), car);
-            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+            Ball ball = new(
+                new Vec3(-884.31f, -3234.36f, 323.16f),
                 new Vec3(176.64f, -1035.76f, -633.91f));
-            Set(typeof(Game), nameof(Game.Time), null!, 35f);
-            Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
 
-            var clear = new EmergencyClear(
-                car, blueGoal, new Vec3(0f, 5120f, 0f));
-            bot.Controller = new ControllerStateT();
-            clear.Run(bot);
-
-            Check(clear.Committed,
-                "high close emergency did not commit immediately");
-            Check(clear.NeutralSecondJump,
-                "car far below high emergency did not reserve a neutral vertical second jump");
-            Check(!clear.DirectionalDodgeAllowed,
-                "car ~250 uu below contact armed a fieldward directional dodge");
+            Check(!EmergencyClear.CanStart(car, ball, blueGoal, 0.6f),
+                "airborne/high state still entered ground-only emergency fallback");
+            Check(!EmergencyClear.CanContinue(car, ball, blueGoal, 0.6f),
+                "airborne/high state retained ground-only emergency fallback");
         });
 
-        test("scenario-v11: raised point-blank emergency jumps on the first action tick", () =>
+        test("v20: mid-height point-blank ball does not trigger fallback jump", () =>
         {
             Car car = CarAt(1638.9f, -4293.6f);
             car.Velocity = new Vec3(21f, 153.5f, 0f);
-            var bot = World(
-                new Vec3(1761.5f, -3951.9f, 161.8f), car);
-            Set(typeof(Ball), nameof(Ball.Velocity), null!,
+            Ball ball = new(
+                new Vec3(1761.5f, -3951.9f, 161.8f),
                 new Vec3(-1448f, -832.5f, 282.2f));
+
+            Check(EmergencyClear.CanStart(
+                    car, ball, blueGoal, 0.7f),
+                "161 uu low-enough ball unexpectedly lost the ground fallback");
+
+            var bot = World(ball.location, car);
+            Set(typeof(Ball), nameof(Ball.Velocity), null!, ball.velocity);
             Set(typeof(Game), nameof(Game.Time), null!, 30f);
             Set(typeof(RUBot), nameof(RUBot.DeltaTime), bot, 1f / 120f);
 
@@ -1158,12 +1142,11 @@ internal static class DefenseRegression
             bot.Controller = new ControllerStateT();
             clear.Run(bot);
 
-            Check(clear.Committed && bot.Controller.Jump,
-                "raised close emergency spent an extra planning frame before jumping");
-            Check(!clear.GroundBlock,
-                "raised emergency was incorrectly treated as a ground block");
-            Check(!clear.DirectionalDodgeAllowed,
-                "mid-height emergency armed an immediate directional dodge before reaching ball height");
+            Check(clear.GroundBlock && !clear.Committed &&
+                  !clear.NeutralSecondJump &&
+                  !clear.DirectionalDodgeAllowed &&
+                  !bot.Controller.Jump,
+                "mid-height ground fallback still generated a jump");
         });
 
         test("log-v17: threat staging never routes behind the own goal line", () =>
@@ -1236,7 +1219,7 @@ internal static class DefenseRegression
                 $"staging contact exceeded deadline: {contact}");
         });
 
-        test("scenario-v10: distant goal-line save travels fast and airborne save stays active", () =>
+        test("v20: distant goal-line save travels fast and airborne fallback yields to recovery", () =>
         {
             Set(typeof(Game), nameof(Game.Time), null!, 40f);
 
@@ -1263,12 +1246,9 @@ internal static class DefenseRegression
                 air, new Vec3(-5f, -5120f, 206f), 41.93f);
             airBot.Controller = new ControllerStateT();
             aerial.Run(airBot);
-            Check(aerial.AirborneFlight,
-                "airborne emergency save still waited passively for landing");
-            Check(MathF.Abs(airBot.Controller.Pitch) +
-                  MathF.Abs(airBot.Controller.Yaw) +
-                  MathF.Abs(airBot.Controller.Roll) > 0.01f,
-                "airborne emergency save produced no attitude command");
+            Check(aerial.Finished && !aerial.AirborneFlight &&
+                  !airBot.Controller.Jump && !airBot.Controller.Boost,
+                "airborne GoalLineSave still ran a bespoke flight/jump controller");
         });
 
         test("scenario-v10: near-tie at opponent goal still searches for a finish", () =>
