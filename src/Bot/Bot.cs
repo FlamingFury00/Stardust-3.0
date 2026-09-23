@@ -452,17 +452,19 @@ namespace Bot
             // Before "own box = boom", ask whether we have a real controlled exit. The emergency
             // and counter-threat branches already ran above, so this gate is specifically for
             // possession versus a non-immediate clear.
-            bool setupControlledPossession =
-                PossessionControl.HasControlledPossession(Me, Ball.MainBall);
             float setupFreeTime = Defense.EffectiveFreeTime(Situation);
+            float setupOpponentWindow = Defense.OpponentContactEta(Situation);
             bool setupCanGround = Me.IsGrounded && Options.GroundControl &&
                 PossessionControl.CanAcquireGround(
                     Situation, Me, Ball.MainBall, OurGoal.Location);
             bool setupDribbleReady = setupCanGround &&
                 GroundDribble.CanStart(Me, Ball.MainBall, setupFreeTime);
+            float setupCatchHorizon = float.IsFinite(setupOpponentWindow)
+                ? MathF.Max(0.15f, setupOpponentWindow - 0.06f)
+                : 1.5f;
             BallSlice setupCatch = Me.IsGrounded && Options.GroundControl &&
                 Situation.TeamRank == 0 && Ball.Location.z > 175f
-                ? GroundCatch.FindCatch(Me)
+                ? GroundCatch.FindCatch(Me, setupCatchHorizon)
                 : null;
             bool preferDefensiveControl =
                 PossessionControl.CanPreferDefensiveControl(
@@ -705,7 +707,10 @@ namespace Bot
             BallSlice catchSlice = !forceFinishOpportunity &&
                 Ball.Location.z > 175f &&
                 (canPossessGround || preferDefensiveControl)
-                ? (setupCatch ?? GroundCatch.FindCatch(Me))
+                ? (setupCatch ?? GroundCatch.FindCatch(
+                    Me, float.IsFinite(opponentContactWindow)
+                        ? MathF.Max(0.15f, opponentContactWindow - 0.06f)
+                        : 1.5f))
                 : null;
 
             // "Under pressure" is a classification, not an instruction to throw possession away.
