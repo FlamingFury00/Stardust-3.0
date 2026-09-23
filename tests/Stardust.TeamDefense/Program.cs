@@ -565,6 +565,37 @@ Test("defensive drive: stale reverse releases when a moving target becomes a rea
         "lateral target shift failed to release stale reverse mode");
 });
 
+Test("log-v19: airborne attacker pressure uses 3D nose alignment", () =>
+{
+    var opponent = new Car
+    {
+        Index = 1,
+        Team = 1,
+        Location = new Vec3(1115.97f, -4942.6597f, 150.2f),
+        Velocity = new Vec3(82.771f, 134.371f, 303.361f),
+        Orientation = new Mat3x3(new Vec3(0.7478f, 1.5203f, -0.3745f)),
+        IsGrounded = false,
+        Boost = 0f,
+        LastInput = new ControllerStateT()
+    };
+    var ball = new Ball(
+        new Vec3(961.33f, -4954.6597f, 348.91f),
+        new Vec3(39.661f, 35.961f, -570.771f));
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Vec3 toBall = ControlMath.Unit(
+        ball.location - opponent.Location, opponent.Forward);
+    float flatFacing = opponent.Forward.FlatNorm().Dot(toBall);
+    float fullFacing = opponent.Forward.Dot(toBall);
+    float pressure = Tactics.OpponentPressure(
+        new[] { opponent }, ball, goal);
+
+    Check(flatFacing < 0f && fullFacing > 0.40f,
+        $"fixture stopped reproducing pitched-airborne facing mismatch: flat={flatFacing:F3}, full={fullFacing:F3}");
+    Check(float.IsFinite(pressure) && pressure < 0.16f,
+        $"252 uu airborne attacker still looked unpressured despite observed ~0.13 s touch: {pressure}");
+});
+
 Test("log-v19: emergency pre-contact target never routes behind blue goal line", () =>
 {
     Vec3 goal = new(0f, -5120f, 0f);
