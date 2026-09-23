@@ -67,15 +67,19 @@ namespace Bot
         public bool Interruptible => drive?.Interruptible ?? true;
         public float ClaimTime { get; private set; }
         public Vec3 Lane { get; private set; }
-        public static BallSlice FindCatch(Car car)
+        public static BallSlice FindCatch(Car car, float maxContactTime = 1.5f)
         {
-            if (!car.IsGrounded || Ball.Prediction.Slices == null) return null;
+            if (!car.IsGrounded || Ball.Prediction.Slices == null ||
+                !float.IsFinite(maxContactTime) || maxContactTime < 0.15f)
+                return null;
+
+            float horizon = System.Math.Clamp(maxContactTime, 0.15f, 1.5f);
             float next = Game.Time + 0.15f;
             foreach (BallSlice slice in Ball.Prediction.Slices)
             {
                 if (slice == null || slice.Time < next) continue;
                 float time = slice.Time - Game.Time;
-                if (time > 1.5f) break;
+                if (time > horizon) break;
                 next = slice.Time + 0.04f;
                 if (slice.Location.z < 105 || slice.Location.z > 175 || slice.Velocity.z > -80) continue;
                 float eta = Drive.GetEta(car, slice.Location.Flatten());
