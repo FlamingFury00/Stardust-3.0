@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using Bot;
 using RedUtils;
 using RedUtils.Math;
@@ -361,6 +362,29 @@ Test("roles: equal ETA ownership is antisymmetric", () =>
     Check(Tactics.WinsTie(1, 0, 1, 1)); Check(!Tactics.WinsTie(1, 1, 1, 0));
     Check(Tactics.WinsTie(0.5f, 3, 1, 0));
 });
+Test("kickoff: final contact dodge becomes touch-interruptible", () =>
+{
+    var kickoff = new Kickoff();
+    Check(!kickoff.Interruptible,
+        "approach phase unexpectedly became interruptible before contact setup");
+
+    FieldInfo? finalDodge = typeof(Kickoff).GetField(
+        "_finalDodge", BindingFlags.NonPublic | BindingFlags.Instance);
+    Check(finalDodge != null, "kickoff final dodge state is missing");
+    finalDodge!.SetValue(kickoff, new Dodge(Vec3.Y, 0.18f));
+
+    Check(kickoff.FinalDodgeActive && kickoff.Interruptible,
+        "final kickoff contact phase did not become interruptible");
+    Check(ControlRuntime.CancelBeforeRun(
+            kickoff, changedTouch: true, ownTouch: false,
+            demolished: false, discontinuity: false),
+        "opponent first touch failed to cancel stale kickoff follow-through");
+    Check(ControlRuntime.CancelBeforeRun(
+            kickoff, changedTouch: true, ownTouch: true,
+            demolished: false, discontinuity: false),
+        "own kickoff touch failed to release the contact dodge into active play");
+});
+
 Test("kickoff: left-goes tie break is mirrored for orange", () =>
 {
     var left = new Car { Index = 1, Location = new Vec3(2048, -2560, 17) };
