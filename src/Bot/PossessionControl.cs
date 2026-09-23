@@ -64,41 +64,146 @@ namespace Bot
                 return false;
 
             float ownDepth = Defense.OwnDepth(ball.location, ownGoal);
-            bool deepPressure = ownDepth > 3000f &&
-                ((float.IsFinite(frame.PressureTime) && frame.PressureTime < 1.20f) ||
-                 (float.IsFinite(frame.OpponentEta) && frame.OpponentEta < 1.30f));
-
+            float contactWindow = Defense.OpponentContactEta(frame);
             float roofQuality = RoofControlQuality(car, ball);
+
+            // PR3's important invariant was that an opponent merely being "under pressure" did not
+            // erase real possession. Later deep-box gates turned a 0.8-1.2 s contest clock into an
+            // automatic boom. Keep established control unless the next touch is genuinely immediate.
             if (roofQuality >= 0.48f)
             {
-                // High-quality roof possession can still be carried out of the box, but a marginal
-                // own-box dribble under immediate pressure must not be sticky.
-                if (deepPressure && roofQuality < 0.72f)
+                bool goalMouthPocket = ownDepth > 4550f;
+                if (goalMouthPocket && float.IsFinite(contactWindow) &&
+                    contactWindow < 0.22f && roofQuality < 0.70f)
                     return false;
                 return true;
             }
-            if (HasAirControl(car, ball) && (car.Boost > 0f || car.Location.Dist(ball.location) < 230f))
-                return !deepPressure;
 
-            if (deepPressure)
-                return false;
+            if (HasAirControl(car, ball) &&
+                (car.Boost > 0f || car.Location.Dist(ball.location) < 230f))
+            {
+                return !(ownDepth > 4400f &&
+                    float.IsFinite(contactWindow) && contactWindow < 0.28f);
+            }
 
-            if (frame.TeamRank != 0 ||
-                !Defense.IsTacticallyGoalSide(car.Location, ball.location, ownGoal, -80f))
+            if (frame.TeamRank != 0 || Defense.NeedsGoalExit(car, ownGoal) ||
+                !Defense.IsTacticallyGoalSide(car.Location, ball.location, ownGoal, -140f))
                 return false;
 
             Vec3 local = car.Local(ball.location - car.Location);
             float relativeSpeed = (ball.velocity - car.Velocity).Length();
-            bool closeControl = ball.location.z < 360f && local.x > -140f && local.x < 560f &&
-                MathF.Abs(local.y) < 240f && local.Length() < 620f && relativeSpeed < 1050f;
+            bool closeControl = ball.location.z < 365f &&
+                local.x > -165f && local.x < 610f &&
+                MathF.Abs(local.y) < 260f && local.Length() < 670f &&
+                relativeSpeed < 1200f;
 
-            return closeControl && Defense.EffectiveFreeTime(frame) >= -0.16f;
+            if (!closeControl)
+                return false;
+
+            if (float.IsFinite(contactWindow) && contactWindow < 0.14f)
+                return false;
+
+            return Defense.EffectiveFreeTime(frame) >= -0.22f;
+        }
+
+        /// <summary>
+        /// A catch-to-dribble handoff needs a brief settling window before roof-control quality can
+        /// become high. This is not unconditional stickiness: an immediate opponent touch, wrong-side
+        /// geometry, or a runaway ball still cancels the setup.
+        /// </summary>
+        public static bool CanRetainGroundSetup(
+            TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal, float setupAge)
+        {
+            if (frame == null || car == null || ball == null ||
+                frame.TeamRank != 0 || car.IsDemolished || !car.IsGrounded ||
+                !float.IsFinite(setupAge) || setupAge < 0f || setupAge > 0.48f ||
+                Defense.NeedsGoalExit(car, ownGoal))
+                return false;
+
+            if (HasControlledPossession(car, ball))
+                return true;
+
+            float distance = car.Location.Dist(ball.location);
+            float relativeSpeed = (ball.velocity - car.Velocity).Length();
+            if (distance > 690f || ball.location.z > 365f || relativeSpeed > 1350f)
+                return false;
+
+            float ownDepth = Defense.OwnDepth(ball.location, ownGoal);
+            float requiredProgress = ownDepth > 4300f ? -70f : -180f;
+            if (!Defense.IsTacticallyGoalSide(
+                    car.Location, ball.location, ownGoal, requiredProgress))
+                return false;
+
+            float contactWindow = Defense.OpponentContactEta(frame);
+            if (float.IsFinite(contactWindow) &&
+                contactWindow < (ownDepth > 4400f ? 0.28f : 0.14f))
+                return false;
+
+            return Defense.EffectiveFreeTime(frame) >= -0.22f;
+        }
+
+        /// <summary>
+        /// Decide whether a deep defensive state is safe enough to CONTROL rather than automatically
+        /// boom. The emergency goal-threat branch still runs before this gate; this only distinguishes
+        /// a real possession window from generic "own box = clear" logic.
+        /// </summary>
+        public static bool CanPreferDefensiveControl(
+            TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal,
+            bool catchAvailable, bool dribbleReady)
+        {
+            if (frame == null || car == null || ball == null ||
+                frame.TeamRank != 0 || car.IsDemolished || !car.IsGrounded ||
+                Defense.NeedsGoalExit(car, ownGoal) ||
+                !ControlMath.Finite(ball.location) || !ControlMath.Finite(ball.velocity))
+                return false;
+
+            float ownDepth = Defense.OwnDepth(ball.location, ownGoal);
+            if (ownDepth < 3300f)
+                return catchAvailable || dribbleReady || HasControlledPossession(car, ball);
+
+            if (!Defense.IsTacticallyGoalSide(
+                    car.Location, ball.location, ownGoal, -100f))
+                return false;
+
+            float side = ownGoal.y < 0f ? -1f : 1f;
+            Vec3 fieldward = new(0f, -side, 0f);
+            float towardOwnGoal = ball.velocity.Dot(-fieldward);
+            if (ownDepth > 4300f && towardOwnGoal > 650f)
+                return false;
+
+            float contactWindow = Defense.OpponentContactEta(frame);
+            float effectiveFree = Defense.EffectiveFreeTime(frame);
+            float roofQuality = RoofControlQuality(car, ball);
+
+            if (roofQuality >= 0.52f)
+            {
+                if (ownDepth > 4700f && float.IsFinite(contactWindow) &&
+                    contactWindow < 0.24f)
+                    return false;
+                return true;
+            }
+
+            if (catchAvailable)
+            {
+                float required = ownDepth > 4550f ? 0.58f : 0.42f;
+                return (!float.IsFinite(contactWindow) || contactWindow >= required) &&
+                    effectiveFree >= -0.02f;
+            }
+
+            if (dribbleReady)
+            {
+                float required = ownDepth > 4550f ? 0.42f : 0.30f;
+                return (!float.IsFinite(contactWindow) || contactWindow >= required) &&
+                    effectiveFree >= -0.08f;
+            }
+
+            return false;
         }
 
         public static bool CanAcquireGround(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
         {
             if (frame == null || car == null || ball == null || frame.TeamRank != 0 ||
-                car.IsDemolished || !car.IsGrounded)
+                car.IsDemolished || !car.IsGrounded || Defense.NeedsGoalExit(car, ownGoal))
                 return false;
 
             if (HasControlledPossession(car, ball))
@@ -106,18 +211,35 @@ namespace Bot
 
             float side = ownGoal.y < 0 ? -1f : 1f;
             float ownDepth = ball.location.y * side;
-            float requiredProgress = ownDepth > 3800f ? 35f : -40f;
+            float requiredProgress = ownDepth > 4200f ? 15f : -90f;
             bool safeGeometry = Defense.IsTacticallyGoalSide(
                 car.Location, ball.location, ownGoal, requiredProgress);
-            return safeGeometry && Defense.EffectiveFreeTime(frame) >= -0.10f;
+            if (!safeGeometry)
+                return false;
+
+            float contactWindow = Defense.OpponentContactEta(frame);
+            if (ownDepth > 4300f && float.IsFinite(contactWindow) && contactWindow < 0.20f)
+                return false;
+
+            float freeFloor = ownDepth > 3900f ? -0.05f : -0.18f;
+            return Defense.EffectiveFreeTime(frame) >= freeFloor;
         }
 
         public static bool PreferGroundControl(
             TacticalFrame frame, bool canDribble, bool underPressure, bool forceFinishOpportunity)
         {
-            if (frame == null || !canDribble || underPressure || forceFinishOpportunity)
+            if (frame == null || !canDribble || forceFinishOpportunity)
                 return false;
-            return Defense.EffectiveFreeTime(frame) >= 0.22f;
+
+            float effectiveFree = Defense.EffectiveFreeTime(frame);
+            if (!underPressure)
+                return effectiveFree >= 0.16f;
+
+            // Pressure is not synonymous with "hit the ball away." If we still own a meaningful
+            // contact window, starting control creates the flick/cut threat that PR3 used well.
+            float contactWindow = Defense.OpponentContactEta(frame);
+            return effectiveFree >= 0.05f &&
+                (!float.IsFinite(contactWindow) || contactWindow >= 0.45f);
         }
 
         public static bool CanHandoffShotToAirCarry(
@@ -194,7 +316,12 @@ namespace Bot
                         !ControlMath.Finite(opponent.Location))
                         continue;
 
-                    Vec3 rel = (opponent.Location - ball.location).Flatten();
+                    Vec3 predictedOpponent =
+                        opponent.Location + opponent.Velocity * 0.18f;
+                    if (!ControlMath.Finite(predictedOpponent))
+                        predictedOpponent = opponent.Location;
+
+                    Vec3 rel = (predictedOpponent - ball.location).Flatten();
                     float ahead = rel.Dot(direct);
                     float lateral = rel.Dot(right);
                     if (ahead < 80f || ahead > 2200f || MathF.Abs(lateral) > 1050f)
@@ -214,7 +341,12 @@ namespace Bot
 
             Vec3 lane = direct;
             if (strongest > 0f)
-                lane = ControlMath.FlatUnit(direct + right * evadeSign * (0.58f * strongest), direct);
+            {
+                // Close predicted blocks deserve a decisive cut; distant blocks only bend the lane.
+                float cut = 0.58f + 0.18f * strongest;
+                lane = ControlMath.FlatUnit(
+                    direct + right * evadeSign * (cut * strongest), direct);
+            }
 
             // Do not choose a cut that drives the dribble directly into a side wall.
             float projectedX = ball.location.x + lane.x * 1450f;
