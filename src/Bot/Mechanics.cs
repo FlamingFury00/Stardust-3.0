@@ -11,6 +11,7 @@ namespace Bot
         public bool Finished { get; private set; }
         public bool Interruptible => true;
         public float ClaimTime => Game.Time + 0.25f;
+        public float Age => MathF.Max(0f, Game.Time - started);
         public static bool CanStart(Car car, Ball ball, float freeTime)
         {
             if (car == null || ball == null || !car.IsGrounded || car.Up.z <= 0.9f)
@@ -65,15 +66,20 @@ namespace Bot
         public bool Finished { get; private set; }
         public bool Interruptible => drive?.Interruptible ?? true;
         public float ClaimTime { get; private set; }
-        public static BallSlice FindCatch(Car car)
+        public Vec3 Lane { get; private set; }
+        public static BallSlice FindCatch(Car car, float maxContactTime = 1.5f)
         {
-            if (!car.IsGrounded || Ball.Prediction.Slices == null) return null;
+            if (!car.IsGrounded || Ball.Prediction.Slices == null ||
+                !float.IsFinite(maxContactTime) || maxContactTime < 0.15f)
+                return null;
+
+            float horizon = System.Math.Clamp(maxContactTime, 0.15f, 1.5f);
             float next = Game.Time + 0.15f;
             foreach (BallSlice slice in Ball.Prediction.Slices)
             {
                 if (slice == null || slice.Time < next) continue;
                 float time = slice.Time - Game.Time;
-                if (time > 1.5f) break;
+                if (time > horizon) break;
                 next = slice.Time + 0.04f;
                 if (slice.Location.z < 105 || slice.Location.z > 175 || slice.Velocity.z > -80) continue;
                 float eta = Drive.GetEta(car, slice.Location.Flatten());
@@ -98,15 +104,38 @@ namespace Bot
             BallSlice catchSlice = FindCatch(bot.Me);
             if (catchSlice == null) { Finished = true; return; }
             ClaimTime = catchSlice.Time;
-            Vec3 lane = ControlMath.FlatUnit(bot.TheirGoal.Location - catchSlice.Location, bot.Me.Forward);
-            Vec3 target = (catchSlice.Location - lane * 40).Flatten();
+
+            // The first touch decides whether a defensive catch becomes an escape or a center.
+            // Use the same opponent-aware / own-goal-safe lane as the carry instead of always
+            // receiving straight toward the opponent goal.
+            Ball catchBall = catchSlice.ToBall();
+            Lane = PossessionControl.AttackingLane(
+                bot.Me, catchBall, bot.LivingOpponents,
+                bot.TheirGoal.Location, bot.OurGoal.Location);
+
+            float ballSpeed = catchSlice.Velocity.FlatLen();
+            float receiveOffset = System.Math.Clamp(
+                48f + ballSpeed * 0.025f, 48f, 95f);
+            Vec3 target = (catchSlice.Location - Lane * receiveOffset).Flatten();
+
             float time = MathF.Max(0.1f, catchSlice.Time - Game.Time);
             float distance = bot.Me.Location.FlatDist(target);
-            float speed = System.Math.Clamp(distance / time, 100, 1800);
-            if (distance < 300) speed = MathF.Min(speed, catchSlice.Velocity.FlatLen() + 150);
+            float speed = System.Math.Clamp(distance / time, 100f, 1800f);
+
+            // Close to contact, match the ball's motion along the chosen escape lane rather than
+            // arriving at full route speed. GroundCarry takes over immediately after the cushion.
+            float alongLane = catchSlice.Velocity.Flatten().Dot(Lane);
+            float captureCap = System.Math.Clamp(
+                MathF.Abs(alongLane) + 280f, 450f, 1450f);
+            if (distance < 430f)
+                speed = MathF.Min(speed, captureCap);
+            if (distance < 240f)
+                speed = MathF.Min(speed, System.Math.Clamp(
+                    MathF.Abs(alongLane) + 160f, 320f, 1150f));
+
             drive ??= new Drive(bot.Me, target, speed, allowDodges: false, wasteBoost: false);
             drive.Target = target;
-            drive.TargetSpeed = MathF.Max(100, speed);
+            drive.TargetSpeed = MathF.Max(100f, speed);
             drive.Run(bot);
             bot.Controller.Boost = false;
             bot.Controller.Handbrake = false;
@@ -203,9 +232,13 @@ namespace Bot
                 return;
             }
             if (bot is Stardust stardust && stardust.Options.FlipResets &&
+                Ball.Location.FlatDist(bot.TheirGoal.Location) < 4200f &&
                 Defense.OpponentContactEta(stardust.Situation) > 1.2f &&
                 FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
-            { bot.Action = new FlipReset(bot.Jump); return; }
+            {
+                bot.Action = new FlipReset(bot.Jump);
+                return;
+            }
             const float horizon = 0.12f;
             Ball prediction = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
             Vec3 lane = PossessionControl.AttackingLane(
@@ -232,7 +265,7 @@ namespace Bot
         }
     }
 
-    /// <summary>Experimental, evidence-gated acquisition. Enable with STARDUST_FLIP_RESETS=1.</summary>
+    /// <summary>Evidence-gated flip-reset acquisition used only from an established attacking aerial carry.</summary>
     public sealed class FlipReset : IPossessionAction
     {
         private readonly ResetEvidence evidence = new();

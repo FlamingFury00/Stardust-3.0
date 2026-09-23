@@ -43,7 +43,7 @@ Set environment variables **before starting the bot process**:
 |---|---|---|
 | `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable the new catch/carry/flick selection |
 | `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
-| `STARDUST_FLIP_RESETS` | disabled | Set `1` to enable experimental reset attempts within an aerial carry |
+| `STARDUST_FLIP_RESETS` | enabled | Set `0` to disable evidence-gated attacking reset attempts within an established aerial carry |
 | `STARDUST_TRACE` | disabled | Set `1` to log human-readable strategy transitions and ETA estimates |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Legacy JSONL telemetry samples per second; clamped to 1–30 Hz |
@@ -62,9 +62,9 @@ $env:STARDUST_DEBUG = "1"
 $env:STARDUST_SCENARIO_HZ = "20"
 $env:STARDUST_SCENARIO_PRE_SECONDS = "8"
 
-# Optional legacy logs / experimental mechanics:
+# Optional legacy logs / mechanics:
 $env:STARDUST_TELEMETRY = "0"
-$env:STARDUST_FLIP_RESETS = "1"
+$env:STARDUST_FLIP_RESETS = "0"  # disable reset handoffs for an ablation
 ```
 
 
@@ -107,7 +107,7 @@ Goal-line saves are arrival-time driven rather than distance-threshold driven, b
 
 Kickoff keeps the existing speedflip approach and spawn geometry, but the final contact dodge remains inside the Kickoff action and becomes touch-interruptible. The first changed ball touch therefore releases kickoff ownership immediately into normal active-play planning instead of allowing a stale non-interruptible dodge to add a second follow-through touch.
 
-Shot selection still prefers lower-cost ground/jump options over expensive aerials when comparable contacts exist, but routine shot availability no longer automatically defeats possession. A separate high-value possession-finish gate protects point-blank/open scoring contacts, while safely dribble-ready states may preempt routine interruptible shots. A successful GroundCatch now hands directly into GroundDribble instead of returning control to generic shot search for one planning interval. Likewise, a JumpShot that has already created genuine airborne control may hand off to AerialCarry before its final dodge unless that shot is itself a real finish; established air control uses a wider handoff gate than a cold aerial-carry start, and low post-jump carry setups are no longer rejected solely for being under 180 uu of car height. The shot-ranking speed heuristic uses the same initial contact-velocity geometry as the GroundShot/JumpShot solvers; it does **not** use the deliberately offset pre-contact car target as a velocity proxy. The estimate remains a ranking heuristic, not a full car-ball collision simulator. Emergency clears use the **own** goal as an exclusion target. Expensive searches remain separated from per-frame control, but actual p95/p99 tick latency must still be measured on the target hardware with multiple bots.
+Shot selection still prefers lower-cost ground/jump options over expensive aerials when comparable contacts exist, but routine shot availability no longer automatically defeats possession. A separate high-value possession-finish gate protects point-blank/open scoring contacts, while safely dribble-ready states may preempt routine interruptible shots. Defensive possession is now treated as a transition problem rather than an automatic clear: if the car is goal-side, the ball is not arriving dangerously toward the own goal, and the opponent still has a real contact window, a directional cushion catch or controlled dribble may outrank the coarse own-box boom heuristic. `GroundCatch` chooses the same opponent-aware, wall-safe, inward/upfield escape lane used by `GroundDribble`, matches arrival speed near the catch, and hands directly into `GroundDribble`. That handoff receives a short settling ownership window so the supervisor cannot replace it with a routine shot before roof control can physically stabilize; a genuinely immediate opponent touch still breaks the setup. Likewise, a JumpShot that has already created genuine airborne control may hand off to AerialCarry before its final dodge unless that shot is itself a real finish. Flip-reset handoff is enabled by default but remains evidence-gated and attacking-only: it can be disabled with `STARDUST_FLIP_RESETS=0`, requires an established aerial carry, spent-flip state, sufficient height/boost/proximity, opponent separation, and later confirmation that wheel contact actually restored the flip. The shot-ranking speed heuristic uses the same initial contact-velocity geometry as the GroundShot/JumpShot solvers; it does **not** use the deliberately offset pre-contact car target as a velocity proxy. The estimate remains a ranking heuristic, not a full car-ball collision simulator. Emergency clears use the **own** goal as an exclusion target. Expensive searches remain separated from per-frame control, but actual p95/p99 tick latency must still be measured on the target hardware with multiple bots.
 
 ## Research and what was actually used
 

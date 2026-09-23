@@ -465,6 +465,17 @@ namespace Bot
                         ["directional_dodge_allowed"] = clear.DirectionalDodgeAllowed,
                         ["neutral_second_jump"] = clear.NeutralSecondJump
                     };
+                case GroundCatch catchAction:
+                    return new Dictionary<string, object>
+                    {
+                        ["claim_time"] = Nullable(catchAction.ClaimTime),
+                        ["lane"] = V(catchAction.Lane)
+                    };
+                case GroundDribble dribble:
+                    return new Dictionary<string, object>
+                    {
+                        ["age"] = Safe(dribble.Age)
+                    };
                 case GetBoost boost:
                     return new Dictionary<string, object>
                     {

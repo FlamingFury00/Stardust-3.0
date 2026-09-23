@@ -283,14 +283,97 @@ Test("possession-v16: safe dribble acquisition outranks a routine intercept", ()
             frame, canDribble: true, underPressure: false,
             forceFinishOpportunity: false),
         "clean possession window still preferred a generic hit");
+    Check(PossessionControl.PreferGroundControl(
+            frame, canDribble: true, underPressure: true,
+            forceFinishOpportunity: false),
+        "manageable pressure still forced a generic hit instead of control");
+
+    frame.PressureTime = 0.25f;
+    frame.OpponentEta = 1.20f;
     Check(!PossessionControl.PreferGroundControl(
             frame, canDribble: true, underPressure: true,
             forceFinishOpportunity: false),
-        "contested loose control incorrectly ignored pressure");
+        "immediate opponent touch incorrectly started fresh dribble control");
+    frame.PressureTime = float.PositiveInfinity;
+    frame.OpponentEta = 1.10f;
     Check(!PossessionControl.PreferGroundControl(
             frame, canDribble: true, underPressure: false,
             forceFinishOpportunity: true),
         "forced opponent-box finish was suppressed by dribble setup");
+});
+
+Test("possession-v21: catch-to-dribble setup owns a short settling window", () =>
+{
+    var car = new Car
+    {
+        Index = 0,
+        Team = 0,
+        Location = new Vec3(450f, 3000f, 17f),
+        Velocity = new Vec3(0f, 650f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, MathF.PI / 2f, 0f)),
+        IsGrounded = true,
+        Boost = 20f
+    };
+    var ball = new Ball(
+        new Vec3(475f, 3325f, 120f),
+        new Vec3(0f, 760f, 0f));
+    var frame = new TacticalFrame
+    {
+        MyEta = 0.10f,
+        OpponentEta = 1.40f,
+        PressureTime = 0.31f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Check(PossessionControl.CanRetainGroundSetup(
+            frame, car, ball, goal, 0.08f),
+        "fresh catch-to-dribble handoff was immediately revoked");
+
+    frame.PressureTime = 0.08f;
+    Check(!PossessionControl.CanRetainGroundSetup(
+            frame, car, ball, goal, 0.18f),
+        "immediate opponent touch failed to break settling possession");
+});
+
+Test("possession-v21: safe deep-box catch may outrank generic boom", () =>
+{
+    var car = new Car
+    {
+        Index = 0,
+        Team = 0,
+        Location = new Vec3(300f, -4750f, 17f),
+        Velocity = new Vec3(0f, 250f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, MathF.PI / 2f, 0f)),
+        IsGrounded = true,
+        Boost = 24f
+    };
+    var ball = new Ball(
+        new Vec3(330f, -4520f, 165f),
+        new Vec3(80f, 220f, -120f));
+    var frame = new TacticalFrame
+    {
+        MyEta = 0.35f,
+        OpponentEta = 0.95f,
+        PressureTime = 0.75f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Check(PossessionControl.CanPreferDefensiveControl(
+            frame, car, ball, goal,
+            catchAvailable: true, dribbleReady: false),
+        "goal-side fieldward catch was still forced into a boom");
+
+    ball.velocity = new Vec3(80f, -900f, -120f);
+    Check(!PossessionControl.CanPreferDefensiveControl(
+            frame, car, ball, goal,
+            catchAvailable: true, dribbleReady: false),
+        "fast own-goal-bound ball was incorrectly treated as a control window");
 });
 
 Test("possession-v16: post-touch aerial separation can be recaptured with boost and time", () =>

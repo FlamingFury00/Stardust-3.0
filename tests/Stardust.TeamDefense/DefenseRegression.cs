@@ -1024,7 +1024,7 @@ internal static class DefenseRegression
                 "0.28 s own-box clear was subordinated to catch/dribble possession");
         });
 
-        test("log-v9: marginal own-box dribble is released under closing pressure", () =>
+        test("possession-v21: marginal own-box control survives ordinary pressure but not an immediate touch", () =>
         {
             Car car = CarAt(-796f, -4799f);
             car.Velocity = new Vec3(0f, -300f, 0f);
@@ -1043,9 +1043,41 @@ internal static class DefenseRegression
 
             Check(!PossessionControl.HasControlledPossession(car, ball),
                 "fixture accidentally became strong roof possession");
+            Check(PossessionControl.ShouldRetainPossession(
+                    frame, car, ball, blueGoal),
+                "ordinary deep-box pressure still erased a recoverable control touch");
+
+            frame.OpponentEta = 1.30f;
+            frame.PressureTime = 0.10f;
             Check(!PossessionControl.ShouldRetainPossession(
                     frame, car, ball, blueGoal),
-                "marginal deep-box possession remained sticky under pressure");
+                "immediate opponent touch failed to revoke marginal box possession");
+        });
+
+        test("possession-v21: legacy forced-box-clear signal can be overridden by a safe controlled exit", () =>
+        {
+            Car car = CarAt(180f, -4745f);
+            car.Velocity = new Vec3(0f, 260f, 0f);
+            Ball ball = new(
+                new Vec3(205f, -4520f, 165f),
+                new Vec3(60f, 180f, -140f));
+            var frame = new TacticalFrame
+            {
+                TeamRank = 0,
+                TeamCount = 1,
+                MyEta = 0.35f,
+                OpponentEta = 0.90f,
+                PressureTime = 0.72f,
+                LastBack = true
+            };
+
+            // PR9's coarse box heuristic still identifies this as a clear candidate.
+            Check(Defense.ShouldForceBoxClear(frame, car, ball, blueGoal),
+                "fixture stopped reproducing the legacy box-clear signal");
+            Check(PossessionControl.CanPreferDefensiveControl(
+                    frame, car, ball, blueGoal,
+                    catchAvailable: true, dribbleReady: false),
+                "safe directional catch could not override the coarse box-clear signal");
         });
 
         test("scenario-v10: close counter-threat starts emergency clear before hard horizon", () =>

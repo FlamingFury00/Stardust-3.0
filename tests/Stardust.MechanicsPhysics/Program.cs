@@ -104,6 +104,82 @@ Test("ground catch: successful settle hands directly into GroundDribble", () =>
         $"settled catch returned to supervisor instead of chaining possession: {bot.Action?.GetType().Name ?? "null"}");
 });
 
+Test("ground catch: contact search respects the opponent-touch deadline", () =>
+{
+    Set(typeof(Game), nameof(Game.Time), null, 0f);
+    var car = new Car
+    {
+        Location = new Vec3(0f, 0f, 17f),
+        Velocity = new Vec3(0f, 700f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, MathF.PI / 2f, 0f)),
+        IsGrounded = true
+    };
+    Vec3 late = new(0f, 620f, 145f);
+    SetBall(new Vec3(0f, 250f, 320f), new Vec3(0f, 500f, -300f),
+        new BallPrediction
+        {
+            Slices = new[]
+            {
+                new BallSlice(0.82f, late, new Vec3(0f, 450f, -160f))
+            }
+        });
+
+    Check(GroundCatch.FindCatch(car, 0.50f) == null,
+        "catch planner scheduled possession after the opponent-touch horizon");
+    Check(GroundCatch.FindCatch(car, 1.10f) != null,
+        "same reachable catch disappeared when the contact window was long enough");
+});
+
+Test("ground catch: defensive first touch uses an inward fieldward lane", () =>
+{
+    Set(typeof(Game), nameof(Game.Time), null, 0f);
+    var car = new Car
+    {
+        Index = 0,
+        Team = 0,
+        Location = new Vec3(1050f, -4700f, 17f),
+        Velocity = new Vec3(0f, 650f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, MathF.PI / 2f, 0f)),
+        Boost = 24f,
+        IsGrounded = true
+    };
+    var opponent = new Car
+    {
+        Index = 1,
+        Team = 1,
+        Location = new Vec3(900f, -3650f, 17f),
+        Velocity = new Vec3(0f, -450f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, -MathF.PI / 2f, 0f)),
+        IsGrounded = true
+    };
+
+    Vec3 current = new(1100f, -4300f, 310f);
+    Vec3 currentVelocity = new(0f, 250f, -420f);
+    Vec3 catchLocation = new(1120f, -4180f, 145f);
+    SetBall(current, currentVelocity, new BallPrediction
+    {
+        Slices = new[]
+        {
+            new BallSlice(0.80f, catchLocation, new Vec3(0f, 180f, -180f))
+        }
+    });
+
+    var bot = Probe(car);
+    Cars.AllCars.Add(opponent);
+    var catchAction = new GroundCatch();
+    bot.Action = catchAction;
+    catchAction.Run(bot);
+
+    Check(!catchAction.Finished,
+        "reachable defensive catch fixture was rejected");
+    Check(catchAction.Lane.y > 0.55f,
+        $"defensive catch did not receive fieldward: {catchAction.Lane}");
+    Check(catchAction.Lane.x < -0.04f,
+        $"right-side defensive catch did not cut inward/away from blocker: {catchAction.Lane}");
+    Check(!bot.Controller.Boost,
+        "cushion catch spent boost into the first touch");
+});
+
 Test("ground dribble: pre-contact pressure triggers the flick window", () =>
 {
     Set(typeof(Game), nameof(Game.Time), null, 0f);
