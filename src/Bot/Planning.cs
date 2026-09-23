@@ -168,7 +168,13 @@ namespace Bot
                 Vec3 toBall = ControlMath.FlatUnit(ball.location - opponent.Location, opponent.Forward);
                 float distance = opponent.Location.Dist(ball.location);
                 float attackAlignment = toBall.Dot(attackDirection);
-                float facing = opponent.Forward.FlatNorm().Dot(toBall);
+                // Ground approaches are primarily yaw-limited, but an airborne attacker can be
+                // pitched directly at a raised ball while its flat nose points elsewhere. Fresh
+                // telemetry had a 252 uu opponent with ~0.48 true 3D nose alignment and a touch
+                // 0.13 s later, yet FlatNorm reported negative facing and suppressed pressure.
+                float facing = opponent.IsGrounded
+                    ? opponent.Forward.FlatNorm().Dot(toBall)
+                    : opponent.Forward.Dot(toBall);
                 float closing = (opponent.Velocity - ball.velocity).Dot(toBall);
 
                 // A dribbler can threaten without throttle input. Close physical control and reasonable
