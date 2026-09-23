@@ -79,6 +79,7 @@ namespace Bot
         public float TeammateEta { get; set; }
         public float FreeTime { get; set; }
         public float EffectiveFreeTime { get; set; }
+        public float SideThreatWeight { get; set; }
         public float? PressureTime { get; set; }
         public float? GoalThreatTime { get; set; }
         public float? CounterThreatTime { get; set; }
@@ -241,6 +242,8 @@ namespace Bot
                     TeammateEta = Safe(frame.TeammateEta),
                     FreeTime = Safe(frame.FreeTime),
                     EffectiveFreeTime = Safe(effectiveFreeTime),
+                    SideThreatWeight = Safe(Defense.SideThreatWeight(
+                        frame, ball.location, ball.velocity, ownGoal)),
                     PressureTime = Nullable(frame.PressureTime),
                     GoalThreatTime = Nullable(threat),
                     CounterThreatTime = Nullable(counterThreat),
@@ -405,6 +408,7 @@ namespace Bot
                         ["terminal_speed"] = Safe(defense.TerminalSpeed),
                         ["hold"] = defense.HoldPosition,
                         ["holding"] = defense.Holding,
+                        ["backwards"] = defense.Backwards,
                         ["allow_dodges"] = defense.AllowDodges,
                         ["allow_boost"] = defense.AllowBoost,
                         ["mobility"] = defense.MobilityAction
