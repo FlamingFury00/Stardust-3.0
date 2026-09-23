@@ -415,6 +415,128 @@ Test("possession-v17: low airborne setup is eligible for a controlled carry", ()
         "established air control with a small boost reserve could not hand off from JumpShot");
 });
 
+Test("log-v18: right-side threat shapes the shadow target onto the near-post shot cone", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 1.2164f,
+        OpponentEta = 0.7415f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true,
+        HasCover = false
+    };
+    Vec3 goal = new(0f, -5120f, 0f);
+    Vec3 ball = new(848.78f, -5020.36f, 97.51f);
+    Vec3 velocity = new(-510.021f, 38.661f, 0f);
+    Vec3 oldTarget = new(111.0171f, -5088.9927f, 17f);
+
+    float weight = Defense.SideThreatWeight(frame, ball, velocity, goal);
+    Vec3 shaped = Defense.ShapeSideThreatTarget(
+        oldTarget, ball, velocity, goal, frame);
+
+    Check(weight > 0.80f,
+        $"deep side attack was not classified strongly enough: {weight:F3}");
+    Check(shaped.x > 600f,
+        $"right-side threat still defended the middle/far post: {shaped}");
+    Check(MathF.Abs(shaped.x - 633f) < 90f,
+        $"shot-cone target missed the observed +633 goal crossing lane: {shaped}");
+});
+
+Test("log-v18: fast cross-goal motion beats far-post recovery even near field center", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 2.1661f,
+        OpponentEta = 0.5832f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true,
+        HasCover = false
+    };
+    Vec3 goal = new(0f, -5120f, 0f);
+    Vec3 ball = new(402.61f, -4641.98f, 93.14f);
+    Vec3 velocity = new(-1093.821f, -210.721f, 0f);
+    Vec3 oldRecovery = new(-563.9896f, -4970.4263f, 17f);
+
+    float weight = Defense.SideThreatWeight(frame, ball, velocity, goal);
+    Vec3 shaped = Defense.ShapeSideThreatTarget(
+        oldRecovery, ball, velocity, goal, frame);
+
+    Check(weight > 0.70f,
+        $"cross-goal lateral speed was ignored: {weight:F3}");
+    Check(shaped.x > 50f,
+        $"fast cross still requested a full far-post traverse: {shaped}");
+});
+
+Test("log-v18: high left-side attack may defend outside the mouth before the goal line", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 2.9576f,
+        OpponentEta = 1.3747f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true,
+        HasCover = false
+    };
+    Vec3 goal = new(0f, -5120f, 0f);
+    Vec3 ball = new(-3477.49f, -3314.62f, 978.27f);
+    Vec3 velocity = new(-1168.211f, 717.931f, -412.941f);
+    Vec3 oldTarget = new(-717.775f, -4176.9575f, 17f);
+
+    Vec3 shaped = Defense.ShapeSideThreatTarget(
+        oldTarget, ball, velocity, goal, frame);
+
+    Check(shaped.x < -1500f,
+        $"side-wall attack was funneled into the goal mouth too early: {shaped}");
+    Check(shaped.y > -4400f,
+        $"side-wall cone shaping unnecessarily parked on the goal line: {shaped}");
+});
+
+Test("side-defense: slow central ball leaves normal shadow geometry unchanged", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 1.0f,
+        OpponentEta = 1.5f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+    Vec3 goal = new(0f, -5120f, 0f);
+    Vec3 ball = new(80f, -2800f, 93f);
+    Vec3 baseTarget = new(0f, -4100f, 17f);
+
+    float weight = Defense.SideThreatWeight(
+        frame, ball, new Vec3(100f, -300f, 0f), goal);
+    Vec3 shaped = Defense.ShapeSideThreatTarget(
+        baseTarget, ball, new Vec3(100f, -300f, 0f), goal, frame);
+
+    Check(weight < 0.02f,
+        $"central low-lateral state incorrectly became a side threat: {weight:F3}");
+    Check(shaped.FlatDist(baseTarget) < 1f,
+        $"central shadow target was unexpectedly moved: {shaped}");
+});
+
+Test("defensive drive: stale reverse releases when a moving target becomes a real route", () =>
+{
+    Check(DefensiveDrive.ShouldDriveBackwards(
+            currentlyBackwards: false, onFloor: true,
+            forwardSpeed: 200f, distance: 500f, along: -450f),
+        "short mostly-behind correction no longer selects reverse");
+
+    Check(!DefensiveDrive.ShouldDriveBackwards(
+            currentlyBackwards: true, onFloor: true,
+            forwardSpeed: -1400f, distance: 3400f, along: -3200f),
+        "long recovery stayed reverse-locked at high speed");
+
+    Check(!DefensiveDrive.ShouldDriveBackwards(
+            currentlyBackwards: true, onFloor: true,
+            forwardSpeed: -1000f, distance: 1320f, along: -250f),
+        "lateral target shift failed to release stale reverse mode");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
