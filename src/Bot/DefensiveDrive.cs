@@ -20,6 +20,7 @@ namespace Bot
         public bool AllowDodges { get; set; }
         public bool AllowBoost { get; set; }
         public bool Holding { get; private set; }
+        public bool Backwards => drive.Backwards;
         public string MobilityAction => drive.Action?.GetType().Name;
 
         private readonly Drive drive;
@@ -39,6 +40,32 @@ namespace Bot
                 AllowHandbrake = false,
                 DodgeMinSpeed = allowDodges ? 650f : 850f
             };
+        }
+
+        public static bool ShouldDriveBackwards(
+            bool currentlyBackwards, bool onFloor,
+            float forwardSpeed, float distance, float along)
+        {
+            if (!onFloor || !float.IsFinite(forwardSpeed) ||
+                !float.IsFinite(distance) || !float.IsFinite(along))
+                return false;
+
+            if (currentlyBackwards)
+            {
+                // Reverse is a local correction, not a persistent driving mode. Fresh side-defense
+                // telemetry showed a short reverse choice surviving after the target moved into a
+                // 1.3-3.4k uu lateral recovery, keeping the car backwards through the entire play.
+                bool routeExpanded = distance > 1325f;
+                bool noLongerMostlyBehind =
+                    along > -MathF.Max(90f, distance * 0.28f);
+                if (routeExpanded || noLongerMostlyBehind)
+                    return false;
+                return true;
+            }
+
+            return MathF.Abs(forwardSpeed) < 700f &&
+                distance < 1150f &&
+                along < -MathF.Max(110f, distance * 0.62f);
         }
 
         public void Run(RUBot bot)
@@ -85,12 +112,10 @@ namespace Bot
             float forwardSpeed = car.Velocity.Dot(car.Forward);
             float along = (Target - car.Location).Dot(flatForward);
 
-            // Short reverse correction is preferable to a 180-degree loop in front of net.
-            if (onFloor && MathF.Abs(forwardSpeed) < 700f && distance < 1150f &&
-                along < -MathF.Max(110f, distance * 0.62f))
-                drive.Backwards = true;
-            else if (onFloor && MathF.Abs(forwardSpeed) < 220f && (along > 170f || distance > 1650f))
-                drive.Backwards = false;
+            // Short reverse correction is preferable to a 180-degree loop in front of net,
+            // but it must be released as soon as the moving defensive target becomes a real route.
+            drive.Backwards = ShouldDriveBackwards(
+                drive.Backwards, onFloor, forwardSpeed, distance, along);
 
             bool fastTravel = AllowDodges && !HoldPosition && onFloor &&
                 distance > 1350f && !drive.Backwards && CruiseSpeed >= 2050f;

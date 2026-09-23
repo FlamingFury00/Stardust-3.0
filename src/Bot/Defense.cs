@@ -139,6 +139,119 @@ namespace Bot
         }
 
         /// <summary>
+        /// Strength of a lateral/side attack. Position and transverse ball speed both matter:
+        /// the fresh 1v1 concessions included a ball only ~400 uu off center that was still crossing
+        /// the mouth at ~1000 uu/s. Deep, uncovered, losing-race states receive the strongest bias.
+        /// </summary>
+        public static float SideThreatWeight(
+            TacticalFrame frame, Vec3 ball, Vec3 velocity, Vec3 goal)
+        {
+            if (!ControlMath.Finite(ball) || !ControlMath.Finite(velocity) ||
+                !ControlMath.Finite(goal))
+                return 0f;
+
+            float depth = SmoothStep((OwnDepth(ball, goal) - 1500f) / 1800f);
+            if (depth <= 0f)
+                return 0f;
+
+            float lateral = MathF.Abs(ball.x - goal.x);
+            float lateralPosition = SmoothStep((lateral - 180f) / 770f);
+            float lateralMotion = 0.90f *
+                SmoothStep((MathF.Abs(velocity.x) - 350f) / 950f);
+            float sideSignal = MathF.Max(lateralPosition, lateralMotion);
+
+            float raceLoss = 0f;
+            if (frame != null)
+            {
+                float effective = EffectiveFreeTime(frame);
+                if (float.IsFinite(effective))
+                    raceLoss = SmoothStep((-effective - 0.05f) / 0.90f);
+            }
+
+            float weight = sideSignal * depth * (0.65f + 0.35f * raceLoss);
+
+            // Once the ball is in the last ~720 uu of field depth, even a moderate lateral
+            // component can become an immediate near-post/cross-goal shot.
+            if (OwnDepth(ball, goal) > 4400f && sideSignal > 0.15f)
+                weight = MathF.Max(weight,
+                    sideSignal * (0.80f + 0.20f * raceLoss));
+
+            // A covered team shape may keep more far-post structure. In solo/no-cover defense,
+            // the first defender is the goalkeeper and must own the actual shot cone.
+            if (frame != null && frame.TeamCount > 1 && frame.HasCover)
+                weight *= 0.25f;
+
+            return System.Math.Clamp(weight, 0f, 1f);
+        }
+
+        /// <summary>
+        /// Re-shape a defensive waypoint onto the angular bisector of the two goal-post rays.
+        /// Goal-center shadowing is adequate for central attacks, but it under-covers the near post
+        /// and cross-goal lane when the attacker comes from a side. The base waypoint still chooses
+        /// depth; this method changes the lateral lane only as strongly as SideThreatWeight demands.
+        /// </summary>
+        public static Vec3 ShapeSideThreatTarget(
+            Vec3 baseTarget, Vec3 ball, Vec3 velocity, Vec3 goal, TacticalFrame frame)
+        {
+            if (!ControlMath.Finite(baseTarget) || !ControlMath.Finite(ball) ||
+                !ControlMath.Finite(velocity) || !ControlMath.Finite(goal))
+                return baseTarget;
+
+            float weight = SideThreatWeight(frame, ball, velocity, goal);
+            if (weight <= 0.001f)
+                return baseTarget;
+
+            float side = Side(goal);
+            float goalDepth = MathF.Abs(goal.y);
+            Vec3 flatBall = new Vec3(ball.x, ball.y, 17f);
+            Vec3 flatGoal = new Vec3(goal.x, goal.y, 17f);
+            Vec3 fallback = ControlMath.FlatUnit(
+                flatGoal - flatBall, new Vec3(0f, side, 0f));
+
+            float postHalf = Goal.Width * 0.5f;
+            Vec3 leftPost = new Vec3(goal.x - postHalf, goal.y, 17f);
+            Vec3 rightPost = new Vec3(goal.x + postHalf, goal.y, 17f);
+            Vec3 leftRay = ControlMath.FlatUnit(leftPost - flatBall, fallback);
+            Vec3 rightRay = ControlMath.FlatUnit(rightPost - flatBall, fallback);
+            Vec3 bisector = ControlMath.FlatUnit(leftRay + rightRay, fallback);
+
+            if (bisector.y * side <= 0.02f)
+                return baseTarget;
+
+            float ballDepth = OwnDepth(flatBall, goal);
+            float desiredDepth = OwnDepth(baseTarget, goal);
+
+            // Side-cone positioning should remain field-side of the line, even if a far-post
+            // recovery waypoint briefly fell behind it.
+            desiredDepth = MathF.Min(desiredDepth, goalDepth - 55f);
+            desiredDepth = MathF.Max(desiredDepth,
+                MathF.Min(goalDepth - 55f, ballDepth + 120f));
+
+            float desiredY = side * desiredDepth;
+            float travel = (desiredY - flatBall.y) / bisector.y;
+            if (!float.IsFinite(travel) || travel < 0f)
+                return baseTarget;
+
+            float coneX = flatBall.x + bisector.x * travel;
+
+            // Do not force a side-wall attacker into the mouth too early. The old shadow funnel
+            // clamped x to ±~718 more than 900 uu before the goal line, which is exactly what the
+            // left-side 1-0 -> 1-1 concession exposed. Narrow only as the defender reaches the line.
+            float safeHalf = MathF.Max(0f, Goal.Width * 0.5f - 175f);
+            float funnel = SmoothStep(
+                (desiredDepth - (goalDepth - 850f)) / 700f);
+            float halfWidth = Lerp(2800f, safeHalf, funnel);
+            coneX = System.Math.Clamp(coneX,
+                goal.x - halfWidth, goal.x + halfWidth);
+
+            Vec3 coneTarget = new Vec3(coneX, desiredY, 17f);
+            return new Vec3(
+                Lerp(baseTarget.x, coneTarget.x, weight),
+                Lerp(baseTarget.y, coneTarget.y, weight),
+                17f);
+        }
+
+        /// <summary>
         /// A grounded car sitting behind its own goal line must first clear the mouth before taking
         /// a loose-ball commitment. This prevents challenge hysteresis from turning a save position
         /// into an outward race through the goal volume.
