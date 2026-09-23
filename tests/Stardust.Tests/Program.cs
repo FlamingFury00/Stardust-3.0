@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using Bot;
 using RedUtils;
 using RedUtils.Math;
@@ -368,8 +367,10 @@ Test("kickoff: final contact dodge becomes touch-interruptible", () =>
     Check(!kickoff.Interruptible,
         "approach phase unexpectedly became interruptible before contact setup");
 
-    FieldInfo? finalDodge = typeof(Kickoff).GetField(
-        "_finalDodge", BindingFlags.NonPublic | BindingFlags.Instance);
+    System.Reflection.FieldInfo? finalDodge = typeof(Kickoff).GetField(
+        "_finalDodge",
+        System.Reflection.BindingFlags.NonPublic |
+        System.Reflection.BindingFlags.Instance);
     Check(finalDodge != null, "kickoff final dodge state is missing");
     finalDodge!.SetValue(kickoff, new Dodge(Vec3.Y, 0.18f));
 
