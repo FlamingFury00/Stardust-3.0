@@ -5,29 +5,26 @@ using RedUtils.Math;
 namespace Bot
 {
     /// <summary>
-    /// Close-range emergency block/clear used when a goal-bound ball is already within contact
-    /// distance. Its job is deliberately narrow: touch the ball away from our own goal instead of
-    /// abandoning a reachable ball to drive toward a distant goal-line waypoint.
+    /// Point-blank LOW ground block used only when the normal shot solvers cannot produce a
+    /// contact in time. This fallback deliberately never jumps or dodges: elevated defensive
+    /// contacts belong to GroundShot/JumpShot/DoubleJumpShot/AerialShot selection.
     /// </summary>
     public sealed class EmergencyClear : IAction
     {
         public bool Finished { get; private set; }
-        public bool Interruptible =>
-            !committed || (float.IsFinite(committedAt) && Game.Time - committedAt > 0.62f);
+        public bool Interruptible => true;
         public Vec3 Target { get; private set; }
         public Vec3 ClearDirection { get; private set; }
-        public bool Committed => committed;
-        public bool GroundBlock { get; private set; }
-        public bool DirectionalDodgeAllowed { get; private set; }
-        public bool NeutralSecondJump { get; private set; }
+
+        // Retained in diagnostics for schema compatibility. EmergencyClear is now ground-only;
+        // jump commitment is owned exclusively by the reusable shot/mechanic actions.
+        public bool Committed => false;
+        public bool GroundBlock { get; private set; } = true;
+        public bool DirectionalDodgeAllowed => false;
+        public bool NeutralSecondJump => false;
 
         private readonly Drive drive;
-        // A close scoring ball can traverse 250+ uu during a conventional 0.12 s jump hold.
-        // Use the shortest legal hold so the release/dodge edge is available near first contact.
-        private readonly JumpSequence jumps = new(0.025f);
         private readonly float started = Game.Time;
-        private bool committed;
-        private float committedAt = float.NaN;
 
         public EmergencyClear(Car car, Vec3 ownGoal, Vec3 attackGoal)
         {
@@ -38,7 +35,7 @@ namespace Bot
                 ClearDirection = fieldward;
 
             Target = Field.LimitToNearestSurface(
-                SafeContactTarget(Ball.Location, ClearDirection, ownGoal, 145f));
+                SafeContactTarget(Ball.Location, ClearDirection, ownGoal, 30f));
             drive = new Drive(
                 car, Target, Car.MaxSpeed,
                 allowDodges: false, wasteBoost: true)
@@ -47,6 +44,10 @@ namespace Bot
             };
         }
 
+        /// <summary>
+        /// Start only for a genuinely low point-blank ball. If the ball requires leaving the
+        /// ground, the supervisor must ask the normal shot planner for a mechanical solution.
+        /// </summary>
         public static bool CanStart(
             Car car, Ball ball, Vec3 ownGoal, float threatTime)
         {
@@ -59,31 +60,30 @@ namespace Bot
                 return false;
 
             float distance = car.Location.Dist(ball.location);
-            if (distance > 540f || ball.location.z > 340f)
+            if (distance > 540f || ball.location.z > 165f)
                 return false;
 
-            // A slight upfield offset is acceptable at point-blank range, but not a full wrong-side
-            // chase. The directional dodge below always points away from our own goal.
             return Defense.IsDepthGoalSide(
                 car.Location, ball.location, ownGoal, -190f);
         }
 
         /// <summary>
-        /// Hysteresis envelope for an already-selected emergency contact. Starting a clear remains
-        /// strict, but once a save attempt is in motion it may continue through a wider distance and
-        /// airborne envelope so a remote, impossible goal-line fallback cannot steal the action.
+        /// Small continuation envelope for an already-running ground block. This is not a jump
+        /// commitment: it remains interruptible and immediately yields when the ball lifts into
+        /// shot-mechanic territory.
         /// </summary>
         public static bool CanContinue(
             Car car, Ball ball, Vec3 ownGoal, float threatTime)
         {
             if (car == null || ball == null || car.IsDemolished ||
+                !car.IsGrounded ||
                 !float.IsFinite(threatTime) || threatTime < 0f || threatTime > 1.60f ||
                 !ControlMath.Finite(car.Location) ||
                 !ControlMath.Finite(ball.location) ||
                 !ControlMath.Finite(ownGoal))
                 return false;
 
-            if (car.Location.Dist(ball.location) > 860f || ball.location.z > 430f)
+            if (car.Location.Dist(ball.location) > 700f || ball.location.z > 190f)
                 return false;
 
             return Defense.IsDepthGoalSide(
@@ -92,8 +92,7 @@ namespace Bot
 
         /// <summary>
         /// Pre-contact car targets must remain field-side of the own goal plane. When the normal
-        /// behind-ball shooting offset would fall inside the net, collapse that offset onto a safe
-        /// block plane instead of asking the car to chase the ball through its own goal.
+        /// behind-ball offset would fall inside the net, collapse it onto a safe block plane.
         /// </summary>
         public static Vec3 SafeContactTarget(
             Vec3 predictedBall, Vec3 clearDirection, Vec3 ownGoal, float offset)
@@ -121,7 +120,8 @@ namespace Bot
 
         public void Run(RUBot bot)
         {
-            if (bot == null || bot.Me == null || bot.Me.IsDemolished)
+            if (bot == null || bot.Me == null || bot.Me.IsDemolished ||
+                !bot.Me.IsGrounded)
             {
                 Finished = true;
                 return;
@@ -134,7 +134,7 @@ namespace Bot
             }
 
             float elapsed = Game.Time - started;
-            if (!float.IsFinite(elapsed) || elapsed > 0.95f)
+            if (!float.IsFinite(elapsed) || elapsed > 0.72f)
             {
                 Finished = true;
                 return;
@@ -143,6 +143,14 @@ namespace Bot
             Car car = bot.Me;
             Ball ball = Ball.MainBall;
             float distance = car.Location.Dist(ball.location);
+
+            // If the ball has lifted enough to require a jump, stop. The next supervisor pass
+            // will run the normal shot search instead of inventing a bespoke jump sequence here.
+            if (ball.location.z > 190f || distance > 760f)
+            {
+                Finished = true;
+                return;
+            }
 
             Vec3 fieldward = new(
                 0f, bot.OurGoal.Location.y < 0f ? 1f : -1f, 0f);
@@ -156,110 +164,30 @@ namespace Bot
             float horizon = System.Math.Clamp(
                 distance / MathF.Max(
                     1200f, car.Velocity.Length() + ball.velocity.Length()) * 0.55f,
-                0.04f, 0.18f);
+                0.04f, 0.14f);
             Ball predicted = Ball.Prediction.TrySample(
                     Game.Time + horizon, out Ball sample)
                 ? sample
                 : ball.Predict(horizon);
 
+            if (predicted.location.z > 190f)
+            {
+                Finished = true;
+                return;
+            }
+
+            GroundBlock = true;
             Target = Field.LimitToNearestSurface(
                 SafeContactTarget(
                     predicted.location, ClearDirection,
-                    bot.OurGoal.Location, 145f));
+                    bot.OurGoal.Location, 30f));
 
-            if (!committed)
-            {
-                // A low emergency block is not a shooting setup. Fresh telemetry had the car only
-                // ~171 uu from a goal-bound ball, yet the 145 uu "behind ball" clear target sat
-                // another ~200 uu deeper in the net, so the controller circled behind the play
-                // instead of making the available save. Drive essentially through the ball for low
-                // blocks; clear direction matters only after contact has been secured.
-                bool raised = predicted.location.z > 155f;
-                GroundBlock = !raised;
-                if (!raised)
-                {
-                    Target = Field.LimitToNearestSurface(
-                        SafeContactTarget(
-                            predicted.location, ClearDirection,
-                            bot.OurGoal.Location, 30f));
-                }
-
-                drive.Target = Target;
-                drive.TargetSpeed = Car.MaxSpeed;
-                drive.AllowDodges = false;
-                drive.AllowHandbrake = false;
-                drive.WasteBoost = true;
-                drive.Run(bot);
-
-                // Low shots should be blocked on the wheels. The previous implementation jumped
-                // at z≈100–130, removing lateral steering exactly as the ball crossed the car.
-                // Raised contacts still need an immediate jump/dodge, but start it on this same
-                // controller tick rather than spending another planning frame in drive mode.
-                bool imminent = distance < 470f ||
-                    (distance < 530f && elapsed > 0.05f);
-
-                if (!raised || !imminent)
-                    return;
-
-                committed = true;
-                committedAt = Game.Time;
-            }
-
-            GroundBlock = false;
-
-            Vec3 towardBall = ControlMath.Unit(
-                predicted.location - car.Location, car.Forward);
-            Vec3 contactAim = ControlMath.Unit(
-                towardBall * 0.84f + ClearDirection * 0.16f, towardBall);
-            ControlMath.Aim(
-                car, bot.Controller, contactAim, Vec3.Up);
-
-            // Contact comes before power. For mid-height balls, one steerable jump is enough.
-            // For genuinely high balls, the second press is often required for vertical reach,
-            // but it must remain a neutral double-jump while the car is still far below the ball.
-            // The 2-1 -> 2-2 trace showed the old fieldward dodge firing ~250 uu below contact,
-            // instantly adding huge +Y speed and removing the car from the goal-mouth play.
-            float verticalGap = predicted.location.z - car.Location.z;
-            bool highContact = predicted.location.z > 235f;
-            bool contactReadyForDodge =
-                highContact &&
-                MathF.Abs(verticalGap) <= 155f &&
-                distance <= 235f &&
-                car.Forward.Dot(towardBall) > 0.30f;
-
-            DirectionalDodgeAllowed = contactReadyForDodge;
-            NeutralSecondJump = highContact && !contactReadyForDodge;
-            JumpCommand command = jumps.Step(
-                Game.Time, highContact && bot.Jump.CanDodge);
-
-            bot.Controller.Throttle = 1f;
-            bot.Controller.Boost = false;
-            bot.Controller.Handbrake = false;
-            bot.Controller.Jump = command.Jump;
-
-            if (command.Dodge)
-            {
-                if (DirectionalDodgeAllowed)
-                {
-                    Vec3 local = ControlMath.FlatUnit(
-                        car.Local(contactAim), new Vec3(1f, 0f, 0f));
-                    bot.Controller.Pitch = -local.x;
-                    bot.Controller.Yaw = local.y;
-                    bot.Controller.Roll = 0f;
-                }
-                else
-                {
-                    // Neutral second jump: maximize vertical coverage without throwing away
-                    // the lateral/goal-side line that made the save reachable.
-                    bot.Controller.Pitch = 0f;
-                    bot.Controller.Yaw = 0f;
-                    bot.Controller.Roll = 0f;
-                }
-            }
-
-            if (Game.Time - committedAt > 0.82f ||
-                (distance > 900f && Game.Time - committedAt > 0.32f))
-                Finished = true;
+            drive.Target = Target;
+            drive.TargetSpeed = Car.MaxSpeed;
+            drive.AllowDodges = false;
+            drive.AllowHandbrake = false;
+            drive.WasteBoost = true;
+            drive.Run(bot);
         }
     }
 }
