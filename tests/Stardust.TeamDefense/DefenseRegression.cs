@@ -1442,7 +1442,7 @@ internal static class DefenseRegression
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
                 var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 7, "telemetry schema missing");
+                Check(root.GetProperty("schema").GetInt32() == 8, "telemetry schema missing");
                 Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
                 Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
                     "telemetry did not capture actual sanitized controller output");
@@ -1461,6 +1461,10 @@ internal static class DefenseRegression
                     "telemetry omitted raw challenge state");
                 Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
                     "telemetry omitted committed challenge state");
+                Check(root.GetProperty("tactics").TryGetProperty("side_threat_weight", out _),
+                    "telemetry omitted side-threat geometry diagnostics");
+                Check(root.GetProperty("action_detail").TryGetProperty("backwards", out _),
+                    "telemetry omitted defensive reverse state");
                 Check(root.GetProperty("action_detail").GetProperty("allow_dodges").GetBoolean(),
                     "telemetry omitted defensive fast-travel state");
                 Check(root.GetProperty("action_detail").TryGetProperty("mobility_action", out _),
