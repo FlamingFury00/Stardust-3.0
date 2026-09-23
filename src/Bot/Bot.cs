@@ -374,9 +374,12 @@ namespace Bot
                             MathF.Min(pressureTime, 0.35f),
                             Defense.EffectiveFreeTime(Situation))
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
-                    route = Defense.ShapeSideThreatTarget(
-                        route, counterReference, Ball.Velocity,
-                        OurGoal.Location, Situation);
+                    bool closeCounterBypass = !counterGoalSide &&
+                        Me.Location.FlatDist(counterReference) < 1050f;
+                    if (!closeCounterBypass)
+                        route = Defense.ShapeSideThreatTarget(
+                            route, counterReference, Ball.Velocity,
+                            OurGoal.Location, Situation);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
                     bool fastCounterRecovery = Defense.CanFastRecover(
@@ -692,9 +695,12 @@ namespace Bot
                 : Defense.ShadowTarget(
                     reference, OurGoal.Location, role, pressureTime,
                     Defense.EffectiveFreeTime(Situation));
-            rawSupport = Defense.ShapeSideThreatTarget(
-                rawSupport, reference, Ball.Velocity,
-                OurGoal.Location, Situation);
+            bool closeWrongSideBypass = recoveringGoalSide &&
+                Me.Location.FlatDist(reference) < 1050f;
+            if (!closeWrongSideBypass)
+                rawSupport = Defense.ShapeSideThreatTarget(
+                    rawSupport, reference, Ball.Velocity,
+                    OurGoal.Location, Situation);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
