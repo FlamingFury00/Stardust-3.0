@@ -87,7 +87,7 @@ namespace Bot
                 return false;
 
             return Defense.IsDepthGoalSide(
-                car.Location, ball.location, ownGoal, -300f);
+                car.Location, ball.location, ownGoal, -360f);
         }
 
         /// <summary>
