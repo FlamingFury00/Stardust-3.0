@@ -55,6 +55,59 @@ namespace Bot
             return System.Math.Clamp(distance / usable, 0f, Car.MaxSpeed);
         }
 
+        /// <summary>
+        /// Optimistic straight-line distance bound used only to reject saves that are physically
+        /// impossible even before turn cost, traction loss, or route curvature are considered.
+        /// It deliberately assumes very strong acceleration, so false "unreachable" decisions are
+        /// avoided while obvious 1k-2.5k uu / sub-second sprints are filtered out.
+        /// </summary>
+        public static float OptimisticTravelDistance(
+            float flatSpeed, float timeRemaining)
+        {
+            if (!float.IsFinite(flatSpeed) || !float.IsFinite(timeRemaining) ||
+                timeRemaining <= 0f)
+                return 0f;
+
+            float speed = System.Math.Clamp(MathF.Abs(flatSpeed), 0f, Car.MaxSpeed);
+            const float optimisticAcceleration = 2600f;
+            if (speed >= Car.MaxSpeed)
+                return Car.MaxSpeed * timeRemaining;
+
+            float toMax = (Car.MaxSpeed - speed) / optimisticAcceleration;
+            if (timeRemaining <= toMax)
+                return speed * timeRemaining +
+                    0.5f * optimisticAcceleration * timeRemaining * timeRemaining;
+
+            float accelerating = speed * toMax +
+                0.5f * optimisticAcceleration * toMax * toMax;
+            return accelerating + Car.MaxSpeed * (timeRemaining - toMax);
+        }
+
+        public static bool CanReachGuard(
+            Car car, Vec3 guardTarget, float timeRemaining)
+        {
+            if (car == null || !ControlMath.Finite(car.Location) ||
+                !ControlMath.Finite(car.Velocity) ||
+                !ControlMath.Finite(guardTarget) ||
+                !float.IsFinite(timeRemaining))
+                return false;
+
+            float distance = car.Location.FlatDist(guardTarget);
+            if (distance <= Defense.ArrivalRadius + 70f)
+                return true;
+
+            float usable = timeRemaining - 0.04f;
+            if (usable <= 0f)
+                return false;
+
+            float optimistic = OptimisticTravelDistance(
+                car.Velocity.FlatLen(), usable);
+
+            // Contact radius / car dimensions give a small tolerance, but this remains an
+            // optimistic bound. Failing it means no controller can make the line in time.
+            return distance <= optimistic + 145f;
+        }
+
         public static bool NeedsFastTravel(float distance, float timeRemaining)
         {
             if (!float.IsFinite(distance) || !float.IsFinite(timeRemaining) ||

@@ -565,6 +565,127 @@ Test("defensive drive: stale reverse releases when a moving target becomes a rea
         "lateral target shift failed to release stale reverse mode");
 });
 
+Test("log-v19: airborne attacker pressure uses 3D nose alignment", () =>
+{
+    var opponent = new Car
+    {
+        Index = 1,
+        Team = 1,
+        Location = new Vec3(1115.97f, -4942.6597f, 150.2f),
+        Velocity = new Vec3(82.771f, 134.371f, 303.361f),
+        Orientation = new Mat3x3(new Vec3(0.7478f, 1.5203f, -0.3745f)),
+        IsGrounded = false,
+        Boost = 0f,
+        LastInput = new ControllerStateT()
+    };
+    var ball = new Ball(
+        new Vec3(961.33f, -4954.6597f, 348.91f),
+        new Vec3(39.661f, 35.961f, -570.771f));
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Vec3 toBall = ControlMath.Unit(
+        ball.location - opponent.Location, opponent.Forward);
+    float flatFacing = opponent.Forward.FlatNorm().Dot(toBall);
+    float fullFacing = opponent.Forward.Dot(toBall);
+    float pressure = Tactics.OpponentPressure(
+        new[] { opponent }, ball, goal);
+
+    Check(flatFacing < 0f && fullFacing > 0.40f,
+        $"fixture stopped reproducing pitched-airborne facing mismatch: flat={flatFacing:F3}, full={fullFacing:F3}");
+    Check(float.IsFinite(pressure) && pressure < 0.16f,
+        $"252 uu airborne attacker still looked unpressured despite observed ~0.13 s touch: {pressure}");
+});
+
+Test("log-v19: emergency pre-contact target never routes behind blue goal line", () =>
+{
+    Vec3 goal = new(0f, -5120f, 0f);
+    Vec3 target = EmergencyClear.SafeContactTarget(
+        new Vec3(-290f, -5056f, 103f),
+        new Vec3(0.028f, 0.9996f, 0f),
+        goal, 30f);
+
+    Check(target.y >= -5030.01f,
+        $"low emergency target still entered own net: {target}");
+    Check(Defense.OwnDepth(target, goal) <= MathF.Abs(goal.y) - 89f,
+        $"safe contact plane was not field-side: {target}");
+});
+
+Test("log-v19: raised emergency shooting offset collapses onto safe block plane", () =>
+{
+    Vec3 blueGoal = new(0f, -5120f, 0f);
+    Vec3 orangeGoal = new(0f, 5120f, 0f);
+
+    Vec3 blue = EmergencyClear.SafeContactTarget(
+        new Vec3(-321f, -5101f, 170f),
+        new Vec3(0.031f, 0.9995f, 0f),
+        blueGoal, 145f);
+    Vec3 orange = EmergencyClear.SafeContactTarget(
+        new Vec3(321f, 5101f, 170f),
+        new Vec3(-0.031f, -0.9995f, 0f),
+        orangeGoal, 145f);
+
+    Check(MathF.Abs(blue.y + 5030f) < 0.1f,
+        $"raised blue save still aimed behind line: {blue}");
+    Check(MathF.Abs(orange.y - 5030f) < 0.1f,
+        $"raised orange save was not mirrored: {orange}");
+});
+
+Test("log-v19: active close clear survives beyond strict start envelope", () =>
+{
+    Vec3 goal = new(0f, -5120f, 0f);
+    var car = new Car
+    {
+        Location = new Vec3(-1013.73f, -3069.72f, 17f),
+        Velocity = new Vec3(540.49f, 365.44f, 0f),
+        IsGrounded = true,
+        Boost = 0f
+    };
+    var ball = new Ball(
+        new Vec3(-565.43f, -3374.84f, 131.6f),
+        new Vec3(1388.49f, -2015.95f, 42.89f));
+
+    Check(!EmergencyClear.CanStart(car, ball, goal, 0.9017f),
+        "fixture unexpectedly remained inside strict start gate");
+    Check(EmergencyClear.CanContinue(car, ball, goal, 0.9017f),
+        "observed active emergency contact could not continue through hysteresis");
+});
+
+Test("log-v19: impossible final-line sprints are rejected before stealing contact save", () =>
+{
+    var c2 = new Car
+    {
+        Location = new Vec3(1167.42f, -5026.72f, 126.18f),
+        Velocity = new Vec3(509.39f, -118.90f, 0f),
+        IsGrounded = false,
+        Boost = 0f
+    };
+    Check(!GoalLineSave.CanReachGuard(
+            c2, new Vec3(205.55f, -5065f, 17f), 0.2846f),
+        "962 uu / 0.285 s line sprint was treated as reachable");
+
+    var c3 = new Car
+    {
+        Location = new Vec3(-1013.73f, -3069.72f, 17f),
+        Velocity = new Vec3(540.49f, 365.44f, 0f),
+        IsGrounded = true,
+        Boost = 0f
+    };
+    Check(!GoalLineSave.CanReachGuard(
+            c3, new Vec3(623.38f, -5065f, 17f), 0.9017f),
+        "2.58k uu / 0.90 s line sprint was treated as reachable");
+
+    var feasible = new Car
+    {
+        Location = new Vec3(104f, -4685f, 17f),
+        Velocity = new Vec3(97f, -33f, 0f),
+        IsGrounded = true,
+        Boost = 12f
+    };
+    Check(GoalLineSave.CanReachGuard(
+            feasible, new Vec3(-342f, -5065f, 17f), 0.7805f),
+        "ordinary 585 uu / 0.78 s save was incorrectly rejected");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");

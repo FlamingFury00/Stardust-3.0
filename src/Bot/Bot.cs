@@ -272,6 +272,30 @@ namespace Bot
                     }
                 }
 
+                // Preserve an already-selected emergency contact through a wider hysteresis
+                // envelope when the alternative goal-line sprint is physically impossible. Fresh
+                // v18 telemetry repeatedly abandoned a 0.4-0.7k uu contact for a 1-2.6k uu line
+                // target with less than a second remaining.
+                if (Action is EmergencyClear activeClear && !activeClear.Finished &&
+                    EmergencyClear.CanContinue(
+                        Me, Ball.MainBall, OurGoal.Location, dangerTime))
+                {
+                    Vec3 guard = Defense.EmergencyTarget(
+                        crossing, OurGoal.Location);
+                    bool lineReachable = emergency &&
+                        GoalLineSave.CanReachGuard(Me, guard, dangerTime);
+                    bool pointBlank = Me.Location.Dist(Ball.Location) <= 560f;
+
+                    if (pointBlank || !lineReachable)
+                    {
+                        defensiveShot = null;
+                        SetDecision(emergency
+                            ? "defend / emergency touch clear"
+                            : "defend / counter touch clear");
+                        return;
+                    }
+                }
+
                 // If the dangerous ball is already within contact distance, touching it away
                 // from our net outranks driving toward a remote goal-line waypoint.
                 if (EmergencyClear.CanStart(

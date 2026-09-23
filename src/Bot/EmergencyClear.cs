@@ -38,7 +38,7 @@ namespace Bot
                 ClearDirection = fieldward;
 
             Target = Field.LimitToNearestSurface(
-                Ball.Location - ClearDirection * 145f);
+                SafeContactTarget(Ball.Location, ClearDirection, ownGoal, 145f));
             drive = new Drive(
                 car, Target, Car.MaxSpeed,
                 allowDodges: false, wasteBoost: true)
@@ -66,6 +66,57 @@ namespace Bot
             // chase. The directional dodge below always points away from our own goal.
             return Defense.IsDepthGoalSide(
                 car.Location, ball.location, ownGoal, -190f);
+        }
+
+        /// <summary>
+        /// Hysteresis envelope for an already-selected emergency contact. Starting a clear remains
+        /// strict, but once a save attempt is in motion it may continue through a wider distance and
+        /// airborne envelope so a remote, impossible goal-line fallback cannot steal the action.
+        /// </summary>
+        public static bool CanContinue(
+            Car car, Ball ball, Vec3 ownGoal, float threatTime)
+        {
+            if (car == null || ball == null || car.IsDemolished ||
+                !float.IsFinite(threatTime) || threatTime < 0f || threatTime > 1.60f ||
+                !ControlMath.Finite(car.Location) ||
+                !ControlMath.Finite(ball.location) ||
+                !ControlMath.Finite(ownGoal))
+                return false;
+
+            if (car.Location.Dist(ball.location) > 860f || ball.location.z > 430f)
+                return false;
+
+            return Defense.IsDepthGoalSide(
+                car.Location, ball.location, ownGoal, -360f);
+        }
+
+        /// <summary>
+        /// Pre-contact car targets must remain field-side of the own goal plane. When the normal
+        /// behind-ball shooting offset would fall inside the net, collapse that offset onto a safe
+        /// block plane instead of asking the car to chase the ball through its own goal.
+        /// </summary>
+        public static Vec3 SafeContactTarget(
+            Vec3 predictedBall, Vec3 clearDirection, Vec3 ownGoal, float offset)
+        {
+            if (!ControlMath.Finite(predictedBall) ||
+                !ControlMath.Finite(clearDirection) ||
+                !ControlMath.Finite(ownGoal))
+                return predictedBall;
+
+            float safeOffset = float.IsFinite(offset)
+                ? MathF.Max(0f, offset)
+                : 0f;
+            Vec3 target = predictedBall -
+                ControlMath.FlatUnit(clearDirection,
+                    new Vec3(0f, ownGoal.y < 0f ? 1f : -1f, 0f)) *
+                safeOffset;
+
+            float side = ownGoal.y < 0f ? -1f : 1f;
+            float safeDepth = MathF.Max(0f, MathF.Abs(ownGoal.y) - 90f);
+            if (target.y * side > safeDepth)
+                target.y = side * safeDepth;
+
+            return new Vec3(target.x, target.y, 17f);
         }
 
         public void Run(RUBot bot)
@@ -111,9 +162,10 @@ namespace Bot
                 ? sample
                 : ball.Predict(horizon);
 
-            Vec3 contact = predicted.location - ClearDirection * 145f;
             Target = Field.LimitToNearestSurface(
-                new Vec3(contact.x, contact.y, 17f));
+                SafeContactTarget(
+                    predicted.location, ClearDirection,
+                    bot.OurGoal.Location, 145f));
 
             if (!committed)
             {
@@ -126,9 +178,10 @@ namespace Bot
                 GroundBlock = !raised;
                 if (!raised)
                 {
-                    Vec3 blockContact = predicted.location - ClearDirection * 30f;
                     Target = Field.LimitToNearestSurface(
-                        new Vec3(blockContact.x, blockContact.y, 17f));
+                        SafeContactTarget(
+                            predicted.location, ClearDirection,
+                            bot.OurGoal.Location, 30f));
                 }
 
                 drive.Target = Target;
@@ -204,8 +257,8 @@ namespace Bot
                 }
             }
 
-            if (Game.Time - committedAt > 0.72f ||
-                (distance > 650f && Game.Time - committedAt > 0.25f))
+            if (Game.Time - committedAt > 0.82f ||
+                (distance > 900f && Game.Time - committedAt > 0.32f))
                 Finished = true;
         }
     }
