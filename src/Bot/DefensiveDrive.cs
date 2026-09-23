@@ -24,6 +24,11 @@ namespace Bot
         public string MobilityAction => drive.Action?.GetType().Name;
 
         private readonly Drive drive;
+        private Vec3 mobilityReferenceTarget;
+        private bool mobilityReferenceInitialized;
+        private float mobilityStableSince = float.NaN;
+        private float mobilityCooldownUntil = float.NegativeInfinity;
+        private bool mobilityWasActive;
 
         public DefensiveDrive(Car car, Vec3 target, float cruiseSpeed = 1800f,
             float terminalSpeed = 0f, bool holdPosition = false,
@@ -66,6 +71,25 @@ namespace Bot
             return MathF.Abs(forwardSpeed) < 700f &&
                 distance < 1150f &&
                 along < -MathF.Max(110f, distance * 0.62f);
+        }
+
+        public static bool ShouldUseMobility(
+            bool allowDodges, bool holdPosition, bool onFloor,
+            float distance, bool backwards, float cruiseSpeed,
+            float stableFor, float cooldownRemaining)
+        {
+            if (!allowDodges || holdPosition || !onFloor || backwards ||
+                !float.IsFinite(distance) || !float.IsFinite(cruiseSpeed) ||
+                !float.IsFinite(stableFor) || !float.IsFinite(cooldownRemaining))
+                return false;
+
+            // A defensive speed mechanic is only worth the loss of steering if the route is both
+            // long and stable. This prevents moving shadow/recovery waypoints from spawning flips
+            // that are obsolete before the dodge finishes.
+            return distance > 1800f &&
+                cruiseSpeed >= 2100f &&
+                stableFor >= 0.22f &&
+                cooldownRemaining <= 0f;
         }
 
         public void Run(RUBot bot)
@@ -117,8 +141,23 @@ namespace Bot
             drive.Backwards = ShouldDriveBackwards(
                 drive.Backwards, onFloor, forwardSpeed, distance, along);
 
-            bool fastTravel = AllowDodges && !HoldPosition && onFloor &&
-                distance > 1350f && !drive.Backwards && CruiseSpeed >= 2050f;
+            if (!mobilityReferenceInitialized ||
+                !ControlMath.Finite(mobilityReferenceTarget) ||
+                mobilityReferenceTarget.FlatDist(Target) > 180f)
+            {
+                mobilityReferenceTarget = Target;
+                mobilityReferenceInitialized = true;
+                mobilityStableSince = Game.Time;
+            }
+            else if (!float.IsFinite(mobilityStableSince))
+                mobilityStableSince = Game.Time;
+
+            float stableFor = MathF.Max(0f, Game.Time - mobilityStableSince);
+            float cooldownRemaining = mobilityCooldownUntil - Game.Time;
+            bool fastTravel = ShouldUseMobility(
+                AllowDodges, HoldPosition, onFloor,
+                distance, drive.Backwards, CruiseSpeed,
+                stableFor, cooldownRemaining);
 
             drive.Target = Target;
             drive.TargetSpeed = MathF.Max(1f, speed);
@@ -129,6 +168,9 @@ namespace Bot
             drive.Run(bot);
 
             bool mobilityCommitted = drive.Action != null && !drive.Action.Finished;
+            if (mobilityCommitted && !mobilityWasActive)
+                mobilityCooldownUntil = Game.Time + 1.05f;
+            mobilityWasActive = mobilityCommitted;
 
             // Generic Drive has a 400 uu/s minimum in its tight-turn branch. Override only that
             // terminal regime while preserving its mature route/surface steering everywhere else.
