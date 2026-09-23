@@ -117,6 +117,20 @@ namespace Bot
 
             if (!committed)
             {
+                // A low emergency block is not a shooting setup. Fresh telemetry had the car only
+                // ~171 uu from a goal-bound ball, yet the 145 uu "behind ball" clear target sat
+                // another ~200 uu deeper in the net, so the controller circled behind the play
+                // instead of making the available save. Drive essentially through the ball for low
+                // blocks; clear direction matters only after contact has been secured.
+                bool raised = predicted.location.z > 155f;
+                GroundBlock = !raised;
+                if (!raised)
+                {
+                    Vec3 blockContact = predicted.location - ClearDirection * 30f;
+                    Target = Field.LimitToNearestSurface(
+                        new Vec3(blockContact.x, blockContact.y, 17f));
+                }
+
                 drive.Target = Target;
                 drive.TargetSpeed = Car.MaxSpeed;
                 drive.AllowDodges = false;
@@ -128,8 +142,6 @@ namespace Bot
                 // at z≈100–130, removing lateral steering exactly as the ball crossed the car.
                 // Raised contacts still need an immediate jump/dodge, but start it on this same
                 // controller tick rather than spending another planning frame in drive mode.
-                bool raised = predicted.location.z > 155f;
-                GroundBlock = !raised;
                 bool imminent = distance < 470f ||
                     (distance < 530f && elapsed > 0.05f);
 

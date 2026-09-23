@@ -256,7 +256,8 @@ namespace Bot
         /// of the reference ball. The solo shadow compresses under imminent contact instead of parking.
         /// </summary>
         public static Vec3 ShadowTarget(Vec3 ball, Vec3 goal, DefensiveRole role,
-            float pressureTime = float.PositiveInfinity)
+            float pressureTime = float.PositiveInfinity,
+            float effectiveFreeTime = float.PositiveInfinity)
         {
             if (!ControlMath.Finite(goal))
                 goal = new Vec3(0, -5120, 0);
@@ -293,10 +294,20 @@ namespace Bot
                     lateralBias = 650f;
                     break;
                 default:
-                    // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
+                    // A solo/first defender preserves reaction space, then closes it as contact becomes
+                    // imminent only when the race is not already lost. Fresh 1v1 telemetry showed a
+                    // losing defender driving *upfield* toward a shadow point ~0.5 s before the opponent
+                    // shot, forcing a full turn once the ball became goal-bound.
                     desiredGap = Lerp(1425f, 900f, danger) - 420f * urgency;
-                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1450f);
-                    minimumProgress = 460f - 120f * urgency;
+
+                    float raceLoss = float.IsFinite(effectiveFreeTime)
+                        ? SmoothStep((-effectiveFreeTime - 0.08f) / 0.72f)
+                        : 0f;
+                    desiredGap += raceLoss * (430f + 360f * urgency);
+                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1850f);
+
+                    minimumProgress = 460f - 120f * urgency +
+                        raceLoss * 110f;
                     lateralBias = 260f;
                     break;
             }
@@ -610,8 +621,11 @@ namespace Bot
 
                 Vec3 stage = Field.LimitToNearestSurface(
                     slice.Location - clear * 165f);
+                float goalDepth = MathF.Abs(ownGoal.y);
+                float stageOwnDepth = OwnDepth(stage, ownGoal);
                 if (!ControlMath.Finite(stage) ||
-                    !IsDepthGoalSide(stage, slice.Location, ownGoal, 85f))
+                    !IsDepthGoalSide(stage, slice.Location, ownGoal, 85f) ||
+                    stageOwnDepth > goalDepth - 70f)
                     continue;
 
                 float routeEta = Drive.GetEta(car, stage);
@@ -721,6 +735,23 @@ namespace Bot
             }
 
             return MathF.Max(0.05f, earliest - 0.025f);
+        }
+
+        /// <summary>
+        /// Contact selection must stop at the next credible opponent touch, but defensive staging is
+        /// movement, not a promised ball contact. It may use the full current threat horizon and
+        /// replan after the opponent actually touches. Capping staging at the contact deadline caused
+        /// the bot to skip reachable intermediate blocks and fall straight back to remote goal-line
+        /// waypoints.
+        /// </summary>
+        public static float ThreatStagingHorizon(float dangerTime, float contactDeadline)
+        {
+            if (!float.IsFinite(dangerTime) && !float.IsFinite(contactDeadline))
+                return 0.05f;
+
+            float danger = float.IsFinite(dangerTime) ? MathF.Max(0f, dangerTime) : 0f;
+            float contact = float.IsFinite(contactDeadline) ? MathF.Max(0f, contactDeadline) : 0f;
+            return System.Math.Clamp(MathF.Max(danger, contact), 0.05f, 3f);
         }
 
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)

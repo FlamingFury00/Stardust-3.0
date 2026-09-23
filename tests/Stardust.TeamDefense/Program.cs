@@ -350,6 +350,71 @@ Test("possession-v16: airborne jump-shot setup can hand off before its dodge", (
         "grounded car incorrectly qualified for an airborne handoff");
 });
 
+Test("log-v17: staging keeps the full goal-threat horizon after an early pressure clock", () =>
+{
+    float horizon = Defense.ThreatStagingHorizon(2.48f, 0.54f);
+    Check(horizon > 2.45f && horizon < 2.50f,
+        $"2.48 s goal threat was incorrectly truncated to next-touch timing: {horizon:F3}");
+});
+
+Test("log-v17: owned goal-line lane stays sticky while the ball is not point-blank", () =>
+{
+    var car = new Car
+    {
+        Location = new Vec3(512f, -5079f, 17f),
+        IsGrounded = true
+    };
+    Vec3 crossing = new(492f, -5120f, 191f);
+
+    Check(GoalLineSave.ShouldHoldLine(
+            car, crossing, 188.135f, new Vec3(0f, -5120f, 0f), 185.658f),
+        "car already owning the predicted crossing was allowed to abandon the line");
+
+    crossing.x = -500f;
+    Check(!GoalLineSave.ShouldHoldLine(
+            car, crossing, 188.135f, new Vec3(0f, -5120f, 0f), 185.658f),
+        "large crossing relocation incorrectly kept a stale goal-line save");
+});
+
+Test("log-v17: losing-race shadow retreats instead of compressing toward the attacker", () =>
+{
+    Vec3 ball = new(-3378f, -1144f, 162f);
+    Vec3 goal = new(0f, -5120f, 0f);
+
+    Vec3 neutral = Defense.ShadowTarget(
+        ball, goal, DefensiveRole.Shadow, 0.56f, 0.20f);
+    Vec3 losing = Defense.ShadowTarget(
+        ball, goal, DefensiveRole.Shadow, 0.56f, -0.45f);
+
+    Check(Defense.OwnDepth(losing, goal) >
+          Defense.OwnDepth(neutral, goal) + 140f,
+        $"lost race still compressed upfield: neutral={neutral}, losing={losing}");
+});
+
+Test("possession-v17: low airborne setup is eligible for a controlled carry", () =>
+{
+    var car = new Car
+    {
+        Location = new Vec3(0f, 0f, 106f),
+        Velocity = new Vec3(500f, 0f, 180f),
+        Orientation = new Mat3x3(Vec3.Zero),
+        IsGrounded = false,
+        Boost = 12f
+    };
+    var ball = new Ball(
+        new Vec3(150f, 0f, 388f),
+        new Vec3(700f, 0f, 180f));
+
+    Check(PossessionControl.HasAirControl(car, ball),
+        "fixture stopped reproducing low established air control");
+    Check(AerialCarry.CanStart(car, ball, 2.9f),
+        "low post-jump air-dribble setup was still rejected by cold-start gates");
+
+    car.Boost = 6f;
+    Check(PossessionControl.CanHandoffShotToAirCarry(car, ball, 1.2f),
+        "established air control with a small boost reserve could not hand off from JumpShot");
+});
+
 DefenseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");

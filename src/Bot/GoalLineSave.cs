@@ -82,6 +82,27 @@ namespace Bot
                 (lateralError <= 650f || car.Location.FlatDist(guardTarget) <= 760f);
         }
 
+        public static bool ShouldHoldLine(
+            Car car, Vec3 crossing, float crossingTime, Vec3 goal, float now)
+        {
+            if (car == null || !ControlMath.Finite(car.Location) ||
+                !ControlMath.Finite(crossing) || !ControlMath.Finite(goal) ||
+                !float.IsFinite(crossingTime) || !float.IsFinite(now))
+                return false;
+
+            float remaining = crossingTime - now;
+            if (remaining <= 0.12f || remaining > 3.25f)
+                return false;
+
+            Vec3 guard = Defense.EmergencyTarget(crossing, goal);
+            float distance = car.Location.FlatDist(guard);
+            float depthError = MathF.Abs(car.Location.y - guard.y);
+
+            // Once the car already owns the correct goal-mouth lane, do not abandon it for a
+            // speculative intercept/staging target unless the ball is actually point-blank.
+            return distance <= 260f && depthError <= 220f;
+        }
+
         public void Run(RUBot bot)
         {
             if (bot == null || !ControlMath.Finite(Crossing) ||

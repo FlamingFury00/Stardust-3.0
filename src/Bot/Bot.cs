@@ -247,8 +247,30 @@ namespace Bot
             {
                 float dangerTime = emergency ? threat : counterThreat;
                 float deadline = Defense.DefensiveDeadline(dangerTime, Situation);
+                float stagingHorizon = Defense.ThreatStagingHorizon(
+                    dangerTime, deadline);
                 bool clearSide = Defense.IsDepthGoalSide(
                     Me.Location, Ball.Location, OurGoal.Location, -100f);
+
+                // If we already own the correct mouth lane, preserve it. The 1-6 -> 1-7 trace
+                // showed a car parked within ~25 uu of the right crossing point being pulled away
+                // by alternating intercept/staging actions for more than two seconds.
+                if (emergency && Action is GoalLineSave stableSave && !stableSave.Finished)
+                {
+                    float stableCrossingTime = Game.Time + MathF.Max(0f, threat);
+                    stableSave.Crossing = crossing;
+                    stableSave.CrossingTime = stableCrossingTime;
+
+                    if (Me.Location.Dist(Ball.Location) > 300f &&
+                        GoalLineSave.ShouldHoldLine(
+                            Me, crossing, stableCrossingTime,
+                            OurGoal.Location, Game.Time))
+                    {
+                        defensiveShot = null;
+                        SetDecision("defend / goal-line save");
+                        return;
+                    }
+                }
 
                 // If the dangerous ball is already within contact distance, touching it away
                 // from our net outranks driving toward a remote goal-line waypoint.
@@ -328,7 +350,7 @@ namespace Bot
 
                 if (Defense.TryThreatStagingTarget(
                     Me, Ball.Prediction, OurGoal.Location, TheirGoal.Location,
-                    Game.Time, deadline, out Vec3 stage, out _))
+                    Game.Time, stagingHorizon, out Vec3 stage, out _))
                 {
                     bool fastStage = Defense.CanFastRecover(
                         Me, Ball.Location, stage, OurGoal.Location);
@@ -349,7 +371,8 @@ namespace Bot
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
-                            MathF.Min(pressureTime, 0.35f))
+                            MathF.Min(pressureTime, 0.35f),
+                            Defense.EffectiveFreeTime(Situation))
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
@@ -663,7 +686,9 @@ namespace Bot
 
             Vec3 rawSupport = recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
-                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime);
+                : Defense.ShadowTarget(
+                    reference, OurGoal.Location, role, pressureTime,
+                    Defense.EffectiveFreeTime(Situation));
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 

@@ -83,8 +83,18 @@ namespace Bot
         }
         public void Run(RUBot bot)
         {
-            if (Game.Time - started > 1.8f || !bot.Me.IsGrounded || GroundDribble.CanStart(bot.Me, Ball.MainBall, 1))
+            if (Game.Time - started > 1.8f || !bot.Me.IsGrounded)
             { Finished = true; return; }
+
+            // A successful catch should become a carry directly. Returning Finished here handed
+            // control back to the supervisor for one planning interval, where routine shot search
+            // could reclaim the state before GroundDribble ever ran.
+            if (GroundDribble.CanStart(bot.Me, Ball.MainBall, 1f))
+            {
+                bot.Action = new GroundDribble();
+                return;
+            }
+
             BallSlice catchSlice = FindCatch(bot.Me);
             if (catchSlice == null) { Finished = true; return; }
             ClaimTime = catchSlice.Time;
@@ -142,8 +152,8 @@ namespace Bot
         public float ClaimTime => Game.Time + 0.3f;
         public static bool CanStart(Car car, Ball ball, float opponentEta)
         {
-            if (car == null || ball == null || car.IsGrounded || car.Location.z <= 180f ||
-                ball.location.z <= 300f || car.Boost <= 8f || opponentEta <= 0.18f)
+            if (car == null || ball == null || car.IsGrounded || car.Location.z <= 45f ||
+                ball.location.z <= 260f || car.Boost <= 8f || opponentEta <= 0.18f)
                 return false;
 
             Vec3 delta = ball.location - car.Location;
@@ -164,9 +174,9 @@ namespace Bot
             // With a healthy boost reserve and a long opponent window, allow the controller to
             // recapture a softly separating ball after an aerial touch. This restores the PR4-style
             // continuation window without accepting truly runaway balls.
-            bool recoveryWindow = car.Boost >= 30f && opponentEta > 1.20f;
+            bool recoveryWindow = car.Boost >= 10f && opponentEta > 1.15f;
             float allowedSeparation = recoveryWindow
-                ? -520f
+                ? -480f
                 : distance < 220f ? -420f : -220f;
             return closing >= allowedSeparation;
         }
