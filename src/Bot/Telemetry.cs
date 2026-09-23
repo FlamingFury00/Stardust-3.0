@@ -282,7 +282,7 @@ namespace Bot
 
             var output = new Dictionary<string, object>
             {
-                ["schema"] = 7,
+                ["schema"] = 8,
                 ["build"] = typeof(Stardust).Assembly.ManifestModule.ModuleVersionId.ToString("N"),
                 ["seq"] = sequence++,
                 ["kind"] = kind,
@@ -335,6 +335,8 @@ namespace Bot
                     ["teammate_eta"] = Num(frame.TeammateEta),
                     ["free_time"] = Num(frame.FreeTime),
                     ["effective_free_time"] = Num(Defense.EffectiveFreeTime(frame)),
+                    ["side_threat_weight"] = Num(
+                        Defense.SideThreatWeight(frame, reference, ball.velocity, goal)),
                     ["pressure_time"] = Num(frame.PressureTime),
                     ["goal_threat_time"] = Num(threat),
                     ["counter_threat_time"] = Num(bot.CounterThreatTime),
@@ -421,6 +423,7 @@ namespace Bot
                         ["terminal_speed"] = Num(defense.TerminalSpeed),
                         ["hold_position"] = defense.HoldPosition,
                         ["holding"] = defense.Holding,
+                        ["backwards"] = defense.Backwards,
                         ["allow_dodges"] = defense.AllowDodges,
                         ["allow_boost"] = defense.AllowBoost,
                         ["mobility_action"] = defense.MobilityAction
