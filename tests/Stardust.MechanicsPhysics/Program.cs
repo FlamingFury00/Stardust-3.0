@@ -104,6 +104,32 @@ Test("ground catch: successful settle hands directly into GroundDribble", () =>
         $"settled catch returned to supervisor instead of chaining possession: {bot.Action?.GetType().Name ?? "null"}");
 });
 
+Test("ground catch: contact search respects the opponent-touch deadline", () =>
+{
+    Set(typeof(Game), nameof(Game.Time), null, 0f);
+    var car = new Car
+    {
+        Location = new Vec3(0f, 0f, 17f),
+        Velocity = new Vec3(0f, 700f, 0f),
+        Orientation = new Mat3x3(new Vec3(0f, MathF.PI / 2f, 0f)),
+        IsGrounded = true
+    };
+    Vec3 late = new(0f, 620f, 145f);
+    SetBall(new Vec3(0f, 250f, 320f), new Vec3(0f, 500f, -300f),
+        new BallPrediction
+        {
+            Slices = new[]
+            {
+                new BallSlice(0.82f, late, new Vec3(0f, 450f, -160f))
+            }
+        });
+
+    Check(GroundCatch.FindCatch(car, 0.50f) == null,
+        "catch planner scheduled possession after the opponent-touch horizon");
+    Check(GroundCatch.FindCatch(car, 1.10f) != null,
+        "same reachable catch disappeared when the contact window was long enough");
+});
+
 Test("ground catch: defensive first touch uses an inward fieldward lane", () =>
 {
     Set(typeof(Game), nameof(Game.Time), null, 0f);
