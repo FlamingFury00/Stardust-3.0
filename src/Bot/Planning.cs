@@ -223,7 +223,7 @@ namespace Bot
             float horizon = float.IsFinite(eta)
                 ? System.Math.Clamp(eta * 0.45f, 0.08f, 0.32f)
                 : 0.16f;
-            Ball contact = prediction.TrySample(now + horizon, out Ball sample)
+            Ball contact = prediction != null && prediction.TrySample(now + horizon, out Ball sample)
                 ? sample
                 : ball.Predict(horizon);
 

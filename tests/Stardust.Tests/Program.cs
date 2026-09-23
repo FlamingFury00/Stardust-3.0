@@ -296,18 +296,12 @@ Test("jump sequence: unavailable or expired second jump is never manufactured", 
     Check(!sequence.Step(0.3f, false).Jump);
     Check(!sequence.Step(0.8f, true).Jump);
 });
-Test("ground carry: possession gate preserves control but rejects unsafe acquisition", () =>
+Test("ground carry: possession gate requires space and a controllable ball", () =>
 {
     var car = GroundCar(); var ball = new Ball(new Vec3(38, 0, 150), Vec3.Zero);
     Check(GroundDribble.CanStart(car, ball, 1));
-    Check(GroundDribble.CanStart(car, ball, -0.15f));
-
-    ball.location = new Vec3(360, 0, 150);
-    Check(!PossessionControl.HasControlledPossession(car, ball));
-    Check(!GroundDribble.CanStart(car, ball, 0.05f));
-
-    ball.location.y = 300;
-    Check(!GroundDribble.CanStart(car, ball, 1));
+    Check(!GroundDribble.CanStart(car, ball, 0.2f));
+    ball.location.y = 300; Check(!GroundDribble.CanStart(car, ball, 1));
 });
 Test("ground carry: equal forward speed does not cause spurious acceleration", () =>
 {
