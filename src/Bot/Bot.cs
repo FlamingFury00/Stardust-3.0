@@ -308,10 +308,14 @@ namespace Bot
 
                     if (!retainDefensiveShot)
                     {
-                        defensiveShot = Tactics.SelectShot(
+                        Shot candidate = Tactics.SelectShot(
                             this, true, Situation.OpponentEta,
                             _ => false, deadline);
-                        Action = defensiveShot;
+                        defensiveShot = candidate;
+                        if (candidate != null)
+                            Action = candidate;
+                        else if (Action is Shot)
+                            Action = null;
                     }
                 }
                 else if (Action is Shot)
