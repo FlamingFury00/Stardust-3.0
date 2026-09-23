@@ -9,7 +9,7 @@ namespace Bot
     {
         public bool GroundControl { get; init; } = Environment.GetEnvironmentVariable("STARDUST_GROUND_CONTROL") != "0";
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
-        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
+        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") != "0";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
         public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
         public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
@@ -449,8 +449,29 @@ namespace Bot
                 return;
             }
 
+            // Before "own box = boom", ask whether we have a real controlled exit. The emergency
+            // and counter-threat branches already ran above, so this gate is specifically for
+            // possession versus a non-immediate clear.
+            bool setupControlledPossession =
+                PossessionControl.HasControlledPossession(Me, Ball.MainBall);
+            float setupFreeTime = Defense.EffectiveFreeTime(Situation);
+            bool setupCanGround = Me.IsGrounded && Options.GroundControl &&
+                PossessionControl.CanAcquireGround(
+                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool setupDribbleReady = setupCanGround &&
+                GroundDribble.CanStart(Me, Ball.MainBall, setupFreeTime);
+            BallSlice setupCatch = Me.IsGrounded && Options.GroundControl &&
+                Situation.TeamRank == 0 && Ball.Location.z > 175f
+                ? GroundCatch.FindCatch(Me)
+                : null;
+            bool preferDefensiveControl =
+                PossessionControl.CanPreferDefensiveControl(
+                    Situation, Me, Ball.MainBall, OurGoal.Location,
+                    setupCatch != null, setupDribbleReady);
+
             if (Defense.ShouldForceBoxClear(
-                    Situation, Me, Ball.MainBall, OurGoal.Location))
+                    Situation, Me, Ball.MainBall, OurGoal.Location) &&
+                !preferDefensiveControl)
             {
                 float boxContactWindow = MathF.Min(
                     float.IsFinite(Situation.PressureTime)
@@ -518,8 +539,9 @@ namespace Bot
                 this, priorityAttack, Situation);
             bool possessionFinish = Tactics.PreferPossessionFinish(
                 this, priorityAttack, Situation);
-            bool defensiveBoom = Tactics.PreferDefensiveClear(
-                this, priorityAttack, Situation);
+            bool defensiveBoom = !preferDefensiveControl &&
+                Tactics.PreferDefensiveClear(
+                    this, priorityAttack, Situation);
 
             // Evaluate mechanic availability before deciding whether an already-selected shot gets
             // another planning interval. Previously Shot retention returned here first, so a routine
@@ -552,9 +574,15 @@ namespace Bot
                 }
 
                 bool retain = Action is GroundCatch
-                    ? Situation.TeamRank == 0 && (canChallenge || tacticalFreeTime >= -0.12f)
-                    : PossessionControl.ShouldRetainPossession(
-                        Situation, Me, Ball.MainBall, OurGoal.Location);
+                    ? Situation.TeamRank == 0 &&
+                        (canChallenge || tacticalFreeTime >= -0.18f)
+                    : Action is GroundDribble settlingDribble &&
+                      PossessionControl.CanRetainGroundSetup(
+                          Situation, Me, Ball.MainBall,
+                          OurGoal.Location, settlingDribble.Age)
+                        ? true
+                        : PossessionControl.ShouldRetainPossession(
+                            Situation, Me, Ball.MainBall, OurGoal.Location);
 
                 if (retain && !possession.Finished)
                     return;
@@ -674,15 +702,20 @@ namespace Bot
             }
 
             Shot attack = priorityAttack;
-            BallSlice catchSlice = canPossessGround && !forceFinishOpportunity &&
-                Ball.Location.z > 175f
-                ? GroundCatch.FindCatch(Me)
+            BallSlice catchSlice = !forceFinishOpportunity &&
+                Ball.Location.z > 175f &&
+                (canPossessGround || preferDefensiveControl)
+                ? (setupCatch ?? GroundCatch.FindCatch(Me))
                 : null;
 
-            // Prefer a real scoring/clearing contact when it is imminent or contested. With time and a
-            // descending ball, keep the softer catch available instead of forcing every touch.
+            // "Under pressure" is a classification, not an instruction to throw possession away.
+            // Only an actually imminent opponent touch forces the hard intercept over a valid catch.
+            bool urgentPossessionPressure =
+                float.IsFinite(opponentContactWindow) &&
+                opponentContactWindow < 0.38f;
             if (attack != null &&
-                (underPressure || catchSlice == null || attack.Slice.Time - Game.Time <= 0.72f))
+                (urgentPossessionPressure || catchSlice == null ||
+                 attack.Slice.Time - Game.Time <= 0.72f))
             {
                 Action = attack;
                 SetDecision(underPressure
