@@ -22,7 +22,6 @@ namespace Bot
         public bool NeutralSecondJump { get; private set; }
 
         private readonly Drive drive;
-        private readonly Vec3 ownGoal;
         // A close scoring ball can traverse 250+ uu during a conventional 0.12 s jump hold.
         // Use the shortest legal hold so the release/dodge edge is available near first contact.
         private readonly JumpSequence jumps = new(0.025f);
@@ -32,7 +31,6 @@ namespace Bot
 
         public EmergencyClear(Car car, Vec3 ownGoal, Vec3 attackGoal)
         {
-            this.ownGoal = ownGoal;
             Vec3 fieldward = new(0f, ownGoal.y < 0f ? 1f : -1f, 0f);
             ClearDirection = ControlMath.FlatUnit(
                 attackGoal - Ball.Location, fieldward);
@@ -105,10 +103,13 @@ namespace Bot
                 !ControlMath.Finite(ownGoal))
                 return predictedBall;
 
+            float safeOffset = float.IsFinite(offset)
+                ? MathF.Max(0f, offset)
+                : 0f;
             Vec3 target = predictedBall -
                 ControlMath.FlatUnit(clearDirection,
                     new Vec3(0f, ownGoal.y < 0f ? 1f : -1f, 0f)) *
-                MathF.Max(0f, offset);
+                safeOffset;
 
             float side = ownGoal.y < 0f ? -1f : 1f;
             float safeDepth = MathF.Max(0f, MathF.Abs(ownGoal.y) - 90f);
