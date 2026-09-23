@@ -165,13 +165,16 @@ namespace Bot
                     !ControlMath.Finite(opponent.Velocity) || !ControlMath.Finite(opponent.Forward))
                     continue;
 
-                Vec3 toBall = ControlMath.FlatUnit(ball.location - opponent.Location, opponent.Forward);
+                Vec3 deltaToBall = ball.location - opponent.Location;
+                Vec3 toBall = opponent.IsGrounded
+                    ? ControlMath.FlatUnit(deltaToBall, opponent.Forward)
+                    : ControlMath.Unit(deltaToBall, opponent.Forward);
                 float distance = opponent.Location.Dist(ball.location);
                 float attackAlignment = toBall.Dot(attackDirection);
                 // Ground approaches are primarily yaw-limited, but an airborne attacker can be
                 // pitched directly at a raised ball while its flat nose points elsewhere. Fresh
                 // telemetry had a 252 uu opponent with ~0.48 true 3D nose alignment and a touch
-                // 0.13 s later, yet FlatNorm reported negative facing and suppressed pressure.
+                // 0.13 s later, so airborne contact geometry must retain the vertical ball ray.
                 float facing = opponent.IsGrounded
                     ? opponent.Forward.FlatNorm().Dot(toBall)
                     : opponent.Forward.Dot(toBall);
