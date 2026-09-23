@@ -494,6 +494,34 @@ Test("log-v18: high left-side attack may defend outside the mouth before the goa
         $"side-wall cone shaping unnecessarily parked on the goal line: {shaped}");
 });
 
+Test("side-defense: shot-cone shaping is blue/orange mirror symmetric", () =>
+{
+    var frame = new TacticalFrame
+    {
+        MyEta = 1.2164f,
+        OpponentEta = 0.7415f,
+        TeamRank = 0,
+        TeamCount = 1,
+        LastBack = true
+    };
+
+    Vec3 blue = Defense.ShapeSideThreatTarget(
+        new Vec3(111.0171f, -5088.9927f, 17f),
+        new Vec3(848.78f, -5020.36f, 97.51f),
+        new Vec3(-510.021f, 38.661f, 0f),
+        new Vec3(0f, -5120f, 0f), frame);
+
+    Vec3 orange = Defense.ShapeSideThreatTarget(
+        new Vec3(-111.0171f, 5088.9927f, 17f),
+        new Vec3(-848.78f, 5020.36f, 97.51f),
+        new Vec3(510.021f, -38.661f, 0f),
+        new Vec3(0f, 5120f, 0f), frame);
+
+    Check(MathF.Abs(blue.x + orange.x) < 1f &&
+          MathF.Abs(blue.y + orange.y) < 1f,
+        $"mirrored side defense diverged: blue={blue}, orange={orange}");
+});
+
 Test("side-defense: slow central ball leaves normal shadow geometry unchanged", () =>
 {
     var frame = new TacticalFrame
