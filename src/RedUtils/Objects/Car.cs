@@ -49,6 +49,10 @@ namespace RedUtils
 
 		/// <summary>The car's hitbox</summary>
 		public Hitbox Hitbox { get { return new Hitbox(Location, _hitboxDimensions, _hitboxOffset, Orientation); } }
+		/// <summary>Full collision-box extents (length, width, height) reported by the game</summary>
+		public Vec3 HitboxSize => _hitboxDimensions;
+		/// <summary>Collision-box centre relative to the car origin, in local coordinates</summary>
+		public Vec3 HitboxOffset => _hitboxOffset;
 		/// <summary>A normalized vector pointing out the front of the car</summary>
 		public Vec3 Forward { get { return Orientation.Forward; } set { Orientation[0] = value; } }
 		/// <summary>A normalized vector pointing out to the right of the car</summary>

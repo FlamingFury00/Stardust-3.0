@@ -121,6 +121,8 @@ public sealed class MatchSession : IDisposable
     public RsbBallState Ball => ball;
     public int LastToucher => lastToucher;
     public bool TouchedThisTick => touchedThisTick;
+    /// <summary>True when more than one car touched the ball on the latest tick (e.g. a mirrored kickoff).</summary>
+    public bool SimultaneousTouch { get; private set; }
     public bool StatsEnabled { get; set; } = true;
     public TickTiming Timing { get; } = new();
 
@@ -283,11 +285,13 @@ public sealed class MatchSession : IDisposable
         touchedThisTick = false;
         ulong now = arena.TickCount;
         int toucher = -1;
+        int touchersThisTick = 0;
         foreach (Participant p in participants)
         {
             ref readonly RsbCarState car = ref cars[p.Index];
             if (car.LastHitTick == ulong.MaxValue || car.LastHitTick == p.LastSeenHitTick)
                 continue;
+            touchersThisTick++;
             p.LastSeenHitTick = car.LastHitTick;
             float hitTime = Time - (now - car.LastHitTick) * SimArena.TickTime;
             RsbVec contact = car.LastHitBallPosition + car.LastHitRelativePosition;
@@ -313,6 +317,7 @@ public sealed class MatchSession : IDisposable
         }
 
         touchedThisTick = true;
+        SimultaneousTouch = touchersThisTick > 1;
         if (toucher != lastToucher)
         {
             previousToucher = lastToucher;

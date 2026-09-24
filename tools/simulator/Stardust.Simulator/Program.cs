@@ -31,6 +31,41 @@ switch (command)
         Console.WriteLine(report);
         return results.All(r => r.Error == null) ? 0 : 2;
     }
+    case "scenarios":
+    {
+        var bots = new List<BotBuild> { BotBuild.FromPath(arguments.Get("a-label", "candidate"), arguments.Require("a")) };
+        if (arguments.Has("b"))
+            bots.Add(BotBuild.FromPath(arguments.Get("b-label", "baseline"), arguments.Require("b")));
+        BotBuild? opponent = arguments.Has("opponent")
+            ? BotBuild.FromPath("opponent", arguments.Require("opponent")) : null;
+        var scenarios = Stardust.Simulator.Scenarios.Suites.Select(arguments.Get("suite", "all"));
+        int episodes = arguments.GetInt("episodes", 40);
+        int seed = arguments.GetInt("seed", 7);
+        string outDirectory = arguments.Get("out", "sim-scenarios");
+        var jobs = scenarios.SelectMany(s => bots.Select(b => (Scenario: s, Bot: b))).ToList();
+        var outcomes = new Stardust.Simulator.Scenarios.ScenarioOutcome[jobs.Count];
+        Parallel.For(0, jobs.Count,
+            new ParallelOptions { MaxDegreeOfParallelism = arguments.GetInt("parallel", Math.Max(1, Environment.ProcessorCount / 2)) },
+            i =>
+            {
+                var (scenario, bot) = jobs[i];
+                // Opponent seats default to the bot's own build (mirror match) unless one is given.
+                BotBuild? rival = opponent ?? bot;
+                outcomes[i] = Stardust.Simulator.Scenarios.ScenarioRunner.Run(scenario, bot, rival, episodes, seed,
+                    Path.Combine(outDirectory, $"{scenario.Name}-{bot.Label}"));
+                Console.WriteLine($"{scenario.Name} / {bot.Label}: {outcomes[i].Successes}/{outcomes[i].Episodes}");
+            });
+        string table = Stardust.Simulator.Scenarios.ScenarioRunner.Format(outcomes);
+        Directory.CreateDirectory(outDirectory);
+        File.WriteAllText(Path.Combine(outDirectory, "scenarios.md"), table);
+        foreach (var o in outcomes.Where(o => o.Failures.Count > 0))
+            File.WriteAllLines(Path.Combine(outDirectory, $"{o.Scenario}-{o.Bot}-failures.txt"), o.Failures);
+        Console.WriteLine();
+        Console.WriteLine(table);
+        return 0;
+    }
+    case "physics-check":
+        return PhysicsCheck.Run(arguments.Get("model", "all"), arguments.GetInt("trials", 300), arguments.GetInt("seed", 3));
     default:
         Console.WriteLine("""
             Stardust match simulator (RocketSim + RLBot v5 protocol)
@@ -38,6 +73,11 @@ switch (command)
               match --a <bot build dir> --b <bot build dir> [--a-label candidate] [--b-label baseline]
                     [--size 1|2|3] [--games 10] [--seed 1] [--parallel N] [--seconds 300]
                     [--out sim-results] [--replays]
+
+              scenarios --a <bot build dir> [--b <bot build dir>] [--opponent <bot build dir>]
+                    [--suite all|kickoff|open-net|vs-keeper|aerial|save|recovery] [--episodes 40]
+                    [--seed 7] [--parallel N] [--out sim-scenarios]
+                    Opponent seats (kickoffs) use --opponent, or mirror the bot under test.
             """);
         return command == "help" ? 0 : 1;
 }
