@@ -51,8 +51,13 @@ switch (command)
                 var (scenario, bot) = jobs[i];
                 // Opponent seats default to the bot's own build (mirror match) unless one is given.
                 BotBuild? rival = opponent ?? bot;
+                string directory = Path.Combine(outDirectory, $"{scenario.Name}-{bot.Label}");
+                var replay = arguments.Has("replays") ? new Stardust.Simulator.Match.ReplayRecorder() : null;
                 outcomes[i] = Stardust.Simulator.Scenarios.ScenarioRunner.Run(scenario, bot, rival, episodes, seed,
-                    Path.Combine(outDirectory, $"{scenario.Name}-{bot.Label}"));
+                    directory, replay);
+                if (replay != null)
+                    replay.Save(Path.Combine(directory, "replay.json"), Array.Empty<Stardust.Simulator.Match.Participant>(),
+                        $"{scenario.Name} / {bot.Label}");
                 Console.WriteLine($"{scenario.Name} / {bot.Label}: {outcomes[i].Successes}/{outcomes[i].Episodes}");
             });
         string table = Stardust.Simulator.Scenarios.ScenarioRunner.Format(outcomes);
@@ -64,6 +69,8 @@ switch (command)
         Console.WriteLine(table);
         return 0;
     }
+    case "plan-probe":
+        return PlanProbe.Run(arguments.Get("suite", "open-net"), arguments.GetInt("episode", 0), arguments.GetInt("seed", 7));
     case "physics-check":
         return PhysicsCheck.Run(arguments.Get("model", "all"), arguments.GetInt("trials", 300), arguments.GetInt("seed", 3));
     default:

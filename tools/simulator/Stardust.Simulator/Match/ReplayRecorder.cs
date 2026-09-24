@@ -27,6 +27,7 @@ public sealed class ReplayRecorder
 
     public void Capture(MatchSession session, MatchPhase phase)
     {
+        seen ??= session.Participants;
         if (counter++ % stride != 0)
             return;
         var inv = CultureInfo.InvariantCulture;
@@ -67,8 +68,11 @@ public sealed class ReplayRecorder
             .Append(',').Append(v.Z.ToString(format, inv)).Append(']');
     }
 
+    private IReadOnlyList<Participant>? seen;
+
     public void Save(string path, IEnumerable<Participant> participants, string title)
     {
+        if (!participants.Any() && seen != null) participants = seen;
         var sb = new StringBuilder();
         sb.Append("{\"title\":").Append(System.Text.Json.JsonSerializer.Serialize(title));
         sb.Append(",\"hz\":").Append(Hz.ToString(CultureInfo.InvariantCulture));

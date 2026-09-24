@@ -42,28 +42,24 @@ namespace RedUtils.Physics
         public const float ThrottleTurnDrag = 80f;
         /// <summary>First-order time constant of the yaw rate following a steering change.</summary>
         public const float YawResponse = 0.075f;
+        /// <summary>
+        /// Braking against the direction of travel costs front grip: the car turns at about this
+        /// fraction of its free-rolling yaw rate (physics-check brake-probe).
+        /// </summary>
+        public const float BrakingYawFactor = 0.75f;
+
+        private static readonly float[] CurvatureSpeeds = { 0, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2300 };
+        private static readonly float[] CurvatureValues = { 0.00690f, 0.00530f, 0.00399f, 0.00318f, 0.00234f, 0.00186f, 0.00136f, 0.00111f, 0.000980f, 0.000856f };
 
         /// <summary>Full-lock curvature refitted to RocketSim (1/uu).</summary>
-        public static float Curvature(float speed) => RL.Curve(MathF.Abs(speed),
-            stackalloc float[] { 0, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2300 },
-            stackalloc float[] { 0.00690f, 0.00530f, 0.00399f, 0.00318f, 0.00234f, 0.00186f, 0.00136f, 0.00111f, 0.000980f, 0.000856f });
+        public static float Curvature(float speed) => RL.Curve(MathF.Abs(speed), CurvatureSpeeds, CurvatureValues);
 
         public static float TurnRadius(float speed) => 1f / Curvature(speed);
 
         /// <summary>Highest speed whose full-lock turn is at least as tight as the requested curvature.</summary>
-        public static float SpeedForCurvature(float curvature)
-        {
-            curvature = MathF.Abs(curvature);
-            if (curvature >= 0.0069f) return 0f;
-            if (curvature <= 0.000856f) return RL.CarMaxSpeed;
-            float lo = 0, hi = RL.CarMaxSpeed;
-            for (int i = 0; i < 18; i++)
-            {
-                float mid = 0.5f * (lo + hi);
-                if (Curvature(mid) >= curvature) lo = mid; else hi = mid;
-            }
-            return lo;
-        }
+        /// <remarks>Curvature falls monotonically with speed, so this is the exact piecewise-linear inverse.</remarks>
+        public static float SpeedForCurvature(float curvature) =>
+            RL.Curve(MathF.Abs(curvature), CurvatureValues, CurvatureSpeeds);
 
         /// <summary>
         /// Longitudinal speed lost to tyre slip while steering. The slip part grows with the cube of
@@ -77,6 +73,7 @@ namespace RedUtils.Physics
             float v = MathF.Abs(speed);
             float lateral = Curvature(v) * v * v;
             float fade = System.Math.Clamp((v - 250f) / 450f, 0f, 1f);
+            if (speed * throttle < 0f) lateral *= BrakingYawFactor;
             float slip = TurnDrag * s * s * s * lateral * fade;
             float engine = throttle > 0.01f && v < 1410f ? ThrottleTurnDrag * MathF.Min(1f, 2f * s) : 0f;
             return slip + engine;
@@ -118,7 +115,8 @@ namespace RedUtils.Physics
             // Positive steer turns toward the car's right, which is counter-clockwise about +z in
             // Rocket League's left-handed world (heading angle increases). The yaw rate lags the
             // steering command with a first-order response, as measured in RocketSim.
-            float steady = steer * Curvature(mean) * mean;
+            bool braking = s.Speed * throttle < 0f && MathF.Abs(s.Speed) > 25f;
+            float steady = steer * Curvature(mean) * mean * (braking ? BrakingYawFactor : 1f);
             float blend = 1f - MathF.Exp(-dt / YawResponse);
             float yawRate = s.YawRate + (steady - s.YawRate) * blend;
             float heading = 0.5f * (s.YawRate + yawRate) * dt;
@@ -128,9 +126,11 @@ namespace RedUtils.Physics
             {
                 // Exact displacement along a circular arc with signed radius arc/heading.
                 float radius = arc / heading;
-                Vec3 normal = new(-s.Forward.y, s.Forward.x, 0);
-                s.Position += s.Forward * (radius * MathF.Sin(heading)) + normal * (radius * (1 - MathF.Cos(heading)));
-                s.Forward = Rotate(s.Forward, heading);
+                (float sin, float cos) = MathF.SinCos(heading);
+                Vec3 f = s.Forward;
+                Vec3 normal = new(-f.y, f.x, 0);
+                s.Position += f * (radius * sin) + normal * (radius * (1 - cos));
+                s.Forward = new Vec3(f.x * cos - f.y * sin, f.x * sin + f.y * cos, 0);
             }
             else
             {
@@ -145,7 +145,7 @@ namespace RedUtils.Physics
         /// <summary>Rotates a flat vector counter-clockwise by angle (radians) about +z.</summary>
         public static Vec3 Rotate(Vec3 v, float angle)
         {
-            float c = MathF.Cos(angle), s = MathF.Sin(angle);
+            (float s, float c) = MathF.SinCos(angle);
             return new Vec3(v.x * c - v.y * s, v.x * s + v.y * c, 0);
         }
 

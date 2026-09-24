@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using RLBot.Flat;
+using RedUtils.Math;
 using RLBot.Manager;
 
 namespace RedUtils
@@ -14,6 +15,7 @@ namespace RedUtils
         private readonly ShotClaimLedger claims = new();
         private bool ready, hasOutput, shotClaimActive;
         private float lastTouchTime = -1f, lastClaimSent = float.NegativeInfinity;
+        private float kickoffTouchBaseline = -1f;
 
         public new ExtendedRenderer Renderer { get; internal set; }
         public Car Me => Index >= 0 && Index < Cars.Count ? Cars.AllCars[Index] : new Car();
@@ -57,15 +59,22 @@ namespace RedUtils
             Game.Update(packet);
             Field.Update(packet);
             if (packet.Balls.Count > 0) Ball.Update(this, packet.Balls[0]);
-            bool kickoff = Game.MatchPhase == MatchPhase.Kickoff;
-            if ((kickoff && !IsKickoff) || ClockReset)
+            // A kickoff lasts until the ball is first touched. RLBot may report Active after two
+            // seconds without a touch, so the phase alone must not end the kickoff routine.
+            bool kickoffPhase = Game.MatchPhase == MatchPhase.Kickoff;
+            bool kickoffStart = kickoffPhase && !IsKickoff;
+            if (kickoffStart || ClockReset)
             {
                 Action = null;
                 claims.Clear();
                 lastTouchTime = -1f;
                 lastClaimSent = float.NegativeInfinity;
+                kickoffTouchBaseline = Ball.LatestTouch?.Time ?? -1f;
             }
-            IsKickoff = kickoff;
+            bool ballUntouched = (Ball.LatestTouch?.Time ?? -1f) == kickoffTouchBaseline &&
+                Ball.Velocity.Length() < 5f && Ball.Location.Flatten().Length() < 5f;
+            IsKickoff = kickoffStart || (IsKickoff && ballUntouched &&
+                (kickoffPhase || Game.MatchPhase == MatchPhase.Active));
         }
 
         public override ControllerStateT GetOutput(GamePacketT packet)

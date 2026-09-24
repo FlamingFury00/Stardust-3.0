@@ -17,12 +17,14 @@ public sealed record EpisodeSetup(RsbVec BallPosition, RsbVec BallVelocity, IRea
 public sealed class EpisodeTrace
 {
     public float Elapsed;
+    public float StartTime;
     public int GoalTeam = -1;
     public float GoalTime = float.NaN;
     public float FirstTouchTime = float.NaN;
     public int FirstToucher = -1;
     public RsbVec BallVelocityAfterFirstTouch;
     public RsbVec BallPositionAtFirstTouch;
+    public bool AirborneAtFirstTouch;
     public RsbVec FinalBallPosition;
     public int Touches;
     public float LandedTime = float.NaN;

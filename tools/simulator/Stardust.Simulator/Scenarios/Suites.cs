@@ -219,13 +219,48 @@ public sealed class RecoveryScenario : Scenario
     }
 }
 
+/// <summary>Bouncing balls in the attacking half: touches that need a jump or double jump.</summary>
+public sealed class JumpTouchScenario : Scenario
+{
+    public override string Name => "jump-touch";
+    public override string Description => "Meet a bouncing ball (peaks 260-750) and send it toward the opponent goal.";
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        float bx = Uniform(r, -2000, 2000), by = Uniform(r, 0, 3000);
+        float peak = Uniform(r, 260, 750);
+        var ball = V(bx, by, 93.15f);
+        var ballVel = V(Uniform(r, -150, 150), Uniform(r, -150, 150), MathF.Sqrt(2 * 650 * (peak - 93.15f)));
+        float angle = Uniform(r, -MathF.PI * 0.85f, -MathF.PI * 0.15f);
+        float distance = Uniform(r, 1500, 2800);
+        var car = V(Math.Clamp(bx + MathF.Cos(angle) * distance, -3800, 3800),
+            Math.Clamp(by + MathF.Sin(angle) * distance, -4800, 4800), 17);
+        float yaw = MathF.Atan2(by - car.Y, bx - car.X) + Uniform(r, -0.5f, 0.5f);
+        float speed = Uniform(r, 0, 1200);
+        return new EpisodeSetup(ball, ballVel,
+            new[] { new CarSetup(car, yaw, V(MathF.Cos(yaw) * speed, MathF.Sin(yaw) * speed, 0), Uniform(r, 30, 100)) }, 4f);
+    }
+
+    public override bool ShouldStop(MatchSession session, EpisodeTrace trace) =>
+        trace.GoalTeam >= 0 || (!float.IsNaN(trace.FirstTouchTime) && trace.Elapsed - trace.FirstTouchTime > 0.3f);
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        bool touched = !float.IsNaN(trace.FirstTouchTime);
+        trace.Metrics["touch-s"] = touched ? trace.FirstTouchTime : double.NaN;
+        trace.Metrics["touch-z"] = touched ? trace.BallPositionAtFirstTouch.Z : double.NaN;
+        trace.Metrics["air-touch"] = touched && trace.AirborneAtFirstTouch ? 1 : 0;
+        return touched && trace.BallVelocityAfterFirstTouch.Y > 300;
+    }
+}
+
 public static class Suites
 {
     public static IReadOnlyList<Scenario> All() => new Scenario[]
     {
         new KickoffScenario(0), new KickoffScenario(1), new KickoffScenario(2), new KickoffScenario(3),
         new KickoffScenario(4), new OpenNetScenario(), new KeeperScenario(), new AerialScenario(),
-        new SaveScenario(), new RecoveryScenario(),
+        new SaveScenario(), new RecoveryScenario(), new JumpTouchScenario(),
     };
 
     public static IReadOnlyList<Scenario> Select(string names) =>

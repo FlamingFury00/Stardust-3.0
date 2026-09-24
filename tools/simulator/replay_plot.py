@@ -31,15 +31,16 @@ def load(path):
         return json.load(f)
 
 
-def window(replay, start, end):
-    return [fr for fr in replay["frames"] if start <= fr[0] - replay["frames"][0][0] <= end]
+def window(replay, start, end, absolute=False):
+    origin = 0.0 if absolute else replay["frames"][0][0]
+    return [fr for fr in replay["frames"] if start <= fr[0] - origin <= end]
 
 
-def draw(replay, start, end, out, mark=0.5, title=None):
-    frames = window(replay, start, end)
+def draw(replay, start, end, out, mark=0.5, title=None, absolute=False):
+    frames = window(replay, start, end, absolute)
     if not frames:
         raise SystemExit("no frames in window")
-    t0 = replay["frames"][0][0]
+    t0 = frames[0][0] if absolute else replay["frames"][0][0]
     players = replay["players"]
     fig, (top, side) = plt.subplots(1, 2, figsize=(15, 9), gridspec_kw={"width_ratios": [1, 1.1]})
 
@@ -123,9 +124,10 @@ if __name__ == "__main__":
     parser.add_argument("--mark", type=float, default=0.5)
     parser.add_argument("--out", default="window.png")
     parser.add_argument("--events", action="store_true")
+    parser.add_argument("--absolute", action="store_true", help="--start/--end are absolute game times")
     args = parser.parse_args()
     data = load(args.replay)
     if args.events:
         events(data)
     else:
-        draw(data, args.start, args.end, args.out, args.mark)
+        draw(data, args.start, args.end, args.out, args.mark, absolute=args.absolute)

@@ -32,6 +32,8 @@ namespace RedUtils.Physics
         public const float BoostAccelGround = 2975f / 3f;
         public const float BoostAccelAir = 3175f / 3f;
         public const float ThrottleAccelMax = 1600f;
+        /// <summary>Speed above which throttle alone no longer accelerates.</summary>
+        public const float ThrottleMaxSpeed = 1410f;
         public const float AirThrottleAccel = 200f / 3f;
         public const float BrakeAccel = 3500f;
         public const float CoastBrakeAccel = 525f;

@@ -42,6 +42,7 @@ public static class ScenarioRunner
         var random = new Random(seed);
         using var session = new MatchSession(seats, new MatchOptions { Seed = seed, LogDirectory = logDirectory, Replay = replay });
         session.StatsEnabled = false;
+        var episodeLog = logDirectory != null ? new List<string>() : null;
 
         for (int episode = 0; episode < episodes; episode++)
         {
@@ -58,6 +59,10 @@ public static class ScenarioRunner
             }
 
             bool success = scenario.Judge(setup, trace);
+            episodeLog?.Add(string.Create(CultureInfo.InvariantCulture,
+                $"episode {episode} start {trace.StartTime:F3} end {trace.StartTime + trace.Elapsed:F3} success {success} " +
+                $"ball {setup.BallPosition} v{setup.BallVelocity} car {setup.Cars[0].Position} yaw {setup.Cars[0].Yaw:F2} " +
+                $"speed {setup.Cars[0].Velocity.Length:F0} goal {trace.GoalTeam} first-touch {trace.FirstTouchTime:F2}"));
             outcome.Episodes++;
             if (success) outcome.Successes++;
             else if (outcome.Failures.Count < 12)
@@ -71,6 +76,11 @@ public static class ScenarioRunner
                 if (double.IsFinite(value)) list.Add(value);
             }
         }
+        if (episodeLog != null)
+        {
+            Directory.CreateDirectory(logDirectory!);
+            File.WriteAllLines(Path.Combine(logDirectory!, "episodes.txt"), episodeLog);
+        }
         return outcome;
     }
 
@@ -78,7 +88,7 @@ public static class ScenarioRunner
     {
         SimArena arena = session.Arena;
         session.BreakClock(1.0f);
-        var trace = new EpisodeTrace();
+        var trace = new EpisodeTrace { StartTime = session.Time };
 
         {
             ApplyCars(session, setup, onlyBoost: false);
@@ -125,6 +135,7 @@ public static class ScenarioRunner
                     trace.FirstTouchTime = trace.Elapsed;
                     trace.FirstToucher = session.SimultaneousTouch ? -2 : session.LastToucher;
                     trace.BallPositionAtFirstTouch = ball.Physics.Position;
+                    trace.AirborneAtFirstTouch = session.Cars[0].IsOnGround == 0;
                 }
             }
             if (!float.IsNaN(trace.FirstTouchTime) && trace.Elapsed - trace.FirstTouchTime < 0.1f)

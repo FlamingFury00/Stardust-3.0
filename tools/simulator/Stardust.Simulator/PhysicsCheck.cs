@@ -24,6 +24,8 @@ public static class PhysicsCheck
         if (which == "drive-cases") DriveCases();
         if (which == "turn-drag") TurnDragTable();
         if (which == "nav-trace") NavTrace();
+        if (which == "brake-probe") BrakeProbe();
+        if (which == "rollout-bench") RolloutBenchmark(trials, seed);
         if (which == "jump-probe") JumpProbe();
         if (which == "flight-probe") FlightProbe();
         if (all || which == "drive") failures += DriveOpenLoop(trials, seed);
@@ -113,6 +115,10 @@ public static class PhysicsCheck
     /// The navigator drives the RocketSim car; its model rollout must predict the real arrival time.
     /// Half of the targets require a specific arrival heading.
     /// </summary>
+    /// <summary>Optional per-trial CSV rows (STARDUST_CHECK_DUMP=path) for offline error analysis.</summary>
+    private static readonly StreamWriter? Dump = Environment.GetEnvironmentVariable("STARDUST_CHECK_DUMP") is { Length: > 0 } path
+        ? new StreamWriter(path) { AutoFlush = true } : null;
+
     private static int NavigateClosedLoop(int trials, int seed)
     {
         var random = new Random(seed + 1);
@@ -121,6 +127,7 @@ public static class PhysicsCheck
         arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
         var timeErrors = new List<double>();
         var relErrors = new List<double>();
+        var signed = new List<double>();
         int arrived = 0, predictedArrivals = 0, aligned = 0, directional = 0, both = 0;
 
         for (int trial = 0; trial < trials; trial++)
@@ -153,6 +160,7 @@ public static class PhysicsCheck
                 if (distance < Navigator.ArrivalRadius || (distance < 160 && distance > previous && to.Dot(fwd) < 0))
                 {
                     done = true;
+                    elapsed += Navigator.ArrivalRemainder(to, fwd.Flatten().Normalize(), c.Physics.Velocity.Dot(c.Physics.Forward));
                     headingError = withDirection ? MathF.Abs(GroundModel.SignedAngle(fwd.Flatten().Normalize(), direction)) : 0;
                     break;
                 }
@@ -181,8 +189,11 @@ public static class PhysicsCheck
             }
             if (prediction.Time <= 8f)
             {
+                Dump?.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"{start.Speed:F0},{GroundModel.SignedAngle(start.Forward, (goal - start.Position).Flatten()):F3},{(goal - start.Position).Flatten().Length():F0},{(withDirection ? GroundModel.SignedAngle((goal - start.Position).Flatten(), direction) : float.NaN):F3},{start.Boost:F0},{prediction.Time:F3},{elapsed:F3}"));
                 both++;
                 timeErrors.Add(Math.Abs(prediction.Time - elapsed));
+                signed.Add(elapsed - prediction.Time);
                 relErrors.Add(Math.Abs(prediction.Time - elapsed) / Math.Max(elapsed, 0.3));
             }
         }
@@ -190,7 +201,7 @@ public static class PhysicsCheck
         var inv = CultureInfo.InvariantCulture;
         Console.WriteLine(string.Create(inv,
             $"navigate: arrived {arrived}/{trials}; aligned {aligned}/{directional} directional arrivals; " +
-            $"ETA error p50 {Percentile(timeErrors, 0.5):F3} s p90 {Percentile(timeErrors, 0.9):F3} s (relative p50 {Percentile(relErrors, 0.5):P1}, p90 {Percentile(relErrors, 0.9):P1}, n={both})"));
+            $"ETA error p50 {Percentile(timeErrors, 0.5):F3} s p90 {Percentile(timeErrors, 0.9):F3} s, bias {(signed.Count > 0 ? signed.Average() : 0):+0.000;-0.000} s (relative p50 {Percentile(relErrors, 0.5):P1}, p90 {Percentile(relErrors, 0.9):P1}, n={both})"));
         bool ok = Percentile(timeErrors, 0.5) < 0.08 && arrived > trials * 0.9;
         Console.WriteLine(ok ? "navigate: PASS" : "navigate: FAIL");
         return ok ? 0 : 1;
@@ -254,6 +265,7 @@ public static class PhysicsCheck
                 {
                     done = true;
                     arrived++;
+                    elapsed += Navigator.ArrivalRemainder(to, fwd.Flatten().Normalize(), c.Physics.Velocity.Dot(c.Physics.Forward));
                     timing.Add(elapsed - arrival);
                     if (elapsed < arrival - 0.1f) early++;
                     if (MathF.Abs(GroundModel.SignedAngle(fwd.Flatten().Normalize(), direction)) < 0.35f) aligned++;
@@ -541,25 +553,101 @@ public static class PhysicsCheck
     }
 
     /// <summary>Prints the model rollout of a navigation case for policy debugging.</summary>
+    /// <summary>
+    /// Side-by-side closed-loop trace of the navigation policy in RocketSim and in the model from
+    /// the same start (NAV_CASE=x,y,fx,fy,speed,tx,ty,dx,dy,boost[,arrival]), for diagnosing ETA errors.
+    /// </summary>
     private static void NavTrace()
     {
         var inv = CultureInfo.InvariantCulture;
-        string[] parts = (Environment.GetEnvironmentVariable("NAV_CASE") ?? "-800,-2853,1,0.09,452,-2198,-1158,0.99,0.11").Split(',');
+        string[] parts = (Environment.GetEnvironmentVariable("NAV_CASE") ?? "0,-3000,0,1,1800,1500,0,-1,0,100").Split(',');
         float[] v = parts.Select(p => float.Parse(p, inv)).ToArray();
-        var start = new GroundState(new Vec3(v[0], v[1], 0), new Vec3(v[2], v[3], 0), v[4], 50);
-        var target = new DriveTarget(new Vec3(v[5], v[6], 0), new Vec3(v[7], v[8], 0));
-        GroundState s = start;
-        for (int step = 0; step < 480; step++)
+        var forward = new Vec3(v[2], v[3], 0).Normalize();
+        var target = new DriveTarget(new Vec3(v[5], v[6], 0), new Vec3(v[7], v[8], 0), v.Length > 10 ? v[10] : float.NaN);
+
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        var c0 = GroundCar(arena, car, v[4], MathF.Atan2(forward.y, forward.x));
+        c0.Physics.Position = new RsbVec(v[0], v[1], 17.01f);
+        c0.Boost = v[9];
+        arena.SetCar(car, c0);
+        var s = new GroundState(new Vec3(v[0], v[1], 0), forward, v[4], v[9]);
+
+        for (int tick = 0; tick < 720; tick++)
         {
-            DriveCommand c = Navigator.Control(s.Position, s.Forward, s.Speed, s.Boost, s.YawRate, target, s.Time);
-            if (step % 15 == 0)
-            {
-                Vec3 aim = Navigator.SteeringPoint(s.Position, s.Forward, s.Speed, target);
+            var c = arena.GetCar(car);
+            Vec3 pos = ToVec(c.Physics.Position), fwd = ToVec(c.Physics.Forward);
+            float speed = c.Physics.Velocity.Dot(c.Physics.Forward);
+            DriveCommand real = Navigator.Control(pos, fwd, speed, c.Boost, c.Physics.AngularVelocity.Z, target, tick / 120f);
+            DriveCommand model = Navigator.Control(s.Position, s.Forward, s.Speed, s.Boost, s.YawRate, target, s.Time);
+            if (tick % 12 == 0)
                 Console.WriteLine(string.Create(inv,
-                    $"t {s.Time:F2} pos ({s.Position.x:F0},{s.Position.y:F0}) fwd ({s.Forward.x:F2},{s.Forward.y:F2}) v {s.Speed:F0} aim ({aim.x:F0},{aim.y:F0}) steer {c.Steer:F2} thr {c.Throttle:F2} boost {c.Boost} dist {(target.Point - s.Position).Flatten().Length():F0}"));
-            }
-            GroundModel.Step(ref s, c.Throttle, c.Steer, c.Boost, 1f / 60f);
+                    $"t {tick / 120f:F2} | sim pos ({pos.x:F0},{pos.y:F0}) v {speed:F0} yaw {MathF.Atan2(fwd.y, fwd.x):F2} w {c.Physics.AngularVelocity.Z:F2} thr {real.Throttle:F2} st {real.Steer:F2} b {(real.Boost ? 1 : 0)} " +
+                    $"| model pos ({s.Position.x:F0},{s.Position.y:F0}) v {s.Speed:F0} yaw {MathF.Atan2(s.Forward.y, s.Forward.x):F2} w {s.YawRate:F2} thr {model.Throttle:F2} st {model.Steer:F2} b {(model.Boost ? 1 : 0)}"));
+            arena.SetControls(car, new RsbControls { Throttle = real.Throttle, Steer = real.Steer, Boost = real.Boost ? 1 : 0 });
+            arena.Step();
+            GroundModel.Step(ref s, model.Throttle, model.Steer, model.Boost, 1f / 120f);
+            if ((target.Point - pos).Flatten().Length() < Navigator.ArrivalRadius && (target.Point - s.Position).Flatten().Length() < Navigator.ArrivalRadius)
+                break;
         }
+    }
+
+    /// <summary>
+    /// Braking and coasting while steering: longitudinal deceleration and yaw rate (relative to
+    /// full-grip curvature times speed) over 0.1 s from straight driving at each speed.
+    /// </summary>
+    private static void BrakeProbe()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        foreach (float throttle in new[] { -1f, 0f, 1f })
+        foreach (float steer in new[] { 0f, 0.5f, 1f })
+        {
+            Console.WriteLine($"throttle {throttle}, steer {steer}: speed -> decel (uu/s^2) over 0.1 s, yaw rate at 0.1/0.2 s as a fraction of curvature*speed");
+            foreach (float v0 in new[] { 300f, 600f, 900f, 1200f, 1500f, 1800f, 2100f, 2300f })
+            {
+                GroundCar(arena, car, v0, 0f);
+                for (int tick = 0; tick < 6; tick++) { arena.SetControls(car, new RsbControls { Throttle = 0.02f }); arena.Step(); }
+                var a = arena.GetCar(car);
+                float va = a.Physics.Velocity.Dot(a.Physics.Forward);
+                for (int tick = 0; tick < 12; tick++) { arena.SetControls(car, new RsbControls { Throttle = throttle, Steer = steer }); arena.Step(); }
+                var b = arena.GetCar(car);
+                float vb = b.Physics.Velocity.Dot(b.Physics.Forward);
+                float w1 = b.Physics.AngularVelocity.Z;
+                for (int tick = 0; tick < 12; tick++) { arena.SetControls(car, new RsbControls { Throttle = throttle, Steer = steer }); arena.Step(); }
+                var d = arena.GetCar(car);
+                float vd = d.Physics.Velocity.Dot(d.Physics.Forward);
+                float w2 = d.Physics.AngularVelocity.Z;
+                float full1 = steer > 0 ? steer * GroundModel.Curvature(vb) * vb : float.NaN;
+                float full2 = steer > 0 ? steer * GroundModel.Curvature(vd) * vd : float.NaN;
+                float lateral = Math.Abs(b.Physics.Velocity.Dot(b.Physics.Right));
+                Console.WriteLine(string.Create(inv, $"  {va,6:F0}: decel {(va - vb) / 0.1f,6:F0} then {(vb - vd) / 0.1f,6:F0}  yaw {w1 / full1:F2} {w2 / full2:F2}  slip {lateral:F0}"));
+            }
+        }
+    }
+
+    /// <summary>Throughput of the navigation rollout that planning is built on.</summary>
+    private static void RolloutBenchmark(int trials, int seed)
+    {
+        var random = new Random(seed + 9);
+        float R(float a, float b) => a + (float)random.NextDouble() * (b - a);
+        var cases = new List<(GroundState Start, DriveTarget Target)>();
+        for (int i = 0; i < trials; i++)
+        {
+            var start = new GroundState(new Vec3(R(-2500, 2500), R(-3500, 3500), 0), GroundModel.Rotate(Vec3.X, R(-3.1f, 3.1f)), R(0, 2000), R(0, 100));
+            var direction = i % 2 == 0 ? GroundModel.Rotate(Vec3.X, R(-3.1f, 3.1f)) : Vec3.Zero;
+            cases.Add((start, new DriveTarget(new Vec3(R(-3000, 3000), R(-4000, 4000), 0), direction)));
+        }
+        foreach (var c in cases.Take(50)) Navigator.Rollout(c.Start, c.Target, 6f);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        double simulated = 0;
+        foreach (var c in cases) simulated += Navigator.Rollout(c.Start, c.Target, 6f).Time;
+        double seconds = watch.Elapsed.TotalSeconds;
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+            $"rollout: {seconds * 1e6 / trials:F0} us per rollout, {seconds * 1e9 / (simulated * 60):F0} ns per 1/60 s step ({simulated / trials:F2} s simulated on average)"));
     }
 
     /// <summary>Steady-state longitudinal drag while holding a steer value, for throttle and coast.</summary>

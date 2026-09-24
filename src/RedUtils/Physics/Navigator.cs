@@ -16,9 +16,12 @@ namespace RedUtils.Physics
         public bool AllowBoost;
         /// <summary>Largest lead-in distance used to align with <see cref="Direction"/>.</summary>
         public float MaxLead;
+        /// <summary>Speed to arrive with (positioning), or NaN to arrive as fast as possible.</summary>
+        public float ArrivalSpeed;
 
         public DriveTarget(Vec3 point, Vec3 direction, float arrivalTime = float.NaN, bool allowBoost = true, float maxLead = 1300f)
         {
+            ArrivalSpeed = float.NaN;
             Point = new Vec3(point.x, point.y, 0);
             Direction = new Vec3(direction.x, direction.y, 0);
             float length = Direction.Length();
@@ -61,6 +64,14 @@ namespace RedUtils.Physics
         public const float TimingSlack = 0.04f;
         /// <summary>Speed floor while turning hard (turn radius about 200 uu).</summary>
         public const float MinimumTurnSpeed = 450f;
+        /// <summary>Step multiple used by rollouts while cruising straight far from the target.</summary>
+        public const int CruiseStepFactor = 3;
+        /// <summary>Speed band (uu/s) around a held speed inside which the throttle only trickles.</summary>
+        public const float HoldBand = 15f;
+        /// <summary>Throttle that roughly holds speed below 1410 uu/s (it only needs to beat zero to avoid the coasting brake).</summary>
+        public const float HoldThrottle = 0.02f;
+        /// <summary>Deceleration planned for when shedding speed before a positioning target.</summary>
+        public const float PlannedBraking = 2000f;
 
         /// <summary>
         /// Shortest tangent-arc-line path onto the arrival line: straight to a turning circle, around
@@ -111,22 +122,25 @@ namespace RedUtils.Physics
             ApproachPath best = default;
             float bestCost = float.PositiveInfinity;
 
-            foreach (int turn in new[] { 1, -1 })
+            for (int t = 0; t < 2; t++)
             {
+                int turn = t == 0 ? 1 : -1;
                 // A counter-clockwise arc that ends heading along u has its centre on u's left.
                 Vec3 centre = entry + left * (turn * radius);
                 Vec3 offset = new(position.x - centre.x, position.y - centre.y, 0);
                 float d = offset.Length();
                 if (d <= radius * 1.001f)
                     continue;
-                float theta = MathF.Acos(radius / d);
+                // Tangent points lie at +-acos(r/d) from the car's direction from the centre.
+                float cos = radius / d, sin = MathF.Sqrt(MathF.Max(0f, 1f - cos * cos));
                 Vec3 w = offset / d;
                 // Of the two tangent points, keep the one where the car's travel matches the arc's sense.
                 Vec3 tangent = default;
                 bool found = false;
-                foreach (float sign in new[] { 1f, -1f })
+                for (int k = 0; k < 2; k++)
                 {
-                    Vec3 radial = GroundModel.Rotate(w, sign * theta);
+                    float sign = k == 0 ? 1f : -1f;
+                    Vec3 radial = new(w.x * cos - w.y * sign * sin, w.x * sign * sin + w.y * cos, 0);
                     Vec3 candidate = centre + radial * radius;
                     Vec3 travel = new(-radial.y * turn, radial.x * turn, 0);
                     Vec3 approach = candidate - new Vec3(position.x, position.y, 0);
@@ -158,6 +172,10 @@ namespace RedUtils.Physics
             return best;
         }
 
+        /// <summary>Length of the straight run-in onto a directed destination <paramref name="distance"/> away.</summary>
+        public static float RunIn(in DriveTarget target, float distance) =>
+            MathF.Min(target.MaxLead, MathF.Max(120f, distance * 0.25f));
+
         /// <summary>Point the car steers at: the destination, or a pure-pursuit point on the approach path.</summary>
         public static Vec3 SteeringPoint(Vec3 position, Vec3 forward, float speed, in DriveTarget target)
         {
@@ -167,7 +185,7 @@ namespace RedUtils.Physics
                 return target.Point;
 
             float radius = GroundModel.TurnRadius(System.Math.Clamp(MathF.Abs(speed), 700f, RL.CarMaxSpeed));
-            float straight = MathF.Min(target.MaxLead, MathF.Max(120f, distance * 0.25f));
+            float straight = RunIn(target, distance);
             ApproachPath path = PlanApproach(position, forward, target, radius, straight);
             if (!path.Valid)
             {
@@ -215,6 +233,12 @@ namespace RedUtils.Physics
                 if (slack > TimingSlack)
                     desired = MathF.Max(0f, speed - (slack > 0.35f ? 600f : 150f));
             }
+            if (float.IsFinite(target.ArrivalSpeed))
+            {
+                float path = float.IsFinite(remainingPath) ? remainingPath : EstimatePathLength(position, forward, speed, target);
+                float room = MathF.Max(0f, path - ArrivalRadius);
+                desired = MathF.Min(desired, MathF.Sqrt(target.ArrivalSpeed * target.ArrivalSpeed + 2f * PlannedBraking * room));
+            }
             desired = MathF.Min(desired, turnSpeed);
 
             float forwardSpeed = speed;
@@ -234,6 +258,27 @@ namespace RedUtils.Physics
             {
                 command.Throttle = error < -400f ? -1f : 0f;
             }
+            return command;
+        }
+
+        /// <summary>
+        /// Throttle and boost that track <paramref name="desired"/> forward speed tightly: full
+        /// throttle (and boost when well short) below it, a trickle of throttle to hold it without
+        /// the coasting brake, and coasting or braking above it.
+        /// </summary>
+        public static DriveCommand HoldSpeed(float desired, float speed, float boost)
+        {
+            var command = new DriveCommand();
+            float error = desired - speed;
+            if (error > HoldBand)
+            {
+                command.Throttle = 1f;
+                command.Boost = boost > 0f && (error > 120f || (desired > RL.ThrottleMaxSpeed && error > HoldBand));
+            }
+            else if (error > -HoldBand)
+                command.Throttle = speed < RL.ThrottleMaxSpeed ? HoldThrottle : 0f;
+            else
+                command.Throttle = error < -250f ? -1f : 0f;
             return command;
         }
 
@@ -264,8 +309,7 @@ namespace RedUtils.Physics
             float radius = GroundModel.TurnRadius(System.Math.Clamp(MathF.Abs(speed), 700f, RL.CarMaxSpeed));
             if (target.HasDirection && distance >= 60f)
             {
-                ApproachPath path = PlanApproach(position, forward, target, radius,
-                    MathF.Min(target.MaxLead, MathF.Max(120f, distance * 0.25f)));
+                ApproachPath path = PlanApproach(position, forward, target, radius, RunIn(target, distance));
                 if (path.Valid)
                     return path.Length;
             }
@@ -287,6 +331,7 @@ namespace RedUtils.Physics
             float previousDistance = float.PositiveInfinity;
             var asap = target;
             asap.ArrivalTime = float.NaN;
+            float remainder = 0f;
             for (int step = 0; s.Time <= maxTime && step < 2000; step++)
             {
                 Vec3 to = new(target.Point.x - s.Position.x, target.Point.y - s.Position.y, 0);
@@ -296,6 +341,8 @@ namespace RedUtils.Physics
                 if (passing)
                 {
                     result.Arrived = aligned && distance < 120f;
+                    // Report when the car reaches the point itself, not the edge of the radius.
+                    remainder = ArrivalRemainder(to, s.Forward, s.Speed);
                     break;
                 }
                 previousDistance = distance;
@@ -309,16 +356,25 @@ namespace RedUtils.Physics
                 }
 
                 DriveCommand c = Control(s.Position, s.Forward, s.Speed, s.Boost, s.YawRate, asap, s.Time);
-                GroundModel.Step(ref s, c.Throttle, c.Steer, c.Boost, dt);
+                // Straight driving far from the target is smooth: integrate it in longer steps.
+                bool cruising = distance > 700f && MathF.Abs(c.Steer) < 0.03f && MathF.Abs(s.YawRate) < 0.05f && c.Throttle > 0.99f;
+                GroundModel.Step(ref s, c.Throttle, c.Steer, c.Boost, cruising ? CruiseStepFactor * dt : dt);
             }
 
-            result.Time = s.Time;
+            result.Time = s.Time + remainder;
             result.ArrivalSpeed = s.Speed;
             result.HeadingError = target.HasDirection
                 ? MathF.Abs(GroundModel.SignedAngle(s.Forward, target.Direction)) : 0f;
             result.BoostUsed = startBoost - s.Boost;
             result.Final = s;
             return result;
+        }
+
+        /// <summary>Time still needed to reach a point <paramref name="to"/> away once inside the arrival radius.</summary>
+        public static float ArrivalRemainder(Vec3 to, Vec3 forward, float speed)
+        {
+            float along = to.x * forward.x + to.y * forward.y;
+            return along > 0f && speed > 100f ? along / speed : 0f;
         }
 
         /// <summary>

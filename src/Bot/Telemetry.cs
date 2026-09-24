@@ -364,8 +364,8 @@ namespace Bot
                 case GetBoost boost when boost.DriveAction != null:
                     target = boost.DriveAction.Target;
                     return ControlMath.Finite(target);
-                case Shadow shadow:
-                    target = shadow.TargetLocation;
+                case Travel travel:
+                    target = travel.Target.Point;
                     return ControlMath.Finite(target);
                 case GoalLineSave save:
                     target = save.GuardTarget;
