@@ -24,9 +24,15 @@ public static class PhysicsCheck
         if (which == "drive-cases") DriveCases();
         if (which == "turn-drag") TurnDragTable();
         if (which == "nav-trace") NavTrace();
+        if (which == "jump-probe") JumpProbe();
+        if (which == "flight-probe") FlightProbe();
         if (all || which == "drive") failures += DriveOpenLoop(trials, seed);
         if (all || which == "navigate") failures += NavigateClosedLoop(trials, seed);
         if (all || which == "timed") failures += NavigateTimed(trials, seed);
+        if (all || which == "jump") failures += JumpCheck(trials, seed);
+        if (all || which == "dodge") failures += DodgeCheck(trials, seed);
+        if (all || which == "orient") failures += OrientCheck(trials, seed);
+        if (all || which == "flight") failures += FlightCheck(trials, seed);
         return failures;
     }
 
@@ -269,6 +275,269 @@ public static class PhysicsCheck
         bool ok = Percentile(absolute, 0.5) < 0.08 && arrived > feasible * 0.9;
         Console.WriteLine(ok ? "timed: PASS" : "timed: FAIL");
         return ok ? 0 : 1;
+    }
+
+    /// <summary>Random hold times and double-jump timings: JumpModel against RocketSim heights.</summary>
+    private static int JumpCheck(int trials, int seed)
+    {
+        var random = new Random(seed + 3);
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        var errors = new List<double>();
+        for (int trial = 0; trial < trials; trial++)
+        {
+            int hold = random.Next(3, 25);
+            bool doubleJump = random.NextDouble() < 0.4;
+            int second = doubleJump ? 26 : -1;
+            if (doubleJump) hold = 24;
+            GroundCar(arena, car, (float)random.NextDouble() * 1500);
+            for (int t = 0; t < 30; t++) { arena.SetControls(car, new RsbControls { Throttle = 0.01f }); arena.Step(); }
+            for (int tick = 1; tick <= 110; tick++)
+            {
+                arena.SetControls(car, new RsbControls { Jump = tick <= hold || tick == second ? 1 : 0, Throttle = 0.01f });
+                arena.Step();
+                float t = tick / 120f;
+                float model = doubleJump ? JumpModel.Double(t, 26 / 120f - 0.5f / 120f).Height : JumpModel.Single(t, hold / 120f).Height;
+                if (tick % 10 == 0) errors.Add(Math.Abs(arena.GetCar(car).Physics.Position.Z - model));
+            }
+        }
+        var inv = CultureInfo.InvariantCulture;
+        Console.WriteLine(string.Create(inv, $"jump: height error p50 {Percentile(errors, 0.5):F1} uu p90 {Percentile(errors, 0.9):F1} uu max {errors.Max():F1}"));
+        bool ok = Percentile(errors, 0.9) < 8;
+        Console.WriteLine(ok ? "jump: PASS" : "jump: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    /// <summary>Dodges with random stick inputs and speeds: impulse direction and size against RocketSim.</summary>
+    private static int DodgeCheck(int trials, int seed)
+    {
+        var random = new Random(seed + 4);
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        var angle = new List<double>();
+        var magnitude = new List<double>();
+        var steering = new List<double>();
+        for (int trial = 0; trial < trials; trial++)
+        {
+            float speed = (float)random.NextDouble() * 2300 * (random.NextDouble() < 0.15 ? -0.4f : 1f);
+            GroundCar(arena, car, speed, (float)(random.NextDouble() * 6.28));
+            for (int t = 0; t < 10; t++) { arena.SetControls(car, new RsbControls { Throttle = 0.01f }); arena.Step(); }
+            // Jump, release, then dodge; compare the horizontal velocity jump on the dodge tick.
+            for (int tick = 0; tick < 6; tick++) { arena.SetControls(car, new RsbControls { Jump = tick < 4 ? 1 : 0 }); arena.Step(); }
+            var before = arena.GetCar(car);
+            float pitch = (float)(random.NextDouble() * 2 - 1), yaw = (float)(random.NextDouble() * 2 - 1);
+            if (random.NextDouble() < 0.3) { var aim = GroundModel.Rotate(Vec3.X, (float)(random.NextDouble() * 6.28)); (pitch, yaw) = DodgeModel.InputToward(ToVec(before.Physics.Forward), aim, before.Physics.Velocity.Dot(before.Physics.Forward)); }
+            arena.SetControls(car, new RsbControls { Jump = 1, Pitch = pitch, Yaw = yaw });
+            arena.Step();
+            var after = arena.GetCar(car);
+            Vec3 actual = (ToVec(after.Physics.Velocity) - ToVec(before.Physics.Velocity)).Flatten();
+            Vec3 model = DodgeModel.Impulse(ToVec(before.Physics.Forward), pitch, yaw, before.Physics.Velocity.Dot(before.Physics.Forward));
+            if (model.Length() < 1) continue;
+            angle.Add(Math.Acos(Math.Clamp(actual.Normalize().Dot(model.Normalize()), -1, 1)) * 180 / Math.PI);
+            magnitude.Add(Math.Abs(actual.Length() - model.Length()) / model.Length());
+        }
+        // Steering check: InputToward must produce impulses along the requested direction.
+        for (int trial = 0; trial < 200; trial++)
+        {
+            Vec3 forward = GroundModel.Rotate(Vec3.X, (float)(random.NextDouble() * 6.28));
+            Vec3 want = GroundModel.Rotate(Vec3.X, (float)(random.NextDouble() * 6.28));
+            float speed = (float)random.NextDouble() * 2300;
+            var (p, y) = DodgeModel.InputToward(forward, want, speed);
+            Vec3 got = DodgeModel.Impulse(forward, p, y, speed);
+            steering.Add(Math.Acos(Math.Clamp(got.Normalize().Dot(want), -1, 1)) * 180 / Math.PI);
+        }
+        var inv = CultureInfo.InvariantCulture;
+        Console.WriteLine(string.Create(inv,
+            $"dodge: direction error p50 {Percentile(angle, 0.5):F2} deg p90 {Percentile(angle, 0.9):F2}; magnitude error p50 {Percentile(magnitude, 0.5):P1} p90 {Percentile(magnitude, 0.9):P1}; InputToward error p90 {Percentile(steering, 0.9):F2} deg"));
+        // Components under 0.1 are zeroed by the game, so a few directions are unreachable by ~2 degrees.
+        bool ok = Percentile(angle, 0.9) < 3 && Percentile(magnitude, 0.9) < 0.06 && Percentile(steering, 0.9) < 3;
+        Console.WriteLine(ok ? "dodge: PASS" : "dodge: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Air reorientation: random attitude and spin to a random target attitude. Reports the time to
+    /// settle within 0.1 rad (and 0.5 rad/s) for AirControl.Orient and for the legacy PD law.
+    /// </summary>
+    private static int OrientCheck(int trials, int seed)
+    {
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        var inv = CultureInfo.InvariantCulture;
+        var results = new Dictionary<string, List<double>>();
+        foreach (string controller in new[] { "orient", "legacy-pd" })
+        {
+            var random = new Random(seed + 5);
+            var times = new List<double>();
+            for (int trial = 0; trial < trials; trial++)
+            {
+                float R(float a, float b) => a + (float)random.NextDouble() * (b - a);
+                var s = arena.GetCar(car);
+                s.Physics = ScenarioRunner.Orientation(R(-1.5f, 1.5f), R(-3.14f, 3.14f), R(-3.14f, 3.14f));
+                // High, rising start so the car stays airborne; no dodge (a dodge locks pitch for ~0.95 s).
+                s.Physics.Position = new RsbVec(0, 0, 1400);
+                s.Physics.Velocity = new RsbVec(0, 0, 650);
+                s.Physics.AngularVelocity = new RsbVec(R(-3, 3), R(-3, 3), R(-3, 3));
+                s.IsOnGround = 0; s.HasJumped = 1; s.HasFlipped = 0; s.HasDoubleJumped = 1;
+                arena.SetCar(car, s);
+                RsbPhysics target = ScenarioRunner.Orientation(R(-1.5f, 1.5f), R(-3.14f, 3.14f), R(-3.14f, 3.14f));
+                Vec3 tf = ToVec(target.Forward), tu = ToVec(target.Up);
+                float settled = float.NaN;
+                for (int tick = 0; tick < 240; tick++)
+                {
+                    var c = arena.GetCar(car);
+                    Vec3 f = ToVec(c.Physics.Forward), r = ToVec(c.Physics.Right), u = ToVec(c.Physics.Up), w = ToVec(c.Physics.AngularVelocity);
+                    Vec3 local = new(w.Dot(f), w.Dot(r), w.Dot(u));
+                    Vec3 error = AirControl.RotationError(f, r, u, tf, tu);
+                    if (error.Length() < 0.1f && local.Length() < 0.5f) { if (float.IsNaN(settled)) settled = tick / 120f; }
+                    else settled = float.NaN;
+                    var controls = new RsbControls();
+                    if (controller == "orient")
+                    {
+                        AirInput a = AirControl.Orient(f, r, u, local, tf, tu);
+                        controls.Pitch = a.Pitch; controls.Yaw = a.Yaw; controls.Roll = a.Roll;
+                    }
+                    else
+                    {
+                        controls.Roll = Math.Clamp(-(8 * error.x - 2.4f * local.x) / 5, -1, 1);
+                        controls.Pitch = Math.Clamp(-(7 * error.y - 2.5f * local.y) / 4, -1, 1);
+                        controls.Yaw = Math.Clamp((7 * error.z - 2.5f * local.z) / 4, -1, 1);
+                    }
+                    arena.SetControls(car, controls);
+                    arena.Step();
+                }
+                times.Add(float.IsNaN(settled) ? 2.0 : settled);
+            }
+            results[controller] = times;
+            Console.WriteLine(string.Create(inv,
+                $"orient [{controller}]: settle time p50 {Percentile(times, 0.5):F3} s p90 {Percentile(times, 0.9):F3} s; unsettled after 2 s: {times.Count(t => t >= 2.0)}/{trials}"));
+        }
+        bool ok = Percentile(results["orient"], 0.5) <= Percentile(results["legacy-pd"], 0.5) && results["orient"].Count(t => t >= 2.0) <= trials / 50;
+        Console.WriteLine(ok ? "orient: PASS" : "orient: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    /// <summary>Random air inputs (boost, throttle, pitch/yaw/roll): AerialModel against RocketSim over 1 s.</summary>
+    private static int FlightCheck(int trials, int seed)
+    {
+        var random = new Random(seed + 6);
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        var position = new List<double>();
+        var attitude = new List<double>();
+        var boostError = new List<double>();
+        for (int trial = 0; trial < trials; trial++)
+        {
+            float R(float a, float b) => a + (float)random.NextDouble() * (b - a);
+            var s = arena.GetCar(car);
+            s.Physics = ScenarioRunner.Orientation(R(-1.2f, 1.2f), R(-3.14f, 3.14f), R(-3.14f, 3.14f));
+            s.Physics.Position = new RsbVec(R(-1000, 1000), R(-1000, 1000), 1200);
+            s.Physics.Velocity = new RsbVec(R(-800, 800), R(-800, 800), R(0, 700));
+            s.Physics.AngularVelocity = new RsbVec(R(-3, 3), R(-3, 3), R(-3, 3));
+            s.IsOnGround = 0; s.HasJumped = 1; s.HasFlipped = 0; s.HasDoubleJumped = 1;
+            s.Boost = R(10, 100);
+            arena.SetCar(car, s);
+            s = arena.GetCar(car);
+            var model = new FlightState(ToVec(s.Physics.Position), ToVec(s.Physics.Velocity), ToVec(s.Physics.AngularVelocity),
+                ToVec(s.Physics.Forward), ToVec(s.Physics.Right), ToVec(s.Physics.Up), s.Boost);
+            var controls = new RsbControls();
+            for (int tick = 0; tick < 120; tick++)
+            {
+                if (tick % 20 == 0)
+                    controls = new RsbControls
+                    {
+                        Pitch = R(-1, 1), Yaw = R(-1, 1), Roll = R(-1, 1), Throttle = R(-1, 1),
+                        Boost = random.NextDouble() < 0.5 ? 1 : 0,
+                    };
+                arena.SetControls(car, controls);
+                arena.Step();
+                AerialModel.Step(ref model, new AirInput { Pitch = controls.Pitch, Yaw = controls.Yaw, Roll = controls.Roll },
+                    controls.Boost != 0, controls.Throttle, SimArena.TickTime);
+            }
+            var a = arena.GetCar(car);
+            position.Add((ToVec(a.Physics.Position) - model.Position).Length());
+            attitude.Add(Math.Acos(Math.Clamp(ToVec(a.Physics.Forward).Dot(model.Forward), -1, 1)) * 180 / Math.PI);
+            boostError.Add(Math.Abs(a.Boost - model.Boost));
+        }
+        var inv = CultureInfo.InvariantCulture;
+        Console.WriteLine(string.Create(inv,
+            $"flight: position error after 1 s p50 {Percentile(position, 0.5):F1} uu p90 {Percentile(position, 0.9):F1}; forward-axis error p50 {Percentile(attitude, 0.5):F2} deg p90 {Percentile(attitude, 0.9):F2}; boost error p90 {Percentile(boostError, 0.9):F2}"));
+        bool ok = Percentile(position, 0.9) < 25 && Percentile(attitude, 0.9) < 5;
+        Console.WriteLine(ok ? "flight: PASS" : "flight: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    private static void FlightProbe()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        var cases = new (string Name, RsbControls C)[]
+        {
+            ("ballistic", new RsbControls()), ("boost", new RsbControls { Boost = 1 }), ("throttle", new RsbControls { Throttle = 1 }),
+            ("pitch", new RsbControls { Pitch = 1 }), ("roll+boost", new RsbControls { Roll = 1, Boost = 1 }),
+        };
+        foreach (var (name, c) in cases)
+        {
+            var s = arena.GetCar(car);
+            s.Physics = ScenarioRunner.Orientation(0.3f, 0.5f, 0.2f);
+            s.Physics.Position = new RsbVec(0, 0, 1200);
+            s.Physics.Velocity = new RsbVec(300, 200, 400);
+            s.Physics.AngularVelocity = new RsbVec(0, 0, 0);
+            s.IsOnGround = 0; s.HasJumped = 1; s.HasFlipped = 0; s.HasDoubleJumped = 1; s.Boost = 100;
+            arena.SetCar(car, s);
+            s = arena.GetCar(car);
+            var model = new FlightState(ToVec(s.Physics.Position), ToVec(s.Physics.Velocity), ToVec(s.Physics.AngularVelocity),
+                ToVec(s.Physics.Forward), ToVec(s.Physics.Right), ToVec(s.Physics.Up), s.Boost);
+            var row = new List<string>();
+            for (int tick = 1; tick <= 120; tick++)
+            {
+                arena.SetControls(car, c);
+                arena.Step();
+                AerialModel.Step(ref model, new AirInput { Pitch = c.Pitch, Yaw = c.Yaw, Roll = c.Roll }, c.Boost != 0, c.Throttle, SimArena.TickTime);
+                if (tick is 1 or 2 or 12 or 60 or 120)
+                {
+                    var a = arena.GetCar(car);
+                    row.Add(string.Create(inv, $"{tick}: dpos {(ToVec(a.Physics.Position) - model.Position).Length():F1} dvel {(ToVec(a.Physics.Velocity) - model.Velocity).Length():F1} boost {a.Boost:F1}/{model.Boost:F1}"));
+                }
+            }
+            Console.WriteLine($"{name,-11} {string.Join(" | ", row)}");
+        }
+    }
+
+    /// <summary>Vertical trajectories for jump hold times and double-jump timings.</summary>
+    private static void JumpProbe()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        foreach (int holdTicks in new[] { 1, 3, 6, 12, 18, 24, 30 })
+        foreach (int secondAt in new[] { -1, holdTicks + 2 })
+        {
+            if (secondAt > 0 && holdTicks < 24) continue;
+            GroundCar(arena, car, 0f);
+            // Let the suspension settle.
+            for (int t = 0; t < 30; t++) { arena.SetControls(car, new RsbControls()); arena.Step(); }
+            var row = new List<string>();
+            float peak = 0, peakT = 0;
+            for (int tick = 1; tick <= 150; tick++)
+            {
+                bool jump = tick <= holdTicks || tick == secondAt;
+                arena.SetControls(car, new RsbControls { Jump = jump ? 1 : 0 });
+                arena.Step();
+                var c = arena.GetCar(car);
+                if (c.Physics.Position.Z > peak) { peak = c.Physics.Position.Z; peakT = tick / 120f; }
+                if (tick is 1 or 2 or 3 or 6 or 12 or 24 or 36 or 48 or 60 or 90 or 120)
+                    row.Add(string.Create(inv, $"{tick}:{c.Physics.Position.Z:F1}/{c.Physics.Velocity.Z:F0}"));
+            }
+            Console.WriteLine(string.Create(inv, $"hold {holdTicks,2}{(secondAt > 0 ? $" +2nd@{secondAt}" : "")}: peak {peak:F1} at {peakT:F3}s | {string.Join(" ", row)}"));
+        }
     }
 
     /// <summary>Prints the model rollout of a navigation case for policy debugging.</summary>
