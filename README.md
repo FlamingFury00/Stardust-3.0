@@ -1,21 +1,23 @@
-# Stardust 3.0 — Beta
+# Stardust 3.0
 
-> **Beta software.** Stardust 3.0 is under active development and is not a stable release. Mechanics, strategy, physics/control models, tuning, and compatibility may change substantially while the bot is being validated in live Rocket League matches.
+Stardust is a Rocket League bot for [RLBot](http://www.rlbot.org/) v5, written in C# on RedUtils.
 
-Stardust 3.0 is the experimental next generation of Stardust. It adds threat-first planning, persistent possession mechanics, ground catches/carries/flicks, velocity-matched aerial carries, experimental flip-reset attempts, expanded defensive/rotation logic, boost-management work, and automated control regressions.
+Stardust 3.0 combines:
+- **A tactical decision layer:** threat-first defence, possession play (ground catches, hood carries, pressure flicks, aerial carries), shadowing, and team claims.
+- **Scripted mechanics:** speed-flip kickoffs, shots, dodges, half flips, wavedashes, and recovery.
+- **A physics core:** every model is validated against [RocketSim](https://github.com/ZealanL/RocketSim). It covers driving and navigation, jumps, dodges, flips, air control, aerials, car–ball impacts, and a strike planner.
 
-It is an evaluation build, **not a benchmark-verified professional-level release**. Experimental mechanics should be treated as beta features until they have repeatable in-game evidence. Reset attempts remain opt-in; no trained neural policy is included.
+The repository includes the evaluation harness used to decide what ships. It is a RocketSim match simulator that speaks the RLBot v5 protocol, with paired match series, scenario fixtures, and physics-model checks.
 
-See **[the Stardust 3.0 implementation, research, feature switches, and evaluation guide](docs/STARDUST_3.md)** for build/test commands, limitations, and the proposed learned-skills roadmap. The original bot registration identity is retained.
-
-## Project background
-
-Stardust is a Rocket League bot built on the [RLBot](http://www.rlbot.org/) framework for offline matches, using RedUtils (C#). This repository targets the vendored RLBot v5 integration; use a compatible v5 setup rather than assuming an older GUI/runtime is interchangeable.
+See **[docs/STARDUST_3.md](docs/STARDUST_3.md)** for:
+- the architecture;
+- the physics models and their measured accuracy;
+- how to run the simulator;
+- the match results behind each change, including what was tried and rejected;
+- build and test commands and runtime switches.
 
 ![Stardust Logo](./logo.png)
 
-## Stardust 3.0 history
+## History
 
-The original Stardust 2.0 was optimized for 2v2 and 3v3 and was redeveloped for the RLBot Championship finals. The repository records a fourth-place finish in the **RLBot Championship 2023**; the original finals video is [here](https://www.youtube.com/watch?v=6A8_6RR4vR0&t=305s).
-
-The 3.0 beta retains the existing shot solvers, kickoff routines, and drive subactions while iterating on the control lifecycle, possession controllers, team behavior, defensive anticipation, and mechanics. The [evaluation guide](docs/STARDUST_3.md#promotion-criteria-run-these-in-rocket-league-before-a-release) separates software checks from the in-game evidence needed to establish playing strength.
+Stardust 2.0 was optimized for 2v2 and 3v3 and was redeveloped for the RLBot Championship finals. It finished fourth in the **RLBot Championship 2023**; the finals video is [here](https://www.youtube.com/watch?v=6A8_6RR4vR0&t=305s).

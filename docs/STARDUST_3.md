@@ -1,109 +1,183 @@
-# Stardust 3.0 candidate: control, possession, and an evaluation path
+# Stardust 3.0: architecture, physics, and how it was measured
 
-This branch is an implemented C# controller upgrade built from `v5` at `0ec1f3784d0ecf8115430d78af9eb7b2de1813c6`. It is **not a verified professional-level bot**. Build success and deterministic tests establish specific software/control properties, not a win-rate improvement. No trained neural policy, match series, or in-game reset success rate is included.
+Stardust 3.0 is a 1v1/2v2/3v3 Rocket League bot for RLBot v5, written in C# on RedUtils. This
+document describes what the bot does, the physics models it plans with, and — because every change
+in this branch was accepted or rejected on evidence — how it was evaluated and what the evidence
+showed.
 
-## What changed
+## At a glance
 
-| Layer | Implementation | Intended benefit |
+| Layer | Where | What it does |
 |---|---|---|
-| Packet lifecycle | Current-frame delta before execution; duplicate-packet handling; clock-discontinuity invalidation; cancellation before action execution; safe action replacement | Avoid stale plans, timing drift, and accidental removal of a replacement action |
-| Jump state | Persistent `HasJumped`, `HasDoubleJumped`, `HasDodged`, `DodgeTimeout` from the pinned v5 schema | Do not mistake the end of an animation for a restored flip |
-| Prediction | Exact first-match search; timestamp interpolation; null/short/duplicate handling; public shot-validity check | Remove missed coarse-index/tail intercepts and unsafe interpolation |
-| Strategy | Predicted-goal supervision before possession/boost; separate defensive-shot identity; approximately 8 Hz tactical replanning; at most 48 prediction candidates per shot search | React to danger without repeatedly restarting mechanics |
-| Possession | Ground catches, hood-relative carries, pressure-triggered flicks, velocity-matched aerial carries | Preserve a useful touch instead of always booming the ball |
-| Orientation | Quaternion shortest-rotation error and angular-rate damping | Recover from inverted/backward attitudes without a 180-degree cross-product dead zone |
-| Reset attempts | Entry constraints, spent-flip evidence, own wheel-contact evidence, restored packet flags, timed follow-through | Avoid claiming a reset merely because the car is near the ball |
-| Team play | Deterministic equal-ETA ownership; invariant-culture shot claims; heartbeat/expiry; left-goes kickoff and same-side cheat/cover | Reduce mutually yielding claims and duplicate commitments |
-| Boost/recovery | Goal-side small/large on-route pickups; landing-surface orientation | Avoid abandoning defense for a corner boost and reduce unproductive aerial tumbling |
+| Decision layer | `src/Bot` | Threat-first supervision, possession play (ground catches, hood carries, pressure flicks, aerial carries), shot selection, shadow/anchor/support defence, goal-line saves, boost refills, team claims |
+| Kickoff | `src/RedUtils/Actions/Kickoff.cs`, `src/RedUtils/Bot.cs` | Speed-flip kickoffs; the kickoff lasts until the ball is first touched |
+| Scripted mechanics | `src/RedUtils/Actions` | Ground/jump/double-jump/aerial shots, dodges, speed flips, half flips, wavedashes, recovery |
+| Physics core | `src/RedUtils/Physics` | Ground dynamics and navigation, jumps, dodges, flips, air control, aerial guidance, car–ball impacts — each validated against RocketSim |
+| Planning | `src/RedUtils/Planning`, `src/RedUtils/Actions/Strikes` | Strike planner (ground, jump, flip, double-jump, aerial touches aimed with the hit model), block planner, and their executors |
+| Evaluation | `tools/simulator` | RocketSim match simulator speaking the RLBot v5 protocol, scenario fixtures, physics-model checks |
 
-The existing ground/jump/double-jump/aerial shot solvers and kickoff/drive subactions remain. This is deliberately not a wholesale framework migration.
+## The kickoff fix
+
+RLBot reports the match phase as `Active` about two seconds after a kickoff starts even when nobody
+has touched the ball. The previous release ended its kickoff routine there, so the car stopped
+mid-approach. A kickoff now lasts until the ball is first touched (`RUBot.IsKickoff`). On its own
+this is worth **+0.81 goals per game** against the previous release (36-game 1v1 series; see
+[Results](#results)).
+
+## Physics core
+
+Every model the planner uses is checked against RocketSim by `physics-check`, which also runs in CI
+(`physics-models` job):
+
+| Check | Model | Result (default 300 trials) |
+|---|---|---|
+| `hit` | `HitModel`: inelastic impulse with Coulomb friction plus Rocket League's extra hit impulse | Δv direction error p50 1.3° (a centre-line model: 7.4°); speed error p50 0.6 % |
+| `drive` | `GroundModel`: throttle, boost, brake, coast and steer dynamics under random open-loop inputs | after 1 s: position error p50 22 uu, heading error p50 1.9° |
+| `navigate` | `Navigator`: tangent-arc approach policy and its rollout ETA | 298/300 arrive; ETA error p50 0.03 s, p90 0.14 s |
+| `timed` | Timed arrivals with loose slack, and with strike-tight slack under 0.12 s | tight: error p50 0.04 s; more than 0.1 s late in 11 of 238 |
+| `jump` | `JumpModel`: minimum jump, hold acceleration, double jump | height error p50 2.7 uu, max 7.1 uu |
+| `dodge` | `DodgeModel`: speed-dependent dodge impulse and stick inversion | direction error p90 0.03°; stick inversion p90 0.5° |
+| `flip` | `FlipModel` and the pitched contact solver: planned jump-and-dodge touches | 300/300 touch; box 4 uu from the ball on the planned tick; ball direction 1.5°, speed 1.2 % (p50) |
+| `orient` | `AirControl`: attitude control with the game's torques and damping | settles in 0.85 s p50 (previous controller 1.23 s) |
+| `flight` | `AerialModel`: boosted flight | position error after 1 s p50 3.4 uu |
+| `aerial` | `AerialGuidance`: the aerial control law flown closed-loop | 205/205 flown; miss p50 3 uu, p90 5 uu |
+
+Notable details:
+
+- **Navigation never collapses onto its target.** A directed approach steers along its arrival line,
+  extended past the destination, so a car a few degrees off the line converges instead of braking
+  for an impossible last-metre turn.
+- **Timed arrivals keep a margin.** An early car sheds speed only while flat-out driving would still
+  arrive more than 0.07 s early, and never in a hard turn, where arrival times are least predictable.
+- **Flips are modelled, not improvised.** A forward dodge adds 500 uu/s along the nose at once
+  (capped with the rest of the velocity at 2300 uu/s), the nose pitches down at about 7.3 rad/s after
+  a two-tick lag, and the height stays ballistic for 0.15 s. Dodging five ticks before contact keeps
+  almost all of that impulse in the ball: in RocketSim a flip adds roughly 700 uu/s of ball speed at
+  any car speed (`physics-check --model flip-probe`).
+
+## Strike planner
+
+`StrikePlanner` searches the ball prediction for the best reachable touch. A cheap reachability
+bound finds the first candidate slice. Each candidate is then solved exactly:
+
+1. Find where the car's hitbox first meets the ball.
+2. Choose the lateral offset that sends the ball at the aim, using the hit model.
+3. Score the result as the chance of scoring (shot spread, save chance) or clearing.
+4. Verify the timing with the same navigation rollout the executor drives.
+
+Jump strikes line up on the contact line, run up at constant speed and take off the model's rise
+time before contact. Flip strikes add the dodge. `DrivenStrike` re-solves the contact every 1/30 s
+against the live prediction and stands down as soon as the touch is out of reach.
+
+## Evaluation harness
+
+`tools/simulator` runs bots exactly as RLBot would: each bot is its own process speaking the RLBot v5
+flatbuffers protocol, stepped in lockstep with RocketSim at 120 Hz on a generated Soccar arena (no
+game assets).
+
+```sh
+tools/simulator/build.sh
+SIM="dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll"
+
+# Paired, side-swapped 1v1 series between two bot builds
+$SIM match --a <build dir> --b <build dir> --size 1 --games 72 --seconds 180 --parallel 4 --out results
+
+# Scenario fixtures: kickoff, open-net, vs-keeper, aerial, save, recovery, duel, jump-touch
+$SIM scenarios --a <build dir> [--b <build dir>] --suite save --episodes 60
+
+# Physics models against RocketSim
+$SIM physics-check --model all
+```
+
+Series are paired: every seed is played twice with the builds swapping colours. Kickoff spawns are
+jittered by a few units so deterministic bots do not replay one identical game. Scenario episodes
+are generated from a seed, so two builds face identical fixtures. With `STARDUST_TRACE=1` the bot
+logs its decisions, which the match reports attribute to goals.
+
+A 72-game 1v1 series resolves about ±0.4 goals per game (one standard error), so a change is adopted
+only when repeated series agree.
+
+## Results
+
+All figures are 1v1, 180-second games, goals per game from the candidate's point of view.
+
+| Candidate | Opponent | Games | Goals per game |
+|---|---|---|---|
+| Decision layer + kickoff fix | previous release | 36 | **+0.81** |
+| Physics-first "Brain" decision layer (removed) | previous release | 36 | −0.67 to −0.75 |
+| Kickoff fix + planner strikes replacing scripted shots up to 0.3 s later | previous release | 36 | −1.1 before flips, −0.19 with flips |
+| Kickoff fix + planner strikes when no later than the scripted shot | kickoff fix | 72 + 72 | +0.40, +0.11 |
+| Kickoff fix + planned aerials only | kickoff fix | 72 | +0.14 |
+| Kickoff fix + planned saves (clear / block before the goal-line save) | kickoff fix | 72 | −0.06 |
+
+What these showed:
+
+- **The decision layer, not the physics, was the gap.** A physics-first decision layer built on the
+  new planner lost to the previous release even with the new strike execution. It had no
+  possession play, raced into 50/50s (18 % of its time) and spent 35 % of its time in the attacking
+  third against the opponent's 18 %. It was removed, and the tuned tactical layer was kept.
+- **Execution was the rest of it.** Flipping into the ball was the largest single missing piece.
+  Before flips, planned strikes cost more than a goal per game even when the planner chose the same
+  touches as the scripted shots.
+- **Fixture wins do not always carry into matches.** Planned saves stopped 35 % of fixture shots
+  against 22 % for the goal-line save, yet were neutral in play and are not enabled.
 
 ## Build and regressions
 
-Use the .NET 8 SDK. On Linux, enable the existing FlatBuffers generator first:
+Use the .NET 8 SDK. On Linux, make the FlatBuffers generator executable first:
 
 ```sh
 chmod +x src/generate-flatbuffers.sh src/flatbuffers-schema/binaries/flatc
 dotnet build src/Bot/Bot.csproj --configuration Release
 dotnet run --project tests/Stardust.Tests/Stardust.Tests.csproj --configuration Release
-dotnet run --project tests/Stardust.ModelChecks/Stardust.ModelChecks.csproj --configuration Release
 ```
 
-The first executable tests actual production methods: packet timing, persistent jump flags, reset evidence, action interruption, finite outputs, claims, prediction interpolation, team symmetry, control signs, possession gates, relative-motion invariance, and release-before-dodge sequencing. Seeded loops additionally exercise 10,000 clock updates and 2,000 attitude targets.
+CI builds the bot, runs the ten regression programs in `tests/`, and runs the RocketSim
+physics-model checks.
 
-The second executable integrates an **analytic attitude model**, with the torque/damping equations described in [1], at 120, 60, and 30 Hz. It checks convergence across fixed and seeded initial orientations. It also tests boost-route constraints. It is not RocketSim, does not simulate ball contact, and must not be described as an in-game mechanics benchmark.
-
-The GitHub Actions workflow builds the bot and runs both programs. Failures are not ignored. No additional runtime package or training service was added to the bot.
-
-## Runtime switches and rollback
+## Runtime switches
 
 Set environment variables **before starting the bot process**:
 
 | Variable | Default | Behavior |
 |---|---|---|
-| `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable the new catch/carry/flick selection |
+| `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable catch/carry/flick selection |
 | `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
 | `STARDUST_FLIP_RESETS` | disabled | Set `1` to enable experimental reset attempts within an aerial carry |
-| `STARDUST_TRACE` | disabled | Set `1` to log human-readable strategy transitions and ETA estimates |
+| `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
 
-Example in PowerShell, before launching the bot from that environment:
+Structured telemetry is designed for real-match debugging without per-tick console spam. Each
+sampled line starts with `STARDUST_JSON ` followed by one JSON object. Decision changes emit
+immediately; frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. Frames are recorded after
+the action runs and after controller sanitization, so `controller` is the command actually returned.
 
-```powershell
-$env:STARDUST_TRACE = "1"
-$env:STARDUST_TELEMETRY = "1"
-$env:STARDUST_TELEMETRY_HZ = "10"
-$env:STARDUST_FLIP_RESETS = "1"
-```
+## Possession control
 
+The ground carry projects **relative** ball/car motion before placing the ball over a hood target;
+advancing only the ball would inject a false position error whenever both share a high world
+velocity. Throttle follows longitudinal error and ball velocity; lateral error changes the heading.
+The aerial carry samples the ball prediction at a short horizon, advances the car ballistically to
+the same time, and applies a velocity-matching correction with a shortest-rotation quaternion
+attitude controller. A reset attempt requires adequate height, fuel, proximity, low relative speed,
+an already spent flip, and separation from opponents; a confirmed reset additionally needs an own
+wheels-first touch and packet flags showing the flip was restored.
 
-Structured telemetry is designed for real-match debugging without per-tick console spam. Each sampled line starts with `STARDUST_JSON ` followed by one JSON object. Decision changes emit immediately; regular frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. The frame is recorded after the action runs and after controller sanitization, so `controller` represents the actual command returned for that frame.
+## References
 
-For defensive diagnosis the payload includes car/ball position and velocity, current action and target, target/car goal-side progress, nearest opponent-to-ball state, role/decision, ETAs, free time, pre-contact pressure, predicted goal crossing, rank/cover/last-back flags, challenge permission, defensive-drive terminal/cruise/hold state, boost, and controller axes/buttons. Non-finite tactical times are omitted instead of emitting invalid JSON. Telemetry disables itself after its first serialization error so diagnostics cannot destabilize gameplay.
+- Samuel Mish, [Rocket League aerial-control notes](https://www.smish.dev/rocket_league/aerial_control/):
+  orientation representation, torque signs and damping used by the attitude controllers.
+- [RocketSim](https://github.com/ZealanL/RocketSim) (MIT): the physics ground truth for every model
+  check and the match simulator.
+- RLBot v5: the [game-data schema](../src/flatbuffers-schema/schema/gamedata.fbs), including the
+  persistent jump/dodge flags, and [match communication](https://wiki.rlbot.org/v5/botmaking/matchcomms/).
+- [RLGym](https://rlgym.org/), Moschopoulos et al. 2023 ([Lucy-SKG](https://arxiv.org/abs/2305.15801)),
+  Pleines et al. 2022 ([sim-to-sim transfer](https://arxiv.org/abs/2205.05061)): learned-policy
+  approaches. They are not used here; the harness above is the evaluation half such work would need.
 
-When sharing a match log for analysis, keep the complete contiguous block of `STARDUST_JSON` lines from roughly 5–10 seconds before the defensive mistake through a few seconds after it. Including the replay or a screen recording alongside the log makes timing/contact interpretation substantially stronger.
+## Limitations
 
-A reset attempt is not selected on every aerial: it requires adequate height, fuel, proximity, low relative speed, an already spent flip, and apparent opponent separation. A confirmed reset additionally needs a recent own touch with the wheels facing the ball and persistent flags showing that the flip was restored. Neither a normal airborne state nor a touch by another player is sufficient. Unsuccessful attempts time out into replanning/recovery.
-
-For an exact A/B baseline, use the original commit in a separate checkout; disabling feature flags does **not** restore the original strategy or packet lifecycle. The original `v5` branch and bot registration identity are not overwritten by this feature branch.
-
-## Control design
-
-The ground carry projects **relative** ball/car motion before placing the ball over a hood target. Advancing only the ball would inject a false position error whenever both objects share a high world velocity. `PossessionControl` makes this invariant directly testable. Throttle follows longitudinal error and ball velocity; lateral error changes the heading. Boost and handbrake are suppressed during the carry.
-
-The aerial carry samples the framework ball prediction at a short horizon and advances the car ballistically to the same time before computing a velocity-matching residual PD correction. Because both future states already include gravity, the horizon residual deliberately does not add gravity feed-forward a second time. A shortest-rotation quaternion error drives pitch/yaw/roll. Boost is gated by nose alignment, fuel, contact closing speed, and hysteresis. This is a **receding-horizon PD controller**, not a full nonlinear MPC optimizer or learned policy.
-
-Strategy uses a conservative ground-intercept race estimate for ownership and pressure. Shot selection prefers a lower-cost ground/jump option over a more expensive aerial when a similar intercept is available. Emergency clears use the **own** goal as an exclusion target; the previous strategy constructed an away-from-opponent-goal target. Expensive searches are separated from per-frame control, but actual p95/p99 tick latency must still be measured on the target hardware with multiple bots.
-
-## Research and what was actually used
-
-**[1] Samuel Mish, Rocket League aerial-control notes.** [Primary source](https://www.smish.dev/rocket_league/aerial_control/). The orientation/angular-velocity representation, torque signs, and damping model inform the independent controller and analytic tests. The implementation here is not copied from RLUtilities and adds no RLUtilities dependency.
-
-**[2] RLGym, Training an Agent.** [Official documentation](https://rlgym.org/Rocket%20League/training_an_agent/). Describes the RocketSim/PPO training workflow. This supports a practical next stage: train individual possession skills in a fast simulator and evaluate them separately. No such training was executed in this PR.
-
-**[3] Moschopoulos et al. (2023), Lucy-SKG: Learning to Play Rocket League Efficiently Using Deep Reinforcement Learning.** [Paper](https://arxiv.org/abs/2305.15801). Its reward-combination, auxiliary-task, and ablation ideas are relevant to a future learned controller. The historical results in that paper are not a statement about current bot rankings, and the Lucy-SKG policy or training algorithm is not included here.
-
-**[4] Pleines et al. (2022), On the Verge of Solving Rocket League using Deep Reinforcement Learning and Sim-to-sim Transfer.** [Paper](https://arxiv.org/abs/2205.05061). Demonstrates transfer of particular goalie/striker behaviors rather than proving general professional match strength. This motivates separate skill tests plus transfer validation, not equating a simulator score with full-game success.
-
-**[5] RLBot v5 protocol.** The authoritative integration contract for this change is the repository's [pinned game-data schema](../src/flatbuffers-schema/schema/gamedata.fbs), especially the persistent jump/dodge flags. [Official match-communication documentation](https://wiki.rlbot.org/v5/botmaking/matchcomms/) explains the teammate coordination transport.
-
-## Promotion criteria: run these in Rocket League before a release
-
-Use ordinary Soccar with the same car hitbox, arena, gravity, boost mutator, bot count, and game/framework versions for both builds. Preserve initial-state fixtures, replay files, random seeds where supported, commit hashes, and feature flags. Mirror every fixture and swap blue/orange sides.
-
-1. **Mechanic fixtures.** Start with stationary/moving hood carries, descending catches, pressured flicks, low/high aerial carries, spent-flip reset approaches, zero-boost recoveries, and inverted landings. Vary initial lateral error, speed, height, boost, and opponent approach. Record carry duration, own-touch continuity, ball-control loss, boost per useful touch, landing orientation, and recovery time. A reset is successful only if packet evidence confirms acquisition **and** a subsequent useful dodge/touch occurs; attempts and acquired-but-wasted resets must be separate counters.
-2. **Match evaluation.** Run paired 1v1, 2v2, and 3v3 matches against the original `v5` and fixed, named reference opponents. Keep a held-out fixture/opponent set. Report wins/draws/losses, goal differential, own goals, double commitments, empty-net concessions, and a confidence interval. Preselect the sample size and acceptance rule rather than stopping after a winning streak. A practical first pass is 100 paired matches per mode, followed by more runs when uncertainty remains large.
-3. **Ablation and deployment.** Compare baseline, runtime/strategy changes, ground-control enabled, aerial-carry enabled, and reset attempts enabled. Do not enable resets by default unless their net contribution is positive and they do not worsen defensive concessions. Measure actual p95/p99 control latency and allocations, including multiple instances in one process. Recheck on the real game even after simulator tests pass.
-
-## A concrete route toward stronger learned mechanics
-
-Keep the deterministic supervisor as a fallback and train **skill-conditioned residual controllers**, not an unvalidated replacement for every decision. A policy could propose bounded corrections to the analytic target acceleration/hood setpoint while the existing availability, resource, and interruption checks remain authoritative. This is a proposed architecture, not an implemented model.
-
-A useful curriculum is: controlled contact -> sustained moving carry -> target-directed carry -> opponent pressure -> flick or aerial finish -> reset acquisition -> useful post-reset continuation. Reset rewards should require a spent-to-restored state transition plus contact evidence, and success should depend on retained possession or a useful follow-up rather than on touching the underside of the ball alone. Randomize contact offsets, boost, latency, opponent starts, and ball velocity; mix harder earlier stages back into later training to avoid forgetting. Evaluate held-out starts and opponents before selecting a checkpoint.
-
-Use RLGym/RocketSim [2] for experience generation, and consider reward-shaping/auxiliary-task ideas from [3]. Export only a policy that has passed the held-out skill and game-transfer checks [4]. Version its observation normalization, action semantics, action-repeat rate, and recurrent-state reset behavior with its weights. Keep controls bounded and inference failure recoverable.
-
-## Known limitations
-
-No in-game match series, RocketSim contact rollout, GPU training, professional-player comparison, or measured multiplier is available from this change. Contact offsets and gains are heuristics requiring hitbox-specific tuning. The reset routine is an experimental acquisition/follow-through attempt, not a guarantee of advanced freestyle chains. Wall/ceiling setups, doubles, musty flicks, and learned opponent modeling are not newly implemented. The new tactical dimensions assume standard Soccar, and opponent ETA is a ground-race heuristic rather than a full opponent aerial predictor. Existing static RedUtils world data is serialized across bot instances, but broader multi-match/process isolation remains a separate architectural task.
+Results are from RocketSim with the simulator's generated arena, 1v1, against Stardust's own
+previous versions. No external reference bot or in-game series is included. Team modes use the same
+decision layer but were not separately measured in this branch.
