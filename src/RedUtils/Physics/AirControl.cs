@@ -21,14 +21,22 @@ namespace RedUtils.Physics
     public static class AirControl
     {
         private const float Margin = 0.9f;
+        /// <summary>Sine of the angle between nose and up hint below which the car's own roll is kept.</summary>
+        private const float RollFreeCone = 0.35f;
 
         /// <summary>Shortest rotation (rotation vector) from the car's attitude to (forward, up), in car-local axes.</summary>
         public static Vec3 RotationError(Vec3 carForward, Vec3 carRight, Vec3 carUp, Vec3 forward, Vec3 up)
         {
             Vec3 f = Unit(forward, carForward);
             Vec3 upHint = Unit(up, Vec3.Up);
-            if (MathF.Abs(f.Dot(upHint)) > 0.98f)
-                upHint = MathF.Abs(f.z) < 0.9f ? Vec3.Up : new Vec3(0, 1, 0);
+            // The roof goes toward the hint square to the nose. As the nose nears the hint that
+            // direction becomes undefined, so the roof the car would have after the shortest swing
+            // of its nose onto the target takes over (no roll is forced), blended in continuously
+            // from RollFreeCone.
+            Vec3 hinted = upHint - f * f.Dot(upHint);
+            float defined = hinted.Length();
+            if (defined < RollFreeCone)
+                upHint = hinted + SwungUp(carForward, carUp, f) * (RollFreeCone - defined);
             Vec3 r = Unit(upHint.Cross(f), carRight);
             Vec3 u = Unit(f.Cross(r), carUp);
             // Rotation matrix of the target expressed in car-local axes (columns = target axes).
@@ -97,6 +105,18 @@ namespace RedUtils.Physics
             input.Pitch = System.Math.Clamp(input.Pitch - RL.PitchDamping * w.y * (1f - MathF.Abs(input.Pitch)) / RL.PitchTorque, -1f, 1f);
             input.Yaw = System.Math.Clamp(input.Yaw + RL.YawDamping * w.z * (1f - MathF.Abs(input.Yaw)) / RL.YawTorque, -1f, 1f);
             return input;
+        }
+
+        /// <summary>The car's roof after the shortest rotation taking its nose onto <paramref name="nose"/>.</summary>
+        private static Vec3 SwungUp(Vec3 carForward, Vec3 carUp, Vec3 nose)
+        {
+            Vec3 axis = carForward.Cross(nose);
+            float sin = axis.Length(), cos = carForward.Dot(nose);
+            // Nose already on target, or reversed: a half pitch turns the roof over.
+            if (sin < 1e-4f) return cos > 0f ? carUp : -carUp;
+            axis /= sin;
+            // Rodrigues' rotation of the roof about the swing axis.
+            return carUp * cos + axis.Cross(carUp) * sin + axis * (axis.Dot(carUp) * (1f - cos));
         }
 
         private static Vec3 Unit(Vec3 v, Vec3 fallback)

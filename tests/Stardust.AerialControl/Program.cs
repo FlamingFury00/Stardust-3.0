@@ -122,5 +122,34 @@ Test("guidance: invalid horizon returns neutral acceleration", () =>
         "zero-time guidance was not neutral");
 });
 
+Test("attitude: a near-vertical nose target keeps the car's roll", () =>
+{
+    // A car facing +y about to climb almost straight up (the needed thrust of a steep aerial). The
+    // shortest turn is a pure pitch; a forced roof direction would demand a half roll mid-takeoff.
+    Vec3 forward = new(0, 1, 0), right = new(-1, 0, 0), up = new(0, 0, 1);
+    foreach (Vec3 target in new[] { new Vec3(0, 0.05f, 1), new Vec3(0.03f, 0.1f, 1), new Vec3(0, -0.05f, 1) })
+    {
+        Vec3 error = RedUtils.Physics.AirControl.RotationError(forward, right, up, target.Normalize(), Vec3.Up);
+        float turn = error.Length();
+        Check(MathF.Abs(error.x) < 0.25f * turn && turn < 2.2f,
+            $"target {target}: rotation {error} (roll {error.x:F2} of {turn:F2} rad) forces a roll or overturns");
+    }
+});
+
+Test("attitude: the roof target is continuous as the nose nears vertical", () =>
+{
+    Vec3 forward = new(0, 1, 0), right = new(-1, 0, 0), up = new(0, 0, 1);
+    Vec3 previous = Vec3.Zero;
+    for (int i = 0; i <= 40; i++)
+    {
+        float pitch = 1.2f + 0.37f * i / 40f;
+        Vec3 target = new(0, MathF.Cos(pitch), MathF.Sin(pitch));
+        Vec3 error = RedUtils.Physics.AirControl.RotationError(forward, right, up, target, Vec3.Up);
+        if (i > 0)
+            Check((error - previous).Length() < 0.1f, $"rotation jumps from {previous} to {error} at pitch {pitch:F3}");
+        previous = error;
+    }
+});
+
 Console.WriteLine($"AERIAL CONTROL RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
