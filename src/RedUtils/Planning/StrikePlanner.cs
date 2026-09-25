@@ -52,10 +52,6 @@ namespace RedUtils.Planning
         public bool Flip;
         /// <summary>Flips: extra distance the dodge's impulse carries the car before contact.</summary>
         public float DodgeGain;
-        /// <summary>The request this plan answers, so the same play can be re-planned as it develops.</summary>
-        public StrikeGoal Goal;
-        public StrikePlanner.Options Options;
-        public float PlannedAt;
 
         /// <summary>Jump strikes: where the run-up starts, on the contact line behind the contact.</summary>
         public Vec3 LineUpPoint => Contact.CarPosition.Flatten() - Contact.Heading * RunUp;
@@ -134,8 +130,6 @@ namespace RedUtils.Planning
             public float AimTolerance = 0.35f;
             /// <summary>Optional diagnostics sink (planner rejections and accepted candidates).</summary>
             public Action<string> Log;
-
-            public Options Copy() => (Options)MemberwiseClone();
         }
 
         public static StrikePlan Plan(Car car, BallPath path, float now, StrikeGoal goal, Options options = null)
@@ -188,26 +182,7 @@ namespace RedUtils.Planning
                     if (best == null || plan.Score > best.Score) best = plan;
                 }
             }
-            if (best != null)
-            {
-                best.Goal = goal;
-                best.Options = options;
-                best.PlannedAt = now;
-            }
             return best;
-        }
-
-        /// <summary>
-        /// Plans the same request as <paramref name="plan"/> again from the current state, within
-        /// its original deadline: the play as it stands now may offer an earlier or better touch.
-        /// </summary>
-        public static StrikePlan Replan(StrikePlan plan, Car car, BallPath path, float now)
-        {
-            if (plan?.Options == null || plan.Goal == null) return null;
-            Options options = plan.Options.Copy();
-            options.MaxTime = plan.PlannedAt + plan.Options.MaxTime - now;
-            if (options.MaxTime <= 0.05f) return null;
-            return Plan(car, path, now, plan.Goal, options);
         }
 
         public const float AerialMinBallHeight = 300f;

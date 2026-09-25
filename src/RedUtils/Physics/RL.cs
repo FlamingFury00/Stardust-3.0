@@ -21,7 +21,6 @@ namespace RedUtils.Physics
         public const float BallMaxAngularSpeed = 6f;
         public const float BallDrag = 0.03f;
         public const float BallRestitution = 0.6f;
-        public const float BallFriction = 0.35f;
 
         public const float CarMaxSpeed = 2300f;
         public const float CarMaxAngularSpeed = 5.5f;
@@ -41,23 +40,12 @@ namespace RedUtils.Physics
 
         public const float JumpImpulse = 875f / 3f;
         public const float JumpHoldAccel = 4375f / 3f;
-        public const float JumpMinTime = 0.025f;
-        public const float JumpMaxTime = 0.2f;
-        public const float JumpPreMinScale = 0.62f;
         public const float DoubleJumpMaxDelay = 1.25f;
 
         public const float DodgeImpulse = 500f;
         public const float DodgeSideMaxScale = 1.9f;
         public const float DodgeBackwardMaxScale = 2.5f;
         public const float DodgeBackwardScaleX = 16f / 15f;
-        public const float DodgeTorqueTime = 0.65f;
-        public const float DodgeMinTorqueTime = 0.41f;
-        public const float DodgeZDampStart = 0.15f;
-        public const float DodgeZDampEnd = 0.21f;
-        public const float DodgeZDampPerTick = 0.35f;
-        public const float DodgePitchLockExtra = 0.3f;
-        public const float DodgeTorquePitch = 224f;
-        public const float DodgeTorqueRoll = 260f;
         public const float DodgeDeadzone = 0.5f;
 
         /// <summary>Air control torque (pitch, yaw, roll) and damping, expressed as angular accelerations.</summary>
@@ -74,16 +62,8 @@ namespace RedUtils.Physics
         public const float BallCarExtraMaxDelta = 4600f;
         public const float CarBallFriction = 2f;
 
-        public const float GoalScoreY = 5124.25f + BallRadius;
-
-        /// <summary>Maximum front-wheel steering angle at a given forward speed.</summary>
-        public static float SteerAngle(float speed) => Curve(MathF.Abs(speed),
-            stackalloc float[] { 0, 500, 1000, 1500, 1750, 3000 },
-            stackalloc float[] { 0.53356f, 0.31930f, 0.18203f, 0.10570f, 0.08507f, 0.03454f });
-
         /// <summary>
-        /// Path curvature (1/radius) at full steer for a given forward speed, measured in game and
-        /// consistent with the steering curve above.
+        /// Path curvature (1/radius) at full steer for a given forward speed, measured in game.
         /// </summary>
         public static float MaxCurvature(float speed) => Curve(MathF.Abs(speed),
             stackalloc float[] { 0, 500, 1000, 1500, 1750, 2300 },

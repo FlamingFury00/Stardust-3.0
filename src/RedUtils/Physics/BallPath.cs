@@ -16,7 +16,6 @@ namespace RedUtils.Physics
         public int Count => slices.Length;
         public BallSlice this[int index] => slices[index];
         public float StartTime => slices.Length > 0 ? slices[0].Time : float.NaN;
-        public float EndTime => slices.Length > 0 ? slices[^1].Time : float.NaN;
 
         /// <summary>Index of the last slice at or before <paramref name="time"/> (0 when earlier than the path).</summary>
         public int IndexAt(float time)

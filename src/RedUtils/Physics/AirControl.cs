@@ -99,19 +99,6 @@ namespace RedUtils.Physics
             return input;
         }
 
-        /// <summary>Rough time to rotate through <paramref name="angle"/> radians from rest.</summary>
-        public static float TurnTime(float angle, Vec3 localAxis)
-        {
-            Vec3 axis = localAxis.Length() > 1e-5f ? localAxis.Normalize() : new Vec3(0, 1, 0);
-            float accel = 1f / (MathF.Abs(axis.x) / RL.RollTorque + MathF.Abs(axis.y) / RL.PitchTorque +
-                MathF.Abs(axis.z) / RL.YawTorque + 1e-6f);
-            float spinUp = RL.CarMaxAngularSpeed / accel;
-            float triangular = 2f * MathF.Sqrt(angle / accel);
-            if (triangular * 0.5f <= spinUp) return triangular;
-            float cruise = (angle - accel * spinUp * spinUp) / RL.CarMaxAngularSpeed;
-            return 2f * spinUp + cruise;
-        }
-
         private static Vec3 Unit(Vec3 v, Vec3 fallback)
         {
             float length = v.Length();

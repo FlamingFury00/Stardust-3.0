@@ -82,23 +82,6 @@ namespace RedUtils.Physics
             return hi;
         }
 
-        /// <summary>
-        /// Hold duration that makes a single jump pass through <paramref name="height"/> at exactly
-        /// <paramref name="time"/> after takeoff while still rising or near the apex, or NaN.
-        /// </summary>
-        public static float HoldForHeightAtTime(float height, float time)
-        {
-            if (time < MinimumTime) return float.NaN;
-            float lo = MinimumTime, hi = MaximumHold;
-            float zLo = Single(time, lo).Height, zHi = Single(time, hi).Height;
-            if (height < zLo - 1f || height > zHi + 1f) return float.NaN;
-            for (int i = 0; i < 20; i++)
-            {
-                float mid = 0.5f * (lo + hi);
-                if (Single(time, mid).Height < height) lo = mid; else hi = mid;
-            }
-            return hi;
-        }
     }
 
     /// <summary>Velocity change of a dodge, exactly as Rocket League applies it (see RocketSim Car.cpp).</summary>

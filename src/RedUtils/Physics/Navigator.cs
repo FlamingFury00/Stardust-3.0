@@ -305,25 +305,6 @@ namespace RedUtils.Physics
             return command;
         }
 
-        /// <summary>
-        /// Speed to hold now so that full acceleration from here covers <paramref name="distance"/> in
-        /// exactly <paramref name="time"/>. Holding back early and accelerating late means the car
-        /// arrives on time and as fast as possible, which is what a strike wants.
-        /// </summary>
-        public static float LatestDepartureSpeed(float distance, float time, float boost)
-        {
-            if (distance <= 0f) return 0f;
-            if (DrivePhysics.TravelTime(distance, RL.CarMaxSpeed, boost) >= time) return RL.CarMaxSpeed;
-            if (DrivePhysics.TravelTime(distance, 0f, boost) <= time) return MathF.Min(distance / time, 400f);
-            float lo = 0f, hi = RL.CarMaxSpeed;
-            for (int i = 0; i < 14; i++)
-            {
-                float mid = 0.5f * (lo + hi);
-                if (DrivePhysics.TravelTime(distance, mid, boost) > time) lo = mid; else hi = mid;
-            }
-            return hi;
-        }
-
         /// <summary>Straight distance plus the heading change the car must still make, as arc length.</summary>
         public static float EstimatePathLength(Vec3 position, Vec3 forward, float speed, in DriveTarget target)
         {
