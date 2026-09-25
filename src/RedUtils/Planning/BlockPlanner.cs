@@ -37,7 +37,7 @@ namespace RedUtils.Planning
         public const float MaxBallHeight = 600f;
         /// <summary>Ball heights up to which a car on its wheels blocks with its body.</summary>
         public const float GroundBlockHeight = 170f;
-        /// <summary>Car origin below the ball centre at contact: the roof (40 uu above the origin) meets the ball with a margin.</summary>
+        /// <summary>Car origin below the ball centre at contact: the roof (32 uu above the origin) meets the ball with a margin.</summary>
         private const float ContactDrop = 110f;
         /// <summary>
         /// A car blocking on its wheels stands this far from the ball's ground track, on its own
@@ -114,21 +114,49 @@ namespace RedUtils.Planning
                 float bound = start.Time + DrivePhysics.TravelTime(MathF.Max(0f, distance - Navigator.ArrivalRadius),
                     MathF.Max(0f, start.Speed), start.Boost);
                 if (bound > available + nearestShortfall) continue;
-                RolloutResult rollout = Navigator.Rollout(start, new DriveTarget(point, Vec3.Zero), available + nearestShortfall);
+                float through = ThroughTime(start, point, jumpTime > 0f ? t - jumpTime : float.PositiveInfinity,
+                    available + nearestShortfall);
                 log?.Invoke(FormattableString.Invariant(
-                    $"  t={t:F2} ball={ball} jump={jumpTime:F2} available={available:F2} arrived={rollout.Arrived} eta={rollout.Time:F2}"));
-                if (!rollout.Arrived) continue;
+                    $"  t={t:F2} ball={ball} jump={jumpTime:F2} available={available:F2} through={through:F2}"));
+                if (!float.IsFinite(through)) continue;
                 var plan = new BlockPlan
                 {
                     Slice = slice, Point = point, JumpTime = jumpTime, DoubleJump = doubleJump,
-                    EarliestArrival = now + rollout.Time,
+                    EarliestArrival = now + through,
                 };
-                if (rollout.Time <= available) return plan;
+                if (through <= available) return plan;
                 plan.Feasible = false;
                 nearest = plan;
-                nearestShortfall = rollout.Time - available;
+                nearestShortfall = through - available;
             }
             return nearest;
+        }
+
+        /// <summary>Largest miss (uu) by which a car coasting after takeoff still counts as passing through the point.</summary>
+        public const float CoastReach = 100f;
+        /// <summary>Slowest takeoff speed that is counted on to carry the car on to the point.</summary>
+        private const float MinimumCoastSpeed = 100f;
+
+        /// <summary>
+        /// Seconds from now at which the car origin passes <paramref name="point"/>, driving flat out
+        /// until <paramref name="takeoff"/> (seconds from now) and then coasting in a straight line
+        /// at its takeoff velocity: a car in the air cannot speed up or turn. Infinity when it does
+        /// not get there by <paramref name="maxTime"/> or its coast misses the point.
+        /// </summary>
+        public static float ThroughTime(GroundState start, Vec3 point, float takeoff, float maxTime)
+        {
+            var drive = new DriveTarget(point, Vec3.Zero);
+            RolloutResult rollout = Navigator.Rollout(start, drive, MathF.Min(takeoff, maxTime));
+            if (rollout.Arrived) return rollout.Time;
+            if (takeoff >= maxTime) return float.PositiveInfinity;
+            GroundState s = rollout.Final;
+            Vec3 heading = s.Forward.Flatten().Normalize();
+            Vec3 to = (point - s.Position).Flatten();
+            float along = to.Dot(heading);
+            if (along <= 0f || s.Speed < MinimumCoastSpeed || (to - heading * along).Length() > CoastReach)
+                return float.PositiveInfinity;
+            float time = s.Time + along / s.Speed;
+            return time <= maxTime ? time : float.PositiveInfinity;
         }
     }
 }

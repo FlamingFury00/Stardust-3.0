@@ -17,6 +17,10 @@ namespace RedUtils
         private const float SettledRadius = 80f;
         /// <summary>Ball ground speed below which the car faces the ball instead of turning across its path.</summary>
         private const float MinimumPathSpeed = 300f;
+        /// <summary>Spare time beyond which the drive through the point paces itself instead of going flat out.</summary>
+        private const float PaceSlack = 0.05f;
+        /// <summary>How far past contact the arrival estimate looks, so lateness still reads as a finite time.</summary>
+        private const float LateHorizon = 0.5f;
         /// <summary>Time a parked car should stand still on the point before its takeoff.</summary>
         private const float ParkSettle = 0.15f;
         /// <summary>Ground speed below which a car on the point counts as parked.</summary>
@@ -118,18 +122,29 @@ namespace RedUtils
                 return;
             }
 
-            // Drive through the point: the car keeps its ground speed in the air, so a steady pace
-            // of path over time crosses the point at contact whenever the jump happens. The steering
-            // law's own speed (it slows for turns) caps the pace.
+            // Drive through the point. The car cannot speed up once it has jumped, so it is timed
+            // as flat out until takeoff and coasting after; while that still arrives early it holds
+            // a steady pace of path over time, which crosses the point at contact whenever the
+            // jump happens. The steering law's own speed (it slows for turns) caps the pace.
             var through = new DriveTarget(Point, Vec3.Zero);
             DriveCommand steer = Navigator.Control(car.Location, car.Forward, speed, car.Boost, car.AngularVelocity.z, through, now);
-            float path = Navigator.EstimatePathLength(car.Location, car.Forward, speed, through);
-            DriveCommand pace = Navigator.HoldSpeed(MathF.Min(path / MathF.Max(remaining, 1f / RL.TickRate), RL.CarMaxSpeed),
-                speed, car.Boost);
+            float arrival = BlockPlanner.ThroughTime(Navigator.StartState(car), Point,
+                Plan.JumpTime > 0f ? takeoffIn : float.PositiveInfinity, remaining + LateHorizon);
             bot.Controller.Steer = steer.Steer;
-            bot.Controller.Throttle = MathF.Min(steer.Throttle, pace.Throttle);
-            bot.Controller.Boost = steer.Boost && pace.Boost;
-            Status = "moving";
+            if (remaining - arrival > PaceSlack)
+            {
+                float path = Navigator.EstimatePathLength(car.Location, car.Forward, speed, through);
+                DriveCommand pace = Navigator.HoldSpeed(MathF.Min(path / MathF.Max(remaining, 1f / RL.TickRate), RL.CarMaxSpeed),
+                    speed, car.Boost);
+                bot.Controller.Throttle = MathF.Min(steer.Throttle, pace.Throttle);
+                bot.Controller.Boost = steer.Boost && pace.Boost;
+                Status = "moving";
+            }
+            else
+            {
+                Apply(bot, steer);
+                Status = "racing";
+            }
         }
 
         /// <summary>Time for a stopping approach to the point, or infinity when it would not settle before <paramref name="within"/>.</summary>
