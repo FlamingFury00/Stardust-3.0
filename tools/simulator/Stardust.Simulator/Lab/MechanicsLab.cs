@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Stardust.Simulator.Match;
+using Stardust.Simulator.Protocol;
 using Stardust.Simulator.Scenarios;
 
 namespace Stardust.Simulator.Lab;
@@ -14,7 +15,11 @@ public static class MechanicsLab
     public static IReadOnlyList<Drill> All() => new Drill[]
     {
         new CarryDrill(), new FlickDrill(), new CatchDrill(), new PickupDrill(), new DribbleDuelDrill(),
+        new AirDribbleDrill(), new FlipResetDrill(),
     };
+
+    /// <summary>Drills run only by name, not as part of "all".</summary>
+    public static IReadOnlyList<Drill> Extra() => new Drill[] { new ActionProfileDrill() };
 
     /// <summary>
     /// Overrides static tuning fields of the bot for an experiment, e.g. "HoodCarry.LaneGain=40".
@@ -36,11 +41,12 @@ public static class MechanicsLab
         }
     }
 
-    public static int Run(string names, int episodes, int seed, string outputDirectory, int traceEpisode = -1)
+    public static int Run(string names, int episodes, int seed, string outputDirectory, int traceEpisode = -1,
+        BotBuild? opponent = null)
     {
         List<Drill> drills = names == "all"
             ? All().ToList()
-            : All().Where(d => names.Split(',').Contains(d.Name)).ToList();
+            : All().Concat(Extra()).Where(d => names.Split(',').Contains(d.Name)).ToList();
         if (drills.Count == 0)
         {
             Console.WriteLine($"No drill matches '{names}'. Drills: {string.Join(", ", All().Select(d => d.Name))}.");
@@ -58,7 +64,7 @@ public static class MechanicsLab
             var agent = new StardustAgent();
             drill.Agent = agent;
             drill.TraceEpisode = traceEpisode;
-            List<Seat> seats = ScenarioRunner.Seats(drill, new Seat(drill.TeamOf(0), "stardust", Agent: agent), null);
+            List<Seat> seats = ScenarioRunner.Seats(drill, new Seat(drill.TeamOf(0), "stardust", Agent: agent), opponent);
             string directory = Path.Combine(outputDirectory, drill.Name);
             using var session = new MatchSession(seats, new MatchOptions { Seed = seed, LogDirectory = directory });
             agent.Attach(session);

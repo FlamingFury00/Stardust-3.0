@@ -78,7 +78,7 @@ Test("possession flight: identical ballistic motion needs no control acceleratio
         $"identical ballistic motion requested {acceleration} ({acceleration.Length():F1} uu/s^2) of control");
 });
 
-Test("ground dribble: pre-contact pressure triggers the flick window", () =>
+Test("ground dribble: a committed challenger triggers the flick", () =>
 {
     Set(typeof(Game), nameof(Game.Time), null, 0f);
     var car = new Car
@@ -91,7 +91,7 @@ Test("ground dribble: pre-contact pressure triggers the flick window", () =>
         Boost = 40,
         IsGrounded = true
     };
-    Vec3 ballLocation = car.Location + car.Forward * 20 + car.Up * 150;
+    Vec3 ballLocation = car.Location + car.Forward * 10 + car.Up * 135;
     SetBall(ballLocation, car.Velocity, new BallPrediction
     {
         Slices = new[] { new BallSlice(0.3f, ballLocation, car.Velocity) }
@@ -100,8 +100,19 @@ Test("ground dribble: pre-contact pressure triggers the flick window", () =>
     var bot = new Stardust("stardust-mechanics-regression");
     Set(typeof(RLBot.Manager.Bot), "Index", bot, 0);
     Set(typeof(RLBot.Manager.Bot), "Team", bot, 0);
+    // An opponent driving head-on at the ball: 600 uu away, closing at 2200 uu/s, contact in ~0.2 s.
+    var challenger = new Car
+    {
+        Index = 1,
+        Team = 1,
+        Location = new Vec3(0, 600, 17),
+        Velocity = new Vec3(0, -1400, 0),
+        Orientation = new Mat3x3(new Vec3(0, -MathF.PI / 2, 0)),
+        IsGrounded = true
+    };
     Cars.AllCars.Clear();
     Cars.AllCars.Add(car);
+    Cars.AllCars.Add(challenger);
     Set(typeof(Stardust), nameof(Stardust.Situation), bot, new TacticalFrame
     {
         MyEta = 0.05f,
@@ -118,7 +129,7 @@ Test("ground dribble: pre-contact pressure triggers the flick window", () =>
     Set(typeof(Game), nameof(Game.Time), null, 0.30f);
     dribble.Run(bot);
     Check(bot.Action is Flick,
-        $"imminent pre-contact pressure did not trigger flick; action is {bot.Action?.GetType().Name ?? "null"}");
+        $"a committed challenger did not trigger a flick; action is {bot.Action?.GetType().Name ?? "null"}");
 });
 
 Console.WriteLine($"MECHANICS PHYSICS RESULT: {passed} passed, {failed} failed.");

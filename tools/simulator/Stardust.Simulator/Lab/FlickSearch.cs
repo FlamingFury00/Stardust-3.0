@@ -89,7 +89,7 @@ public static class FlickSearch
                 programs.Add(new FlickProgram(hold, wait, pitch, yaw, roll, dp, dy, boost));
             }
             List<Scored> coarse = Evaluate(programs, starts);
-            Console.WriteLine($"ball {forward} uu forward: {coarse.Count}/{programs.Count} programs hit from both speeds");
+            Console.WriteLine($"ball {forward} uu forward: {coarse.Count}/{programs.Count} programs connect from 90% of starts");
 
             var refined = new List<Scored>();
             foreach (Func<Scored, bool> family in new Func<Scored, bool>[] { s => s.Elevation < 20, s => s.Elevation is >= 20 and < 35, s => s.Elevation >= 35 })
@@ -120,11 +120,12 @@ public static class FlickSearch
     {
         public float MinGain => Results.Zip(Starts, (r, s) => r.Speed - s.Speed).Min();
         public float MedianGain => (float)Statistics.Quantile(Results.Zip(Starts, (r, s) => (double)(r.Speed - s.Speed)).ToList(), 0.5);
-        public float Spread => Results.Max(r => r.Heading) - Results.Min(r => r.Heading);
-        public float Heading => (float)Statistics.Quantile(Results.Select(r => (double)r.Heading).ToList(), 0.5);
-        public float Elevation => (float)Statistics.Quantile(Results.Select(r => (double)r.Elevation).ToList(), 0.5);
+        private IEnumerable<FlickResult> Hits => Results.Where(r => r.Hit);
+        public float Spread => Hits.Max(r => r.Heading) - Hits.Min(r => r.Heading);
+        public float Heading => (float)Statistics.Quantile(Hits.Select(r => (double)r.Heading).ToList(), 0.5);
+        public float Elevation => (float)Statistics.Quantile(Hits.Select(r => (double)r.Elevation).ToList(), 0.5);
         public float LowGain => (float)Statistics.Quantile(Results.Zip(Starts, (r, s) => (double)(r.Speed - s.Speed)).ToList(), 0.1);
-        public float Score => LowGain - 15f * Spread;
+        public float Score => LowGain - 10f * Spread;
     }
 
     private static List<Scored> Evaluate(IReadOnlyList<FlickProgram> programs, List<Start> starts)
@@ -135,7 +136,8 @@ public static class FlickSearch
             (i, _, local) =>
             {
                 FlickResult[] results = starts.Select(s => Execute(local.Arena, local.Id, s, programs[i])).ToArray();
-                scored[i] = results.All(r => r.Hit) ? new Scored(programs[i], results, starts.ToArray()) : null;
+                // Keep programs that connect from nearly every start; a miss scores as no exit speed.
+                scored[i] = results.Count(r => r.Hit) >= 0.9 * results.Length ? new Scored(programs[i], results, starts.ToArray()) : null;
                 return local;
             },
             local => local.Arena.Dispose());

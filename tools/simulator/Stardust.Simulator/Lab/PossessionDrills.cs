@@ -138,17 +138,16 @@ public sealed class FlickDrill : RoofDrill
     private RsbVec lane, exitVelocity, ballAtExit;
 
     public override string Name => "flick";
-    public override string Description => "Flick a settled carry toward the far goal (power, lob, high): exit speed, aim error, elevation.";
+    public override string Description => "Flick a settled carry toward the far goal (power, lob): exit speed, aim error, elevation.";
     public override IReadOnlyList<Criterion> Criteria => new[]
     {
         Criterion.Rate(0.85), Criterion.Median("power-exit-speed", 2300), Criterion.Median("aim-error-deg", 3, atLeast: false),
-        Criterion.Quantile("aim-error-deg", 0.9, 6, atLeast: false), Criterion.Median("lob-elevation-deg", 28),
-        Criterion.Median("high-elevation-deg", 40),
+        Criterion.Quantile("aim-error-deg", 0.9, 6, atLeast: false), Criterion.Median("lob-elevation-deg", 24),
     };
 
     public override EpisodeSetup Generate(Random r)
     {
-        kind = (FlickKind)r.Next(3);
+        kind = (FlickKind)r.Next(2);
         var car = V(Uniform(r, -1800, 1800), Uniform(r, -1500, 1200), 17.01f);
         float yaw = MathF.Atan2(5120 - car.Y, -car.X) + Uniform(r, -0.3f, 0.3f);
         return CarryStart(car, yaw, Uniform(r, 900, 1500), Uniform(r, 0, 25), Uniform(r, -15, 15),
@@ -233,7 +232,7 @@ public sealed class FlickDrill : RoofDrill
         bool onTarget = exitVelocity.Y > 0 &&
             MathF.Abs(ballAtExit.X + exitVelocity.X / exitVelocity.Y * (5120 - ballAtExit.Y)) < 800;
         trace.Metrics["on-target"] = onTarget ? 1 : 0;
-        return speed >= carSpeedAtFlick + 700 && aimError <= 6;
+        return speed >= carSpeedAtFlick + (kind == FlickKind.Power ? 700 : 350) && aimError <= 6;
     }
 }
 

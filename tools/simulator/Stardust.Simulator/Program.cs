@@ -95,7 +95,8 @@ switch (command)
     case "mechanics-lab":
         if (arguments.Has("set")) Stardust.Simulator.Lab.MechanicsLab.Override(arguments.Require("set"));
         return Stardust.Simulator.Lab.MechanicsLab.Run(arguments.Get("drill", "all"), arguments.GetInt("episodes", 60),
-            arguments.GetInt("seed", 11), arguments.Get("out", "sim-mechanics"), arguments.GetInt("trace", -1));
+            arguments.GetInt("seed", 11), arguments.Get("out", "sim-mechanics"), arguments.GetInt("trace", -1),
+            arguments.Has("opponent") ? BotBuild.FromPath("opponent", arguments.Require("opponent")) : null);
     default:
         Console.WriteLine("""
             Stardust match simulator (RocketSim + RLBot v5 protocol)
@@ -117,8 +118,11 @@ switch (command)
                     [--seed 7] [--parallel N] [--out sim-scenarios]
                     Opponent seats (kickoffs) use --opponent, or mirror the bot under test.
 
-              mechanics-lab [--drill all|carry|flick|catch|pickup|dribble-duel] [--episodes 60] [--seed 11]
-                    [--out sim-mechanics] [--trace <episode>] [--set Type.Field=value,...]
+              mechanics-lab [--drill all|carry|flick|catch|pickup|dribble-duel|air-dribble|flip-reset]
+                    [--episodes 60] [--seed 11]
+                    [--out sim-mechanics] [--trace <episode>] [--set Type.Field=value,...] [--opponent <bot>]
+                    The "profile" drill (by name only) plays one-minute games against --opponent and
+                    reports the time share of each action and decision.
                     Runs the Stardust bot in-process on mechanics drills and checks each drill's pass
                     criteria; exits non-zero if any fails.
 

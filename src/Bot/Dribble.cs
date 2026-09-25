@@ -117,26 +117,23 @@ namespace Bot
                 bot.TheirGoal.Location, bot.OurGoal.Location);
             bool carried = PossessionControl.HasControlledPossession(car, Ball.MainBall);
             stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
-
-            float pressure = bot is Stardust stardust
-                ? MathF.Min(stardust.Situation.OpponentEta, stardust.Situation.PressureTime)
-                : 6f;
-            float opponentDistance = float.PositiveInfinity;
-            foreach (Car opponent in bot.LivingOpponents)
-                opponentDistance = MathF.Min(opponentDistance, opponent.Location.Dist(Ball.Location));
-
-            float requiredStable = pressure < 0.40f || opponentDistance < 450f ? 0.06f : 0.13f;
-            if (carried && Game.Time - stableSince >= requiredStable &&
-                PossessionControl.ShouldFlick(
-                    car, Ball.MainBall, lane, pressure, opponentDistance, bot.OurGoal.Location))
+            if (carried && Game.Time - stableSince >= 0.06f &&
+                PossessionControl.PlanFlick(car, Ball.MainBall, lane, bot.LivingOpponents,
+                    bot.OurGoal.Location, bot.TheirGoal.Location, out Vec3 aim) is FlickKind kind)
             {
-                bot.Action = new Flick(FlickKind.Power, lane, carry);
+                bot.Action = new Flick(kind, aim, carry, urgent: true);
+                bot.Action.Run(bot);
                 return;
             }
 
+            // With a challenger on the way, carry the ball where the flick starts, so it can go at once.
+            PossessionControl.Challenge challenge = PossessionControl.MostImminent(Ball.MainBall, lane, bot.LivingOpponents);
+            carry.SteerToward(car, Ball.MainBall, lane);
+            if (challenge.Committed)
+                carry.Spot = new Vec3(FlickRecipe.For(FlickKind.Power).Spot, carry.Spot.y, 0);
+
             // Stay on the ball under pressure. The pressure response is the flick above, not abandoning
             // possession and driving back into a shadow lane.
-            carry.SteerToward(car, Ball.MainBall, lane);
             bot.Controller = carry.Step(car, Ball.MainBall, bot.DeltaTime, allowBoost: true);
         }
     }

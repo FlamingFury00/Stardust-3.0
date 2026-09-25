@@ -77,6 +77,8 @@ public sealed class DribbleDuelDrill : RoofDrill
     private readonly DefenderAgent defender = new();
     private DefenderMode mode;
     private bool flicked;
+    private int predictedGoal = -1;
+    private float endGap, opponentGap, ballPastDefender;
 
     public override string Name => "dribble-duel";
     public override string Description => "Carry under pressure: flick a committed challenger, keep the ball against shadows and chasers.";
@@ -85,8 +87,8 @@ public sealed class DribbleDuelDrill : RoofDrill
 
     public override IReadOnlyList<Criterion> Criteria => new[]
     {
-        Criterion.Mean("challenge-kept", 0.6), Criterion.Mean("shadow-kept", 0.6), Criterion.Mean("chase-kept", 0.5),
-        Criterion.Mean("shadow-flick", 0.3, atLeast: false),
+        Criterion.Mean("challenge-good", 0.6), Criterion.Mean("shadow-good", 0.7), Criterion.Mean("chase-good", 0.6),
+        Criterion.Mean("shadow-flick", 0.3, atLeast: false), Criterion.Mean("lost", 0.25, atLeast: false),
     };
 
     public override EpisodeSetup Generate(Random r)
@@ -95,7 +97,7 @@ public sealed class DribbleDuelDrill : RoofDrill
         var car = V(Uniform(r, -800, 800), -2000, 17.01f);
         float yaw = MathF.PI / 2 + Uniform(r, -0.15f, 0.15f);
         EpisodeSetup carry = CarryStart(car, yaw, Uniform(r, 900, 1100), Uniform(r, 0, 20), Uniform(r, -10, 10),
-            Uniform(r, 30, 80), 3.5f);
+            Uniform(r, 30, 80), 4f);
         CarSetup opponent = mode switch
         {
             DefenderMode.Challenge => new CarSetup(V(car.X + Uniform(r, -300, 300), car.Y + 1800 + Uniform(r, -200, 200), 17.01f),
@@ -114,27 +116,89 @@ public sealed class DribbleDuelDrill : RoofDrill
         defender.Mode = mode;
         defender.Reset();
         flicked = false;
+        predictedGoal = -1;
         Subject.Director = null;
     }
 
     protected override void Measure(MatchSession session, EpisodeTrace trace)
     {
         flicked |= Subject.Action is global::Bot.Flick;
+        predictedGoal = session.PredictedGoalTeam();
+        RsbVec ball = session.Ball.Physics.Position;
+        endGap = ball.Distance(session.Cars[0].Physics.Position);
+        opponentGap = ball.Distance(session.Cars[1].Physics.Position);
+        ballPastDefender = ball.Y - session.Cars[1].Physics.Position.Y;
     }
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
         string key = mode.ToString().ToLowerInvariant();
+        trace.Notes.Insert(0, key);
         bool goal = trace.GoalTeam == 0;
         bool ours = trace.TouchLog.Count > 0 && trace.TouchLog[^1].Toucher == 0;
-        bool opponentTouched = trace.TouchLog.Any(t => t.Toucher == 1);
-        // Kept: scored, or still ours and upfield of where the carry started.
-        bool kept = goal || (ours && trace.GoalTeam < 0 && trace.FinalBallPosition.Y > setup.BallPosition.Y + 500);
-        trace.Metrics[$"{key}-kept"] = kept ? 1 : 0;
+        // Good: scored, a shot heading into the goal, or the ball still ours and close to our car.
+        bool shot = trace.GoalTeam < 0 && predictedGoal == 1;
+        bool possession = trace.GoalTeam < 0 && ours && endGap < 500;
+        // Beaten: the ball got past the defender (toward its goal) off our touch, and we are nearer to it.
+        bool beaten = trace.GoalTeam < 0 && ours && ballPastDefender > 200 && endGap < opponentGap;
+        bool good = goal || shot || possession || beaten;
+        bool lost = !good && (trace.GoalTeam == 1 || !ours);
+        trace.Metrics[$"{key}-good"] = good ? 1 : 0;
         trace.Metrics[$"{key}-flick"] = flicked ? 1 : 0;
-        trace.Metrics[$"{key}-contested"] = opponentTouched ? 1 : 0;
         trace.Metrics["goal"] = goal ? 1 : 0;
+        trace.Metrics["shot"] = shot ? 1 : 0;
+        trace.Metrics["beaten"] = beaten ? 1 : 0;
+        trace.Metrics["lost"] = lost ? 1 : 0;
         trace.Metrics["conceded"] = trace.GoalTeam == 1 ? 1 : 0;
-        return kept;
+        return good;
+    }
+}
+
+/// <summary>
+/// Plays full kickoff-to-minute games with the complete bot against an opponent build (or idle)
+/// and records the share of time each action runs, and the share of each decision. It shows how
+/// much a mechanic matters in real play, not whether it works.
+/// </summary>
+public sealed class ActionProfileDrill : Drill
+{
+    private readonly Dictionary<string, float> actionTime = new(), decisionTime = new();
+    private float total;
+
+    public override string Name => "profile";
+    public override string Description => "Time share of each action and decision in one-minute games from kickoff.";
+    public override int SeatCount => 2;
+    public override IReadOnlyList<Criterion> Criteria => Array.Empty<Criterion>();
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        float Jitter() => Uniform(r, -10, 10);
+        return new EpisodeSetup(V(0, 0, 93.15f), V(0, 0, 0), new[]
+        {
+            new CarSetup(V(-2048 + Jitter(), -2560 + Jitter(), 17), MathF.PI / 4, V(0, 0, 0), 33.3f),
+            new CarSetup(V(2048 + Jitter(), 2560 + Jitter(), 17), MathF.PI / 4 + MathF.PI, V(0, 0, 0), 33.3f),
+        }, 60f, Kickoff: true);
+    }
+
+    protected override void Start(MatchSession session, EpisodeSetup setup) => Subject.Director = null;
+
+    protected override void Measure(MatchSession session, EpisodeTrace trace)
+    {
+        string action = Subject.Action?.GetType().Name ?? "none";
+        string decision = Subject.Decision ?? "none";
+        actionTime[action] = actionTime.GetValueOrDefault(action) + SimArena.TickTime;
+        decisionTime[decision] = decisionTime.GetValueOrDefault(decision) + SimArena.TickTime;
+        total += SimArena.TickTime;
+    }
+
+    public override bool ShouldStop(MatchSession session, EpisodeTrace trace) => false;
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        // Cumulative shares so far: the last episode's metrics are the totals over all games.
+        foreach (var (key, time) in actionTime) trace.Metrics["action:" + key] = time / total;
+        foreach (var (key, time) in decisionTime.OrderByDescending(d => d.Value).Take(14))
+            trace.Metrics["decision:" + key] = time / total;
+        trace.Metrics["goals-for"] = trace.GoalTeam == 0 ? 1 : 0;
+        return true;
     }
 }

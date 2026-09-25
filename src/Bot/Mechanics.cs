@@ -88,6 +88,8 @@ namespace Bot
         public bool Finished { get; private set; }
         public bool Interruptible => !float.IsFinite(firedAt);
         public float ClaimTime => Game.Time + 0.25f;
+        /// <summary>Whether the regained flip has been confirmed from the packet flags.</summary>
+        public bool Confirmed => float.IsFinite(confirmedAt);
         public FlipReset(JumpState initialState)
         {
             // Capture spent state at selection, even if contact happens before the next control tick.

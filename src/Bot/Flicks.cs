@@ -8,12 +8,10 @@ namespace Bot
     /// <summary>Flick families, by how the ball leaves: flat and hard, or lofted.</summary>
     public enum FlickKind
     {
-        /// <summary>Hard and low (about 21° up): a shot or a pass past a challenger.</summary>
+        /// <summary>Hard and low (about 20° up): a shot, or over a challenger from 600 uu out.</summary>
         Power,
-        /// <summary>Lofted (about 35° up): over a grounded challenger.</summary>
+        /// <summary>Softer and higher (about 26° up): a lob over a challenger close in.</summary>
         Lob,
-        /// <summary>Steep (about 48° up, musty-style back flip): over a challenger who has jumped.</summary>
-        High,
     }
 
     /// <summary>
@@ -33,23 +31,26 @@ namespace Bot
         public readonly float DodgePitch, DodgeYaw;
         /// <summary>Measured exit speed above the carry speed, and heading offset from the car (deg).</summary>
         public readonly float Gain, Heading;
+        /// <summary>How far off the centre line (uu) the ball may sit when the jump starts.</summary>
+        public readonly float Tolerance;
 
-        public FlickRecipe(float spot, float hold, float wait, float tiltPitch, float tiltYaw, float tiltRoll,
+        public FlickRecipe(float spot, float tolerance, float hold, float wait, float tiltPitch, float tiltYaw, float tiltRoll,
             float dodgePitch, float dodgeYaw, float gain, float heading)
         {
-            Spot = spot; Hold = hold; Wait = wait;
+            Spot = spot; Tolerance = tolerance; Hold = hold; Wait = wait;
             TiltPitch = tiltPitch; TiltYaw = tiltYaw; TiltRoll = tiltRoll;
             DodgePitch = dodgePitch; DodgeYaw = dodgeYaw; Gain = gain; Heading = heading;
         }
 
         public static FlickRecipe For(FlickKind kind) => kind switch
         {
-            // Nose down through the jump, then a slightly diagonal front flip: 2240/2560 uu/s from 1000/1400.
-            FlickKind.Power => new FlickRecipe(50f, 0.2f, 1f / 120f, -1f, 0f, 0f, -1f, 0.41f, 1160f, -1.0f),
-            // Nose up and yawing, then a diagonal back flip: 2270/2655 uu/s, 35° up.
-            FlickKind.Lob => new FlickRecipe(30f, 0.2f, 0.014f, 0.71f, 1f, 0.26f, 1f, 0.67f, 1255f, -3.4f),
-            // Nose up with roll, then a shallow diagonal back flip: 2090/2520 uu/s, 48° up.
-            _ => new FlickRecipe(10f, 0.182f, 1f / 120f, 1f, 0.1f, 0.67f, 1f, 0.31f, 1090f, -1.1f),
+            // Nose down and rolling through the jump, then a slightly diagonal front flip. Robust to a
+            // ball 6 uu off its spot: +1040 uu/s median (p10 +1000) from 950-1500 uu/s carries, 20° up.
+            FlickKind.Power => new FlickRecipe(50f, 8f, 0.17f, 1f / 120f, -0.82f, -0.93f, -0.5f, -1f, -0.28f, 1040f, -1.1f),
+            // Nose down, yawing and rolling, then a diagonal front flip from a centred ball: +509 uu/s
+            // median, 26° up. (Back-flip lobs reach 35-48° but need the ball within 3 uu of the centre
+            // line, which a carry does not hold reliably.)
+            _ => new FlickRecipe(10f, 8f, 0.2f, 1f / 120f, -1f, 1f, 1f, -1f, -0.41f, 509f, 0.9f),
         };
     }
 
@@ -63,7 +64,8 @@ namespace Bot
         /// <summary>Heading error (rad) at which the carry counts as turned onto the aim.</summary>
         private const float TurnedTolerance = 0.05f;
         /// <summary>Longest turn onto the aim, then longest centring, before the flick goes anyway.</summary>
-        private const float TurnLimit = 0.7f, CentreLimit = 0.35f;
+        private const float TurnLimit = 0.7f, CentreLimit = 0.35f, UrgentCentreLimit = 0.1f;
+        private readonly float turnLimit, centreLimit;
         private readonly HoodCarry carry;
         private readonly FlickRecipe recipe;
         private readonly float started = Game.Time;
@@ -75,12 +77,15 @@ namespace Bot
         public bool Interruptible => !float.IsFinite(jumped);
         public float ClaimTime => Game.Time + 0.3f;
 
-        public Flick(FlickKind kind, Vec3 aim, HoodCarry carry = null)
+        /// <param name="urgent">Under a challenge: no turn onto the aim, only a brief centring on the spot.</param>
+        public Flick(FlickKind kind, Vec3 aim, HoodCarry carry = null, bool urgent = false)
         {
             Kind = kind;
             recipe = FlickRecipe.For(kind);
             this.aim = aim.Flatten().Normalize();
             this.carry = carry ?? new HoodCarry();
+            turnLimit = urgent ? 0f : TurnLimit;
+            centreLimit = urgent ? UrgentCentreLimit : CentreLimit;
         }
 
         /// <summary>Retargets a flick that has not jumped yet.</summary>
@@ -150,7 +155,7 @@ namespace Bot
             float headingError = MathF.Abs(GroundModel.SignedAngle(car.Forward.Flatten(), target));
             // First turn the carry onto the aim (the ball rides off-centre to steer it), then centre
             // the ball at the recipe's spot: the recipes were found with the ball on the centre line.
-            if (headingError > TurnedTolerance && now - started < TurnLimit)
+            if (headingError > TurnedTolerance && now - started < turnLimit)
             {
                 carry.SteerToward(car, Ball.MainBall, target);
                 carry.Spot = new Vec3(recipe.Spot, carry.Spot.y, 0);
@@ -160,9 +165,9 @@ namespace Bot
                 if (!float.IsFinite(centring)) centring = now;
                 carry.Spot = new Vec3(recipe.Spot, 0, 0);
                 Vec3 relative = car.Local(Ball.Velocity - car.Velocity);
-                bool placed = MathF.Abs(local.x - recipe.Spot) < 8f && MathF.Abs(local.y) < 8f &&
+                bool placed = MathF.Abs(local.x - recipe.Spot) < 8f && MathF.Abs(local.y) < recipe.Tolerance &&
                     relative.Flatten().Length() < 90f && MathF.Abs(relative.z) < 150f;
-                if (placed || now - centring > CentreLimit)
+                if (placed || now - centring > centreLimit)
                 {
                     jumped = now;
                     bot.Controller.Jump = true;

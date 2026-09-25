@@ -13,8 +13,11 @@ namespace Bot
     public static class PossessionControl
     {
         /// <summary>
-        /// Continuous estimate of how securely the ball is balanced over the car. A nearby opponent
-        /// must not erase this state: pressure should normally trigger an outplay, not a retreat.
+        /// How securely the ball is balanced on the roof, 0 to 1. A ball off the roof footprint, well
+        /// above or below its resting height, or moving fast relative to the car scores zero;
+        /// otherwise centring, height and matched motion multiply, so no one of them can make up for
+        /// a ball that is not on the car. A nearby opponent does not change this: pressure calls for
+        /// an outplay, not a retreat.
         /// </summary>
         public static float RoofControlQuality(Car car, Ball ball)
         {
@@ -24,19 +27,22 @@ namespace Bot
                 return 0f;
 
             Vec3 local = car.Local(ball.location - car.Location);
-            if (local.z < 85f || local.z > 245f)
+            Vec3 relative = car.Local(ball.velocity - car.Velocity);
+            float rest = GroundCatch.RoofRest(car);
+            float planar = relative.Flatten().Length();
+            if (MathF.Abs(local.x - RoofCentre) > 75f || MathF.Abs(local.y) > 55f ||
+                local.z < rest - 15f || local.z > rest + 70f || MathF.Abs(relative.z) > 300f || planar > 400f)
                 return 0f;
 
-            Vec3 relativeVelocity = car.Local(ball.velocity - car.Velocity);
-            float planar = MathF.Sqrt(
-                (local.x / 175f) * (local.x / 175f) +
-                (local.y / 125f) * (local.y / 125f));
-
-            float centered = 1f - System.Math.Clamp(planar, 0f, 1f);
-            float height = 1f - System.Math.Clamp(MathF.Abs(local.z - 155f) / 90f, 0f, 1f);
-            float matched = 1f - System.Math.Clamp(relativeVelocity.Length() / 900f, 0f, 1f);
-            return System.Math.Clamp(centered * 0.50f + height * 0.20f + matched * 0.30f, 0f, 1f);
+            float offCentre = MathF.Sqrt(MathF.Pow((local.x - RoofCentre) / 75f, 2) + MathF.Pow(local.y / 55f, 2));
+            float centred = 1f - System.Math.Clamp(offCentre, 0f, 1f);
+            float height = 1f - System.Math.Clamp(MathF.Abs(local.z - rest - 5f) / 60f, 0f, 1f);
+            float matched = 1f - System.Math.Clamp(planar / 400f, 0f, 1f);
+            return System.Math.Clamp(centred * (0.55f + 0.25f * height + 0.2f * matched), 0f, 1f);
         }
+
+        /// <summary>Forward position (car frame) of the middle of the carry's working area on the roof.</summary>
+        private const float RoofCentre = 10f;
 
         public static bool HasControlledPossession(Car car, Ball ball) =>
             RoofControlQuality(car, ball) >= 0.48f;
@@ -184,41 +190,117 @@ namespace Bot
             return lane;
         }
 
-        public static bool ShouldFlick(Car car, Ball ball, Vec3 lane,
-            float pressureTime, float opponentDistance) =>
-            ShouldFlick(car, ball, lane, pressureTime, opponentDistance, Vec3.Zero);
-
-        public static bool ShouldFlick(Car car, Ball ball, Vec3 lane,
-            float pressureTime, float opponentDistance, Vec3 ownGoal)
+        /// <summary>How an opponent is coming at the ball.</summary>
+        public readonly struct Challenge
         {
-            if (!HasControlledPossession(car, ball))
-                return false;
+            public readonly Car Opponent;
+            /// <summary>Seconds until the opponent reaches the ball at its current closing speed (infinite when not closing).</summary>
+            public readonly float Contact;
+            /// <summary>Opponent position relative to the ball along the lane (positive: in front) and across it.</summary>
+            public readonly float Ahead, Across;
+            public readonly bool Airborne;
 
-            Vec3 flatLane = ControlMath.FlatUnit(lane, car.Forward);
-            float speed = car.Velocity.Dot(car.Forward);
-            float alignment = car.Forward.FlatNorm().Dot(flatLane);
-            bool imminent = (float.IsFinite(pressureTime) && pressureTime < 0.85f) ||
-                (float.IsFinite(opponentDistance) && opponentDistance < 720f);
-
-            if (ControlMath.Finite(ownGoal) && MathF.Abs(ownGoal.y) > 1000f)
+            public Challenge(Car opponent, float contact, float ahead, float across, bool airborne)
             {
-                float side = ownGoal.y < 0 ? -1f : 1f;
-                float ownDepth = ball.location.y * side;
-                Vec3 fieldward = new Vec3(0f, -side, 0f);
-
-                // Never flick from the back-wall/goal-line pocket. Carry the ball into a safe
-                // upfield lane first; a lateral flick here can center the ball for the opponent.
-                if (ownDepth > 4200f)
-                    return false;
-
-                if (ownDepth > 3400f &&
-                    (flatLane.Dot(fieldward) < 0.70f ||
-                     car.Forward.FlatNorm().Dot(fieldward) < 0.72f ||
-                     car.Velocity.Dot(fieldward) < 450f))
-                    return false;
+                Opponent = opponent; Contact = contact; Ahead = ahead; Across = across; Airborne = airborne;
             }
 
-            return imminent && speed > 250f && alignment > 0.72f;
+            /// <summary>Coming from in front and fast: committed to the ball, not shadowing it.</summary>
+            public bool Committed => Opponent != null && Ahead > 0f && Contact < 1.2f;
+        }
+
+        /// <summary>The opponent that will reach the ball first at the speed it is closing.</summary>
+        public static Challenge MostImminent(Ball ball, Vec3 lane, IEnumerable<Car> opponents)
+        {
+            Challenge best = new(null, float.PositiveInfinity, 0f, 0f, false);
+            if (opponents == null) return best;
+            Vec3 flatLane = ControlMath.FlatUnit(lane, Vec3.X);
+            Vec3 right = new(-flatLane.y, flatLane.x, 0f);
+            foreach (Car opponent in opponents)
+            {
+                if (opponent == null || opponent.IsDemolished || !ControlMath.Finite(opponent.Location)) continue;
+                Vec3 offset = (opponent.Location - ball.location).Flatten();
+                float distance = offset.Length();
+                if (distance < 1f) continue;
+                Vec3 toBall = offset / -distance;
+                float closing = (opponent.Velocity - ball.velocity).Flatten().Dot(toBall);
+                // Within reach of a car's front and roof counts as contact already.
+                float contact = closing > 150f ? MathF.Max(0f, distance - 180f) / closing : float.PositiveInfinity;
+                if (contact < best.Contact)
+                    best = new Challenge(opponent, contact, offset.Dot(flatLane), offset.Dot(right), !opponent.IsGrounded);
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Which flick to make from a controlled carry, or null to keep carrying. Pros flick when a
+        /// challenger commits (a lob over it in the last half second) or when a hard flick is a shot
+        /// (close enough with the lane to goal open). Against a defender who hangs back, or a chaser
+        /// from behind, the carry goes on: a flick only hands the ball over. Never from the pocket in
+        /// front of the own goal.
+        /// </summary>
+        public static FlickKind? PlanFlick(Car car, Ball ball, Vec3 lane, IEnumerable<Car> opponents,
+            Vec3 ownGoal, Vec3 theirGoal, out Vec3 aim)
+        {
+            aim = ControlMath.FlatUnit(lane, car.Forward);
+            if (!HasControlledPossession(car, ball) || car.Velocity.Dot(car.Forward) < 250f || !Safe(car, ball, aim, ownGoal))
+                return null;
+
+            Challenge challenge = MostImminent(ball, aim, opponents);
+            if (challenge.Committed && challenge.Contact < ChallengeWindow)
+            {
+                // From 500-700 uu the power flick's 20° climb clears the challenger's roof; closer in, lob.
+                return challenge.Contact > 0.25f ? FlickKind.Power : FlickKind.Lob;
+            }
+
+            Vec3 toGoal = (theirGoal - ball.location).Flatten();
+            if (toGoal.Length() < ShotRange)
+            {
+                Vec3 shot = toGoal.Normalize();
+                if (LaneOpen(ball.location, theirGoal, opponents, challenge))
+                {
+                    aim = shot;
+                    return FlickKind.Power;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Time to a committed challenger's contact inside which the flick goes (lob apex clears a car at 600 uu).</summary>
+        public const float ChallengeWindow = 0.45f;
+        /// <summary>Distance to the opponent goal inside which a power flick is a shot.</summary>
+        public const float ShotRange = 3000f;
+
+        /// <summary>No defender near the ball's line to goal who could get there before a 2200 uu/s flick.</summary>
+        private static bool LaneOpen(Vec3 from, Vec3 goal, IEnumerable<Car> opponents, Challenge imminent)
+        {
+            if (opponents == null) return true;
+            Vec3 line = (goal - from).Flatten();
+            float length = line.Length();
+            Vec3 direction = line / MathF.Max(length, 1f);
+            foreach (Car opponent in opponents)
+            {
+                if (opponent == null || opponent.IsDemolished) continue;
+                Vec3 offset = (opponent.Location - from).Flatten();
+                float along = System.Math.Clamp(offset.Dot(direction), 0f, length);
+                float miss = (offset - direction * along).Length();
+                float flight = along / 2200f;
+                // A defender reaching the line within the ball's flight time (at ~1400 uu/s plus a car's reach) blocks it.
+                if (miss < 180f + 1400f * flight) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Never flick from the back-wall pocket, nor across our own box.</summary>
+        private static bool Safe(Car car, Ball ball, Vec3 lane, Vec3 ownGoal)
+        {
+            if (!ControlMath.Finite(ownGoal) || MathF.Abs(ownGoal.y) < 1000f) return true;
+            float side = ownGoal.y < 0 ? -1f : 1f;
+            float ownDepth = ball.location.y * side;
+            Vec3 fieldward = new(0f, -side, 0f);
+            if (ownDepth > 4200f) return false;
+            return ownDepth <= 3400f || (lane.Dot(fieldward) >= 0.70f &&
+                car.Forward.FlatNorm().Dot(fieldward) >= 0.72f && car.Velocity.Dot(fieldward) >= 450f);
         }
 
         /// <summary>Predict RELATIVE motion: equal world velocity must not create a fictitious hood error.</summary>

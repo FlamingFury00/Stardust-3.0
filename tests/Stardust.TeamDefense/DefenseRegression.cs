@@ -534,8 +534,10 @@ internal static class DefenseRegression
                 $"deep defensive possession did not escape upfield: {lane}");
             Check(lane.x < -0.10f,
                 $"deep right-corner possession did not cut inward: {lane}");
-            Check(!PossessionControl.ShouldFlick(
-                    car, ball, lane, 0.20f, 300f, blueGoal),
+            Car challenger = CarAt(1950, -4500, 1, 1);
+            challenger.Velocity = new Vec3(0, -1400, 0);
+            Check(PossessionControl.PlanFlick(car, ball, lane, new[] { challenger }, blueGoal,
+                    new Vec3(0, 5120, 0), out _) == null,
                 "goal-line possession was allowed to flick across the box");
         });
 

@@ -195,7 +195,7 @@ public static class ScenarioRunner
                 state.HasDoubleJumped = c.HasDoubleJumped ? 1 : 0;
                 state.HasFlipped = c.HasFlipped ? 1 : 0;
                 state.AirTime = c.OnGround ? 0 : 0.5f;
-                state.AirTimeSinceJump = c.HasJumped ? 0.3f : 0f;
+                state.AirTimeSinceJump = c.HasJumped ? c.AirTimeSinceJump : 0f;
             }
             state.Boost = c.Boost;
             session.Arena.SetCar(p.CarId, state);

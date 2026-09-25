@@ -7,7 +7,7 @@ namespace Stardust.Simulator.Scenarios;
 /// <summary>Initial state for one car in a fixture.</summary>
 public sealed record CarSetup(RsbVec Position, float Yaw, RsbVec Velocity, float Boost = 50f,
     float Pitch = 0f, float Roll = 0f, RsbVec? AngularVelocity = null, bool OnGround = true,
-    bool HasJumped = false, bool HasDoubleJumped = false, bool HasFlipped = false);
+    bool HasJumped = false, bool HasDoubleJumped = false, bool HasFlipped = false, float AirTimeSinceJump = 0.3f);
 
 /// <summary>A fully specified fixture instance: ball, cars (seat order), and how long it may run.</summary>
 public sealed record EpisodeSetup(RsbVec BallPosition, RsbVec BallVelocity, IReadOnlyList<CarSetup> Cars,
