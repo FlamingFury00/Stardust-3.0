@@ -1,5 +1,7 @@
 using System;
 using RedUtils;
+using RedUtils.Physics;
+using RedUtils.Planning;
 using RedUtils.Math;
 
 namespace Bot
@@ -157,6 +159,9 @@ namespace Bot
                 challengeCommitUntil = float.NegativeInfinity;
             ChallengeCommitted = RawCanChallenge ||
                 (Game.Time < challengeCommitUntil && challengeSafe);
+
+            if (emergency && PlannedSave(threat))
+                return;
 
             if (emergency || counterDanger)
             {
@@ -507,6 +512,60 @@ namespace Bot
         }
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
+
+        /// <summary>Quality a planned clearance needs to be taken ahead of a block.</summary>
+        private const float ComfortableClearQuality = 0.2f;
+        /// <summary>Spare time a planned clearance needs to be taken ahead of a block.</summary>
+        private const float ComfortableClearSlack = 0.1f;
+        /// <summary>Quality below which a planned clearance is worse than the scripted save.</summary>
+        private const float LastResortClearQuality = -0.5f;
+
+        /// <summary>
+        /// Physics-planned save for a ball that will otherwise go in: a comfortable ground or aerial
+        /// clearance, else a block in the ball's path, else any clearance, else a best-effort block.
+        /// Returns false to fall back to the scripted intercept and goal-line save.
+        /// </summary>
+        private bool PlannedSave(float threat)
+        {
+            if (Action is Block running && !running.Finished)
+            {
+                SetDecision("defend / block");
+                return true;
+            }
+            if (Action is IStrike strike && !strike.Finished && strike.Plan.Clear)
+                return true;
+
+            var path = new BallPath(Ball.Prediction.Slices);
+            var clearOptions = new StrikePlanner.Options
+            {
+                MaxTime = MathF.Max(0.1f, threat - 0.05f), TimePenalty = 0.6f, AimTolerance = 0.6f,
+            };
+            StrikePlan clear = StrikePlanner.Plan(Me, path, Game.Time, StrikeGoal.ClearFrom(Team, LivingOpponents), clearOptions);
+            if (clear != null && clear.Quality > ComfortableClearQuality && clear.Slack > ComfortableClearSlack &&
+                clear.Kind is StrikeKind.Ground or StrikeKind.Aerial)
+                return Strike(clear, "defend / planned clear");
+
+            BlockPlan block = BlockPlanner.Plan(Me, path, Game.Time, threat + 0.1f);
+            if (block != null && block.Feasible)
+                return Guard(block, "defend / block");
+            if (clear != null && clear.Quality > LastResortClearQuality)
+                return Strike(clear, "defend / planned clear");
+            return block != null && Guard(block, "defend / desperate block");
+        }
+
+        private bool Strike(StrikePlan plan, string decision)
+        {
+            Action = plan.Kind == StrikeKind.Aerial ? new AerialStrike(plan) : new DrivenStrike(Me, plan);
+            SetDecision(decision);
+            return true;
+        }
+
+        private bool Guard(BlockPlan plan, string decision)
+        {
+            Action = new Block(plan);
+            SetDecision(decision);
+            return true;
+        }
 
         private bool TryBoostDetour(Vec3 destination)
         {
