@@ -125,9 +125,21 @@ A 72-game 1v1 series resolves about ±0.4 goals per game (one standard error), a
 only resolve about ±0.2, so changes are judged on repeated series with fresh seeds rather than one
 lucky run.
 
+**Arena fidelity.** The generated arena is checked too (`physics-check --model arena`): an idle car
+anywhere on the flat floor, the goal mouths sampled densely, must stay at rest height without
+touching anything. An earlier mesh failed it in 74 of 396 placements. Where a corner fillet meets
+the back wall, its vertices were placed where two nearly parallel offset lines crossed, far along
+the wall, and the back-wall floor ramp spread across both goal mouths. A car in front of the goal
+line was lifted up to 45 uu and spun. Every goal-mouth play in earlier runs, for both sides, was on
+that bump. Fixture cars are also placed with nothing of their previous motion left over; a jump
+still held from the last episode used to swallow the first jump of the next, because the game only
+jumps on a press.
+
 ## Results
 
 All figures are 1v1, 180-second games unless noted, goals per game from the candidate's point of view.
+Series before the arena fix (see [Evaluation harness](#evaluation-harness)) played both builds on the
+same flawed goal mouths, so their comparisons stand but not their absolute numbers.
 
 | Candidate | Opponent | Games | Goals per game |
 |---|---|---|---|
@@ -139,6 +151,9 @@ All figures are 1v1, 180-second games unless noted, goals per game from the cand
 | Kickoff fix + planned aerials only | kickoff fix | 72 | +0.14 |
 | Kickoff fix + planned saves only, before the flip-execution fixes | kickoff fix | 72 | −0.06 |
 | Possession rework: carry, catch, first flicks, stale-touch fix | shipped build before it | 96 (300 s) | +0.39 |
+| Possession rework with flick decisions and catch fixes | shipped build before the rework | 96 | **+0.77** (61-35) |
+| Air dribbles and flip resets switched on | the same build | 96 | −0.03 (left off) |
+| Refuelling from pads on defensive routes | the same build | 53 of 96, stopped | −0.58 (not shipped) |
 
 What these showed:
 
@@ -220,6 +235,7 @@ Set environment variables **before starting the bot process**:
 | `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable catch/carry/flick selection |
 | `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
 | `STARDUST_FLIP_RESETS` | disabled | Set `1` to let an aerial carry go for a flip reset (lab: 72 % acquired, 51 % used) |
+| `STARDUST_AIR_DRIBBLES` | disabled | Set `1` to pop a controlled hood carry into an air dribble (lab: 60/60 set up, 1.8 s carried; no match gain, see Results) |
 | `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
@@ -278,6 +294,45 @@ the mechanics before this rework:
 - **Stale touches.** The packet keeps every car's latest touch, however old. After a reset the bot
   used to treat that old touch as new, and as its own if it had made it, which cancelled or misled
   actions right after every kickoff. Touches are now baselined at each reset.
+
+## Saves
+
+The `save` drill plays the scenario suite's 200 seeded shots (1500–3200 uu/s, up to 560 uu high at
+the line, the defender in net, at a post, or rotating back at speed) with the full bot in-process.
+The same seeds were played by the strongest learned bots through the scenario runner:
+
+| | Saved |
+|---|---|
+| Stardust before this work | 58/200 (29 %) |
+| **Stardust now** | **126/200 (63 %)** |
+| Necto | 128/200 (64 %) |
+| Nexto | 144/200 (72 %) |
+
+The drill records, for a ball that gets past untouched, which side of the car it passed and by how
+much. That pointed at each of these in turn:
+
+- **The block's approach** (`Block`). It parked on its point when an unrealistically fast drive said
+  there was time, arrived late, and then jumped from wherever it was. It now parks only when a
+  stopping approach settles before takeoff by its own rollout. Otherwise it drives through the
+  point: flat out while tight, at a steady pace of path over time while early. The car cannot speed
+  up once it has jumped, so the planner and the block both time a jump block as flat out until
+  takeoff and then a straight coast at the takeoff velocity, which must pass within 100 uu of the
+  point.
+- **Where and how the car stands** (`BlockPlanner.BlockPoint`). A jump block is flown open loop
+  for up to a second, so the car centres on the ball's track rather than standing 80 uu off it,
+  and turns its length (118 uu, not its 84 uu width) across the ball's path in the air.
+- **A steep aerial that tumbled** (`AirControl`). Within 11° of vertical the roof target switched
+  to world +y, so a car facing +y climbing steeply was asked for a half roll mid-takeoff. It
+  tumbled without ever boosting, and the planner, which simulates the same law, wrote off those
+  aerials. Near the roof hint, the roof the shortest nose swing leaves now takes over.
+- **Swallowed takeoffs** (`RUBot`). The game jumps only on a press. An action taking over from one
+  that held jump lost its takeoff, so a jump held since the last tick that started nothing is
+  released for one tick.
+
+Still open: shots that no block reaches in time. These are the rotating-back cases, where the car
+races alongside the ball into its own net. Nexto saves 21 of 69 such shots and Stardust 7. Turning
+the car's roof to the ball after a double jump (a 118 × 84 face instead of a graze) was tried; the
+longer flight it needs is rarely on time, and it changed nothing measurable.
 
 ## References
 
