@@ -14,7 +14,7 @@ showed.
 | Scripted mechanics | `src/RedUtils/Actions` | Ground/jump/double-jump/aerial shots, dodges, speed flips, half flips, wavedashes, recovery |
 | Physics core | `src/RedUtils/Physics` | Ground dynamics and navigation, jumps, dodges, flips, air control, aerial guidance, car–ball impacts — each validated against RocketSim |
 | Planning | `src/RedUtils/Planning`, `src/RedUtils/Actions/Strikes` | Strike planner (ground, jump, flip, double-jump, aerial touches aimed with the hit model), block planner, and their executors |
-| Evaluation | `tools/simulator` | RocketSim match simulator speaking the RLBot v5 protocol, scenario fixtures, physics-model checks |
+| Evaluation | `tools/simulator` | RocketSim match simulator speaking the RLBot v5 protocol: paired series, round-robin tournaments against RLBot v5 bot-pack bots, scenario fixtures, physics-model checks, and a mechanics lab that runs the bot in-process on measured drills |
 
 ## The kickoff fix
 
@@ -96,7 +96,25 @@ $SIM scenarios --a <build dir> [--b <build dir>] --suite save --episodes 60
 
 # Physics models against RocketSim
 $SIM physics-check --model all
+
+# Round robin between bot builds and RLBot v5 bot configs (label = path per roster line)
+$SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out tournament
+
+# Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
+# --set Type.Field=value overrides a tuning field for a sweep
+$SIM mechanics-lab --drill all --episodes 60
+$SIM mechanics-lab --drill defense --opponent nexto.toml --episodes 60
+$SIM mechanics-lab --drill profile --opponent <bot> --episodes 12
+
+# Flick programs from settled carries, scored for robustness
+$SIM flick-search --spots 10,30,50
 ```
+
+A bot is a .NET build directory, an entry assembly, or an RLBot v5 bot config (`*.toml`), which the
+simulator starts with its Linux run command. The mechanics lab runs the production `Stardust` class
+in-process on the simulator's packets. A drill can direct which action runs, or let the full bot
+play; every drill states the pass criteria a pro execution should meet, and the command exits
+non-zero when one fails.
 
 Series are paired: every seed is played twice with the builds swapping colours. Kickoff spawns are
 jittered by a few units so deterministic bots do not replay one identical game. Scenario episodes
@@ -109,7 +127,7 @@ lucky run.
 
 ## Results
 
-All figures are 1v1, 180-second games, goals per game from the candidate's point of view.
+All figures are 1v1, 180-second games unless noted, goals per game from the candidate's point of view.
 
 | Candidate | Opponent | Games | Goals per game |
 |---|---|---|---|
@@ -120,6 +138,7 @@ All figures are 1v1, 180-second games, goals per game from the candidate's point
 | **Kickoff fix + planner strikes + planned saves (shipped)** | kickoff fix | 72 + 144 | +0.61, +0.22 (pooled **+0.35 ± 0.22**) |
 | Kickoff fix + planned aerials only | kickoff fix | 72 | +0.14 |
 | Kickoff fix + planned saves only, before the flip-execution fixes | kickoff fix | 72 | −0.06 |
+| Possession rework: carry, catch, first flicks, stale-touch fix | shipped build before it | 96 (300 s) | +0.39 |
 
 What these showed:
 
@@ -143,6 +162,42 @@ What these showed:
   4. a best-effort block;
   5. the scripted intercept and goal-line save.
 
+## Tournament against the RLBot v5 bot pack
+
+The round robin plays paired, side-swapped series (6 games of 180 s per pair) between Stardust, its
+pre-rework build and twelve bots from the [RLBot v5 bot pack](https://github.com/RLBot/botpack),
+under the upstream v5 schema. The learned bots (Nexto, Necto, Element, TensorBot, Wisp, Willo) run
+their own networks in-process, pinned to one thread each. Stardust's series:
+
+| Opponent | Kind | W-L-D | Goals per game |
+|---|---|---|---|
+| Necto | RLGym | 0-6-0 | −9.67 |
+| Element | RLGym | 0-6-0 | −8.67 |
+| Wisp | RLGym + GGL | 0-6-0 | −8.67 |
+| Nexto | RLGym | 0-5-1 | −8.33 |
+| Stardust (pre-rework build) | scripted | 2-4-0 | −2.33 |
+| Willo | RLGym + GGL | 2-4-0 | −0.50 |
+| Party Cannon | scripted, C# | 3-2-1 | +0.50 |
+| Noob Black | scripted, Python | 5-0-1 | +2.33 |
+| TensorBot | learned | 6-0-0 | +4.00 |
+| Beast | scripted, Python | 6-0-0 | +4.50 |
+| Phoenix | scripted, C# | 6-0-0 | +5.00 |
+| Mirror | scripted, Python | 5-0-1 | +6.83 |
+| Bowie Knife | scripted, Python | 6-0-0 | +61.67 (does not function in the simulator) |
+
+Stardust beats the scripted bots and TensorBot, and loses heavily to the strong learned bots. The
+match statistics show where:
+
+- **Speed and boost.** Stardust averages 1063 uu/s against Nexto's 1186 and Wisp's 1515. It collects
+  211 boost per minute against 379–519, and sits at zero boost 39 % of the time.
+- **Passive defence.** Against Nexto, Stardust spends 45 % of its time on the goal-line save and
+  never refuels. In the `defense` drill, 36–52 % of Nexto's attacks from midfield score within 6 s.
+  The trace shows the cause: the solo shadow drives out at an attack coming at speed, is passed,
+  and reverses back to the line.
+- **Kickoffs are not the leak.** Stardust wins the first touch on every kickoff against Nexto and the
+  ball is in Nexto's half three seconds later 70 % of the time. Still, 20 of Nexto's 58 goals come
+  within 10 s of a kickoff, from the play that follows.
+
 ## Build and regressions
 
 Use the .NET 8 SDK. On Linux, make the FlatBuffers generator executable first:
@@ -164,7 +219,7 @@ Set environment variables **before starting the bot process**:
 |---|---|---|
 | `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable catch/carry/flick selection |
 | `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
-| `STARDUST_FLIP_RESETS` | disabled | Set `1` to enable experimental reset attempts within an aerial carry |
+| `STARDUST_FLIP_RESETS` | disabled | Set `1` to let an aerial carry go for a flip reset (lab: 72 % acquired, 51 % used) |
 | `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
@@ -174,16 +229,55 @@ sampled line starts with `STARDUST_JSON ` followed by one JSON object. Decision 
 immediately; frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. Frames are recorded after
 the action runs and after controller sanitization, so `controller` is the command actually returned.
 
-## Possession control
+## Possession mechanics
 
-The ground carry projects **relative** ball/car motion before placing the ball over a hood target;
-advancing only the ball would inject a false position error whenever both share a high world
-velocity. Throttle follows longitudinal error and ball velocity; lateral error changes the heading.
-The aerial carry samples the ball prediction at a short horizon, advances the car ballistically to
-the same time, and applies a velocity-matching correction with a shortest-rotation quaternion
-attitude controller. A reset attempt requires adequate height, fuel, proximity, low relative speed,
-an already spent flip, and separation from opponents; a confirmed reset additionally needs an own
-wheels-first touch and packet flags showing the flip was restored.
+Every possession mechanic has a drill in the mechanics lab (see [Evaluation harness](#evaluation-harness)),
+with the pass criteria a pro execution should meet. Numbers are lab results, shipped build against
+the mechanics before this rework:
+
+| Drill | Before | Now |
+|---|---|---|
+| `carry`: keep a balanced ball 4 s while turning onto the lane | 3/60 held | 141/150 held (120/120 from a rolling start), lane error p90 1.9° |
+| `flick`: power flick from a 900–1500 uu/s carry | median 1528 uu/s, aim error 11° | median 2177 uu/s, aim error 1.3° |
+| `catch`: cushion a dropping ball and settle it for 1 s | 5/60 settled | 18/22 committed catches settle |
+| `dribble-duel`: carry against a defender who challenges, shadows or chases | flicked into 76 % of shadowing defenders | good outcome 58 % vs challengers, 85 % vs shadows, 76 % vs chasers; ball lost 17 % |
+| `flip-reset`: regain the flip on a high ball and use it | 8 % acquired, never used | 72 % acquired, 100 % of those confirmed, 51 % used on the ball |
+| `air-dribble`: keep a nose-carried ball in reach in the air | — | median 2.6 s carried at 1390 uu/s toward goal |
+
+- **Hood carry** (`HoodCarry`). The ball's velocity is the slow state of a carry: the roof can only
+  nudge it through friction, so the car stays underneath. Position and velocity errors of the ball
+  relative to a spot just over the car origin become forward and sideways car accelerations. The
+  forward part is realised by `SpeedActuator`, which dithers throttle, coasting (−525 uu/s²), braking
+  (any reverse throttle is a full −3500 uu/s²) and boost (0.1 s minimum) tick by tick so the average
+  matches the request. The spot sits over the origin because Rocket League's extra hit impulse points
+  from the origin to the ball: a ball carried further forward is pushed away on every contact.
+  Moving the spot sideways uses that same impulse to steer the ball onto the lane.
+- **Catch** (`GroundCatch`). Commits to one descent to roof height and re-reads it every tick,
+  arrives through the navigator's timed, directed arrival at the ball's speed, and hands the settled
+  ball straight to the carry. The heading tolerance comes from the ball's horizontal speed, since a
+  heading error *a* costs 2·v·sin(*a*/2) of sideways slip.
+- **Flicks** (`Flick`). Recipes come from `flick-search`, which runs open-loop jump, tilt and dodge
+  programs in RocketSim from carries settled by the bot's own controller. It scores each program on
+  its 10th-percentile gain when the ball sits up to 6 uu off its spot. The flick turns the carry
+  onto the aim, centres the ball on the recipe's spot, then runs the program with no flip cancel.
+  The power flick (ball 50 uu forward, nose-down rolling jump, diagonal front flip) adds 1000 uu/s at
+  p10 and leaves 20° up. Back-flip lobs reach 35–48° but only with the ball within 3 uu of the
+  centre line, which a carry does not hold, so they are not used.
+- **When to flick** (`PossessionControl.PlanFlick`). The dribbler reads the most imminent opponent:
+  its time to the ball at its closing speed and where it comes from. It flicks when a challenger
+  commits from the front: a power flick 0.25–0.45 s before contact (the 20° climb clears the
+  challenger's roof), a lob closer in. It also flicks at the goal from within 3000 uu when no
+  defender can reach the line. It keeps carrying against a defender who hangs back or a chaser from
+  behind, with the ball already on the flick's spot once a challenger is on the way.
+- **Flip resets** (`FlipReset`, behind `STARDUST_FLIP_RESETS=1`). In RocketSim the wheels are
+  suspension rays that also land on the ball. Three touching wheels count as grounded, which clears
+  the used jump and flip, and they leave no ball touch. So the reset is confirmed from the packet
+  flags alone: the flip was unavailable while airborne, then jump, double jump and dodge are all
+  cleared high up. The approach closes in nose first and presents the underside for the last
+  0.45 s. The regained flip is then fired into the ball from behind it along the goal line.
+- **Stale touches.** The packet keeps every car's latest touch, however old. After a reset the bot
+  used to treat that old touch as new, and as its own if it had made it, which cancelled or misled
+  actions right after every kickoff. Touches are now baselined at each reset.
 
 ## References
 
@@ -199,6 +293,8 @@ wheels-first touch and packet flags showing the flip was restored.
 
 ## Limitations
 
-Results are from RocketSim with the simulator's generated arena, 1v1, against Stardust's own
-previous versions. No external reference bot or in-game series is included. Team modes use the same
-decision layer but were not separately measured in this branch.
+Results are from RocketSim with the simulator's generated arena, 1v1. The external reference is
+the RLBot v5 bot pack in the same simulator; no in-game series is included. Team modes use the same
+decision layer but were not separately measured in this branch. The strong learned bots remain far
+ahead: closing that gap is a matter of speed, boost economy and defensive decisions, not of the
+possession mechanics measured above.
