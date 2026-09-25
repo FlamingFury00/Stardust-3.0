@@ -289,10 +289,14 @@ namespace Bot
                     return;
                 }
 
-                bool retain = Action is GroundCatch
-                    ? Situation.TeamRank == 0 && (canChallenge || Situation.FreeTime >= -0.12f)
-                    : PossessionControl.ShouldRetainPossession(
-                        Situation, Me, Ball.MainBall, OurGoal.Location);
+                // A flip reset flies upside down under the ball, which no roof or nose possession
+                // test recognises: keep it until it finishes unless an opponent is about to arrive.
+                bool retain = Action switch
+                {
+                    GroundCatch => Situation.TeamRank == 0 && (canChallenge || Situation.FreeTime >= -0.12f),
+                    FlipReset => Situation.OpponentEta > 0.6f,
+                    _ => PossessionControl.ShouldRetainPossession(Situation, Me, Ball.MainBall, OurGoal.Location),
+                };
 
                 if (retain && !possession.Finished)
                     return;

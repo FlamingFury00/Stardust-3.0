@@ -92,6 +92,8 @@ public sealed class FlipResetDrill : Drill
     private bool singleJump, onBall, acquired, confirmed, dodged, used;
     private int chassisTouches;
     private float acquiredAt, dodgedAt;
+    private RsbVec shotVelocity;
+    private bool haveShot;
     private readonly ContactClock contacts = new();
 
     public override string Name => "flip-reset";
@@ -118,7 +120,7 @@ public sealed class FlipResetDrill : Drill
 
     protected override void Start(MatchSession session, EpisodeSetup setup)
     {
-        onBall = acquired = confirmed = dodged = used = false;
+        onBall = acquired = confirmed = dodged = used = haveShot = false;
         chassisTouches = 0;
         acquiredAt = dodgedAt = float.NaN;
         contacts.Reset(session.Cars[0]);
@@ -153,6 +155,11 @@ public sealed class FlipResetDrill : Drill
             dodgedAt = trace.Elapsed;
         }
         if (dodged && contact && trace.Elapsed - dodgedAt < 0.35f) used = true;
+        if (used && !contact && contacts.SinceContact == 2 && !haveShot)
+        {
+            shotVelocity = session.Ball.Physics.Velocity;
+            haveShot = true;
+        }
     }
 
     public override bool ShouldStop(MatchSession session, EpisodeTrace trace) =>
@@ -167,6 +174,12 @@ public sealed class FlipResetDrill : Drill
         trace.Metrics["used-when-acquired"] = acquired ? (used ? 1 : 0) : double.NaN;
         trace.Metrics["chassis-touches-before"] = chassisTouches;
         trace.Metrics["reset-s"] = acquiredAt;
+        if (haveShot)
+        {
+            trace.Metrics["shot-speed"] = shotVelocity.Length;
+            // Speed toward the opponent goal (+y), the part of the shot that attacks.
+            trace.Metrics["shot-goalward"] = shotVelocity.Y;
+        }
         return acquired && used;
     }
 }

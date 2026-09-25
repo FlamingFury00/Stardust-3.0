@@ -67,30 +67,28 @@ Test("jump: packet adapter repairs the legacy car flags", () =>
     JumpState.Apply(car, new PlayerInfoT { AirState = AirState.InAir, HasJumped = true, HasDodged = true });
     Check(car.HasJumped && car.HasDoubleJumped);
 });
-Test("reset: spent state plus wheel touch plus restored flags confirms", () =>
+Test("reset: spent flip then restored flags high up confirms, without any touch", () =>
 {
     var evidence = new ResetEvidence();
-    Check(!evidence.Observe(Jump(true, true), false, false, 650, 1));
-    Check(evidence.Observe(Jump(), true, true, 650, 1.1f));
+    Check(!evidence.Observe(Jump(true, true), 650));
+    Check(evidence.Observe(Jump(), 650));
+});
+Test("reset: a single jump whose flip timed out counts as spent", () =>
+{
+    var evidence = new ResetEvidence();
+    Check(!evidence.Observe(Jump(true, timeout: -1), 650));
+    Check(evidence.Observe(Jump(), 700));
 });
 Test("reset: free fall alone is not evidence of acquisition", () =>
 {
     var evidence = new ResetEvidence();
-    Check(!evidence.Observe(Jump(), true, true, 650, 1));
+    Check(!evidence.Observe(Jump(), 650));
 });
-Test("reset: other-player touch and incorrect wheel orientation fail", () =>
+Test("reset: cleared flags near the floor are a landing", () =>
 {
     var evidence = new ResetEvidence();
-    evidence.Observe(Jump(true, true), false, false, 650, 1);
-    Check(!evidence.Observe(Jump(), false, true, 650, 1.1f));
-    Check(!evidence.Observe(Jump(), true, false, 650, 1.2f));
-});
-Test("reset: stale contact and floor contact fail", () =>
-{
-    var evidence = new ResetEvidence();
-    evidence.Observe(Jump(true, true), true, true, 650, 1);
-    Check(!evidence.Observe(Jump(), false, true, 650, 1.4f));
-    Check(!evidence.Observe(Jump(), true, true, 17, 1.5f));
+    evidence.Observe(Jump(true, true), 650);
+    Check(!evidence.Observe(Jump(), 40));
 });
 Test("lifecycle: own carry touch survives, opponent touch cancels", () =>
 {
@@ -342,6 +340,7 @@ Test("reset: entry requires an already spent flip", () =>
 {
     var car = AirCar(); var ball = new Ball(new Vec3(80, 0, 650), car.Velocity);
     Check(FlipReset.CanStart(car, ball, Jump(true, true)));
+    Check(FlipReset.CanStart(car, ball, Jump(true, timeout: -1)), "a timed-out single jump has no flip left");
     Check(!FlipReset.CanStart(car, ball, Jump()));
     car.Boost = 5; Check(!FlipReset.CanStart(car, ball, Jump(true, true)));
 });
