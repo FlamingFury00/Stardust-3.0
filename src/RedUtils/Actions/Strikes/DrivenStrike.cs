@@ -203,12 +203,14 @@ namespace RedUtils
             float alignment = car.Forward.Flatten().Normalize().Dot(heading);
             if (!runningUp && alignment > 0.95f && MathF.Abs(across) < MathF.Max(LineUpTolerance, LineConvergence * along))
             {
-                // On the line: run up from here. An early car joins the line further back and runs
-                // up slower rather than braking to wait at the line-up point.
+                // On the line: run up from here. An early car may join the line further back and run
+                // up a little slower rather than brake to wait at the line-up point, as long as the
+                // touch keeps close to its planned pace and the run-up can really be driven.
                 float needed = RunUpSpeed(car, remaining);
-                float reachable = car.Boost > RunUpBoostFloor ? 0.95f * RL.CarMaxSpeed : 0.97f * RL.ThrottleMaxSpeed;
+                float fuel = RunUpFuel(car);
+                float reachable = fuel > RunUpBoostFloor ? 0.95f * RL.CarMaxSpeed : 0.97f * RL.ThrottleMaxSpeed;
                 runningUp = along <= Plan.RunUp + LineUpTolerance ||
-                    (needed <= reachable && needed >= EarlyRunUpShare * Plan.LineSpeed);
+                    (needed >= EarlyRunUpShare * Plan.LineSpeed && needed <= reachable && RunUpMakeable(car, remaining, forwardSpeed));
             }
 
             if (!runningUp)
@@ -242,13 +244,20 @@ namespace RedUtils
             DriveCommand steer = Navigator.Control(car.Location, car.Forward, forwardSpeed, car.Boost,
                 car.AngularVelocity.z, line, now);
             float desired = RunUpSpeed(car, remaining);
-            DriveCommand speed = Navigator.HoldSpeed(desired, forwardSpeed, car.Boost);
+            DriveCommand speed = Navigator.HoldSpeed(desired, forwardSpeed, RunUpFuel(car));
             bot.Controller.Steer = steer.Steer;
             bot.Controller.Throttle = speed.Throttle;
             bot.Controller.Boost = speed.Boost && MathF.Abs(steer.Steer) < 0.3f;
             bot.Controller.Handbrake = false;
             Diagnostics?.Invoke(FormattableString.Invariant(
                 $"strike tick t={now:F3} {Kind} run-up remaining={remaining:F3} along={along:F0} across={across:F0} speed={forwardSpeed:F0} desired={desired:F0} align={alignment:F3}"));
+
+            if (remaining > Plan.JumpTime + 0.1f && now >= nextResolve - ResolveInterval * 0.5f &&
+                !RunUpMakeable(car, remaining + LateTolerance, forwardSpeed))
+            {
+                Finish(FormattableString.Invariant($"late run-up speed={forwardSpeed:F0} desired={desired:F0} remaining={remaining:F2}"));
+                return;
+            }
 
             if (remaining <= Plan.JumpTime + 0.5f / RL.TickRate)
             {
@@ -260,7 +269,9 @@ namespace RedUtils
                 float missAlong = miss.Dot(heading);
                 float missAcross = miss.Dot(right);
                 float reach = AirBoostReach(car, remaining);
-                if (alignment > 0.97f && MathF.Abs(missAcross) < TakeoffTolerance && missAlong < TakeoffTolerance &&
+                // A flip needs its minimum jump, a released tick and the dodge lead before contact.
+                bool flipFits = !Plan.Flip || remaining >= FlipModel.MinimumJumpTime - HalfTick;
+                if (flipFits && alignment > 0.97f && MathF.Abs(missAcross) < TakeoffTolerance && missAlong < TakeoffTolerance &&
                     missAlong > -(reach + TakeoffTolerance))
                 {
                     jumpStarted = now;
@@ -268,7 +279,7 @@ namespace RedUtils
                     Fly(bot, car, now);
                     return;
                 }
-                if (remaining < Plan.JumpTime - 0.06f)
+                if (remaining < Plan.JumpTime - 0.06f || !flipFits)
                     Finish(FormattableString.Invariant($"missed takeoff along={missAlong:F0} across={missAcross:F0} reach={reach:F0} speed={forwardSpeed:F0} line={Plan.LineSpeed:F0} align={alignment:F3}"));
             }
         }
@@ -287,6 +298,16 @@ namespace RedUtils
             float fuelTime = car.Boost / RL.BoostPerSecond;
             float burn = MathF.Max(0f, MathF.Min(time, fuelTime));
             return 0.8f * 0.5f * RL.BoostAccelAir * burn * burn;
+        }
+
+        /// <summary>Boost the run-up may spend: none when the strike was planned without boost.</summary>
+        private float RunUpFuel(Car car) => Plan.UsesBoost ? car.Boost : 0f;
+
+        /// <summary>Whether flat-out driving from here still covers the run-up to the contact within <paramref name="time"/>.</summary>
+        private bool RunUpMakeable(Car car, float time, float forwardSpeed)
+        {
+            float along = (TargetLocation - car.Location).Flatten().Dot(heading) - Plan.DodgeGain;
+            return DrivePhysics.TravelTime(MathF.Max(0f, along), MathF.Max(0f, forwardSpeed), RunUpFuel(car)) <= time;
         }
 
         /// <summary>Constant run-up speed that meets the contact exactly on time from where the car is.</summary>
