@@ -71,7 +71,9 @@ public abstract class Drill : Scenario
                 $"t={trace.Elapsed:F3} speed={car.Physics.Velocity.Dot(car.Physics.Forward),6:F0} ground={car.IsOnGround} " +
                 $"ball=({local.X,5:F0},{local.Y,5:F0},{local.Z,5:F0}) rel=({relative.Dot(car.Physics.Forward),5:F0},{relative.Dot(car.Physics.Right),5:F0},{relative.Dot(car.Physics.Up),5:F0}) " +
                 $"thr={c.Throttle,5:F2} steer={c.Steer,5:F2} boost={(c.Boost ? 1 : 0)} jump={(c.Jump ? 1 : 0)} p/y/r=({c.Pitch:F1},{c.Yaw:F1},{c.Roll:F1}) " +
-                $"fuel={car.Boost:F0} action={Subject.Action?.GetType().Name ?? "-"}"));
+                $"fuel={car.Boost:F0} action={Subject.Action?.GetType().Name ?? "-"} decision={Subject.Decision} " +
+                $"world car={car.Physics.Position} ball={session.Ball.Physics.Position}") +
+                (session.Cars.Length > 1 ? $" other={session.Cars[1].Physics.Position} v={session.Cars[1].Physics.Velocity.Length:F0}" : ""));
         }
         Measure(session, trace);
     }

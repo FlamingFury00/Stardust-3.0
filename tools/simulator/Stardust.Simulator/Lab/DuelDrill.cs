@@ -162,7 +162,7 @@ public sealed class DribbleDuelDrill : RoofDrill
 public sealed class ActionProfileDrill : Drill
 {
     private readonly Dictionary<string, float> actionTime = new(), decisionTime = new();
-    private float total;
+    private float total, zeroBoost, boostSum, collected, lastBoost = float.NaN, speedSum;
 
     public override string Name => "profile";
     public override string Description => "Time share of each action and decision in one-minute games from kickoff.";
@@ -188,6 +188,12 @@ public sealed class ActionProfileDrill : Drill
         actionTime[action] = actionTime.GetValueOrDefault(action) + SimArena.TickTime;
         decisionTime[decision] = decisionTime.GetValueOrDefault(decision) + SimArena.TickTime;
         total += SimArena.TickTime;
+        RsbCarState car = session.Cars[0];
+        if (car.Boost < 0.5f) zeroBoost += SimArena.TickTime;
+        boostSum += car.Boost * SimArena.TickTime;
+        speedSum += car.Physics.Velocity.Length * SimArena.TickTime;
+        if (float.IsFinite(lastBoost) && car.Boost > lastBoost + 0.5f) collected += car.Boost - lastBoost;
+        lastBoost = car.Boost;
     }
 
     public override bool ShouldStop(MatchSession session, EpisodeTrace trace) => false;
@@ -199,6 +205,80 @@ public sealed class ActionProfileDrill : Drill
         foreach (var (key, time) in decisionTime.OrderByDescending(d => d.Value).Take(14))
             trace.Metrics["decision:" + key] = time / total;
         trace.Metrics["goals-for"] = trace.GoalTeam == 0 ? 1 : 0;
+        trace.Metrics["zero-boost-share"] = zeroBoost / total;
+        trace.Metrics["mean-boost"] = boostSum / total;
+        trace.Metrics["mean-speed"] = speedSum / total;
+        trace.Metrics["boost-collected-per-min"] = collected / total * 60f;
+        lastBoost = float.NaN;
         return true;
+    }
+}
+
+/// <summary>
+/// Defending an attack, full bot, against an opponent build (--opponent; Nexto is the benchmark).
+/// The opponent starts with the ball near midfield, driving at our goal; Stardust starts goal-side
+/// in net, at the edge of the box, or caught upfield. Six seconds: did the attack score, and did the
+/// defence clear the ball into the opponent half, and how much of it was spent on the goal line.
+/// </summary>
+public sealed class DefenseDrill : Drill
+{
+    private float lineTime, total;
+    private int start;
+
+    public override string Name => "defense";
+    public override string Description => "Defend an attack from midfield by the opponent build.";
+    public override int SeatCount => 2;
+    public override IReadOnlyList<Criterion> Criteria => new[]
+    {
+        Criterion.Mean("conceded", 0.25, atLeast: false), Criterion.Mean("cleared", 0.5),
+    };
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        // The attacker (orange) carries the ball from around midfield toward the blue goal (-y).
+        float x = Uniform(r, -1800, 1800);
+        var attacker = V(x, Uniform(r, 300, 1200), 17);
+        float attackYaw = -MathF.PI / 2 + Uniform(r, -0.35f, 0.35f);
+        float speed = Uniform(r, 600, 1300);
+        RsbVec heading = Heading(attackYaw);
+        var ball = attacker + heading * 180 + V(0, 0, 76);
+        start = r.Next(3);
+        CarSetup defender = start switch
+        {
+            0 => new CarSetup(V(Uniform(r, -300, 300), -5000, 17), MathF.PI / 2, V(0, 0, 0), Uniform(r, 20, 100)),
+            1 => new CarSetup(V(Uniform(r, -1200, 1200), -3300, 17), MathF.PI / 2 + Uniform(r, -0.5f, 0.5f), V(0, 0, 0), Uniform(r, 20, 100)),
+            _ => new CarSetup(V(x + Uniform(r, -1500, 1500), Uniform(r, -600, 400), 17), -MathF.PI / 2 + Uniform(r, -0.6f, 0.6f),
+                Heading(-MathF.PI / 2) * Uniform(r, 500, 1400), Uniform(r, 0, 60)),
+        };
+        return new EpisodeSetup(ball, heading * speed, new[]
+        {
+            defender, new CarSetup(attacker, attackYaw, heading * speed, Uniform(r, 30, 100)),
+        }, 6f);
+    }
+
+    protected override void Start(MatchSession session, EpisodeSetup setup)
+    {
+        Subject.Director = null;
+        lineTime = total = 0;
+    }
+
+    protected override void Measure(MatchSession session, EpisodeTrace trace)
+    {
+        total += SimArena.TickTime;
+        if (Subject.Action is global::Bot.GoalLineSave) lineTime += SimArena.TickTime;
+    }
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        string key = new[] { "in-net", "box", "upfield" }[start];
+        trace.Notes.Insert(0, key);
+        bool conceded = trace.GoalTeam == 1;
+        bool cleared = trace.GoalTeam < 0 && trace.FinalBallPosition.Y > 0;
+        trace.Metrics["conceded"] = conceded ? 1 : 0;
+        trace.Metrics[$"{key}-conceded"] = conceded ? 1 : 0;
+        trace.Metrics["cleared"] = cleared ? 1 : 0;
+        trace.Metrics["scored"] = trace.GoalTeam == 0 ? 1 : 0;
+        trace.Metrics["goal-line-share"] = lineTime / MathF.Max(total, 1e-3f);
+        return !conceded;
     }
 }
