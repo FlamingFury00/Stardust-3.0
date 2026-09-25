@@ -434,6 +434,27 @@ Test("block: a jump block centres on the ball's track, a ground block stands off
     Check((ground - ball.Flatten()).Dot(car - ball) > 0, "ground block point is not on the car's side");
 });
 
+Test("tuning: overrides a static field by name and refuses unknown or constant ones", () =>
+{
+    float saved = Kickoff.DodgeJump;
+    try
+    {
+        var applied = Tuning.Apply(" Kickoff.DodgeJump = 0.5 ", typeof(Kickoff).Assembly);
+        Near(Kickoff.DodgeJump, 0.5f, 0);
+        Check(applied.Count == 1 && applied[0] == "Kickoff.DodgeJump = 0.5", $"unexpected report {string.Join(";", applied)}");
+        Check(Tuning.Apply(null, typeof(Kickoff).Assembly).Count == 0, "no assignments must change nothing");
+        bool Throws(string assignment)
+        {
+            try { Tuning.Apply(assignment, typeof(Kickoff).Assembly); return false; }
+            catch (ArgumentException) { return true; }
+        }
+        Check(Throws("Kickoff.Missing=1"), "unknown field was accepted");
+        Check(Throws("SpeedFlip.Duration=1"), "a constant was accepted");
+        Check(Throws("Kickoff.DodgeJump"), "an assignment without a value was accepted");
+    }
+    finally { Kickoff.DodgeJump = saved; }
+});
+
 Console.WriteLine($"RESULT {passed} passed, {failed} failed; no in-game performance claim.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
 

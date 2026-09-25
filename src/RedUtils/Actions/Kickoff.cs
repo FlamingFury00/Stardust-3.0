@@ -6,6 +6,11 @@ namespace RedUtils
 	/// <summary>A kickoff action, which performs a speedflip kickoff</summary>
 	public class Kickoff : IAction
 	{
+		/// <summary>Distance from the ball at which the final dodge starts; zero drives through without one.</summary>
+		public static float DodgeDistance = 800f;
+		/// <summary>How long the final dodge holds jump before flipping.</summary>
+		public static float DodgeJump = 0.18f;
+
 		/// <summary>Kickoffs aren't interruptible, so this will always be false</summary>
 		public bool Interruptible
 		{ get; set; }
@@ -71,10 +76,10 @@ namespace RedUtils
 					_speedFlipped = true;
 					_speedFlip = new SpeedFlip(bot.Me.Location.FlatDirection(Ball.Location - Ball.Location.Direction(bot.TheirGoal.Location) * (_isDiagonal ? 250 : -1000)));
 				}
-				else if (bot.Me.Location.Dist(Ball.Location) < 800 && _timeOnGround > 0.1f)
+				else if (bot.Me.Location.Dist(Ball.Location) < DodgeDistance && _timeOnGround > 0.1f)
 				{
 					// When we are close enough to the ball, dodge into it
-					bot.Action = new Dodge(Ball.Location.Direction(bot.TheirGoal.Location), 0.18f);
+					bot.Action = new Dodge(Ball.Location.Direction(bot.TheirGoal.Location), DodgeJump);
 				}
 			}
 		}

@@ -285,6 +285,17 @@ namespace Bot
             return new Vec3(target.x, target.y, 17);
         }
 
+        /// <summary>How late (s) a goal-side solo defender may be and still meet an attacker about to touch near our box.</summary>
+        public static float SoloTieDeficit = 0.22f;
+        /// <summary>Race margin (s) a solo challenge needs under pressure; negative allows arriving that much later.</summary>
+        public static float SoloPressureMargin = -0.10f;
+        /// <summary>Race margin (s) a solo challenge needs without pressure.</summary>
+        public static float SoloMargin = 0.05f;
+        /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, within 3300 uu of our goal.</summary>
+        public static float ContinueDeficitNear = 0.38f;
+        /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, further out.</summary>
+        public static float ContinueDeficitFar = 0.28f;
+
         /// <summary>
         /// Last-man challenges require both goal-side geometry and a race margin. Immediate controlled
         /// contact remains legal, preventing the safety gate from becoming passive goal-line defense.
@@ -309,7 +320,7 @@ namespace Bot
             // attacker is about to touch the ball. Clearly lost races still remain blocked.
             if (imminentPressure && goalDistance < 3300f && ballDistance < 1850f)
             {
-                float allowedDeficit = frame.TeamCount <= 1 ? 0.22f : 0.15f;
+                float allowedDeficit = frame.TeamCount <= 1 ? SoloTieDeficit : 0.15f;
                 if (frame.MyEta <= frame.OpponentEta + allowedDeficit)
                     return true;
             }
@@ -318,9 +329,9 @@ namespace Bot
             if (frame.HasCover)
                 requiredMargin = -0.12f;
             else if (frame.UnderPressure)
-                requiredMargin = frame.TeamCount <= 1 ? -0.10f : -0.05f;
+                requiredMargin = frame.TeamCount <= 1 ? SoloPressureMargin : -0.05f;
             else
-                requiredMargin = frame.TeamCount <= 1 ? 0.05f : 0.10f;
+                requiredMargin = frame.TeamCount <= 1 ? SoloMargin : 0.10f;
 
             if (frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
                 requiredMargin += 0.04f;
@@ -345,7 +356,7 @@ namespace Bot
                 return true;
 
             float goalDistance = ball.FlatDist(goal);
-            float allowedDeficit = goalDistance < 3300f ? 0.38f : 0.28f;
+            float allowedDeficit = goalDistance < 3300f ? ContinueDeficitNear : ContinueDeficitFar;
             if (frame.TeamCount > 1 && frame.LastBack && !frame.HasCover)
                 allowedDeficit -= 0.08f;
 
@@ -495,6 +506,11 @@ namespace Bot
             return true;
         }
 
+        /// <summary>Fraction of the ball's goalward speed a moving shadow matches.</summary>
+        public static float ShadowSpeedMatch = 0.8f;
+        /// <summary>Highest speed (uu/s) a moving shadow settles at.</summary>
+        public static float ShadowSpeedCap = 1350f;
+
         /// <summary>
         /// Target speed for a moving shadow. Match a useful fraction of the ball's goalward speed,
         /// while retaining enough speed to adjust laterally under pressure.
@@ -507,7 +523,7 @@ namespace Bot
 
             Vec3 axis = ControlMath.FlatUnit(goal - ball.location, new Vec3(0, Side(goal), 0));
             float goalwardSpeed = MathF.Max(0f, ball.velocity.Dot(axis));
-            return System.Math.Clamp(goalwardSpeed * 0.80f + (pressure ? 180f : 0f), 450f, 1350f);
+            return System.Math.Clamp(goalwardSpeed * ShadowSpeedMatch + (pressure ? 180f : 0f), 450f, ShadowSpeedCap);
         }
 
         /// <summary>

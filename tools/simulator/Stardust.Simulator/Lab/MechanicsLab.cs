@@ -27,18 +27,8 @@ public static class MechanicsLab
     /// </summary>
     public static void Override(string assignments)
     {
-        foreach (string assignment in assignments.Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            string[] parts = assignment.Split('=');
-            int dot = parts[0].LastIndexOf('.');
-            string typeName = parts[0][..dot].Trim(), member = parts[0][(dot + 1)..].Trim();
-            Type type = typeof(global::Bot.Stardust).Assembly.GetTypes().Concat(typeof(RedUtils.Car).Assembly.GetTypes())
-                .Single(t => t.Name == typeName);
-            var field = type.GetField(member, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-                ?? throw new ArgumentException($"{typeName} has no static field {member}.");
-            field.SetValue(null, Convert.ChangeType(parts[1].Trim(), field.FieldType, CultureInfo.InvariantCulture));
-            Console.WriteLine($"override {typeName}.{member} = {field.GetValue(null)}");
-        }
+        foreach (string line in RedUtils.Tuning.Apply(assignments, typeof(global::Bot.Stardust).Assembly, typeof(RedUtils.Car).Assembly))
+            Console.WriteLine($"override {line}");
     }
 
     public static int Run(string names, int episodes, int seed, string outputDirectory, int traceEpisode = -1,

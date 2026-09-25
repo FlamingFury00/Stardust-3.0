@@ -101,7 +101,7 @@ $SIM physics-check --model all
 $SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out tournament
 
 # Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
-# --set Type.Field=value overrides a tuning field for a sweep
+# --set Type.Field=value overrides a tuning field for a sweep (as STARDUST_TUNE does in a match)
 $SIM mechanics-lab --drill all --episodes 60
 $SIM mechanics-lab --drill defense --opponent nexto.toml --episodes 60
 $SIM mechanics-lab --drill profile --opponent <bot> --episodes 12
@@ -227,6 +227,44 @@ match statistics show where:
   ball is in Nexto's half three seconds later 70 % of the time. Still, 20 of Nexto's 58 goals come
   within 10 s of a kickoff, from the play that follows.
 
+## Against Nexto: where the goals come from
+
+With the arena fixed, Nexto beats Stardust by about 14.5 goals per game (head: 2–174 over 12 games;
+the build before the saves rework: 2–175, so the rework did not cost it). Replays (`match
+--replays`), the decision log and the lab traces give a consistent picture:
+
+- **Our kickoff touch is often our last.** In most goals the last Stardust touch before it was the
+  kickoff itself, often a won one that sent the ball into Nexto's half at 2000–3000 uu/s. Nexto then
+  collected it, carried it up and scored 5–8 s later without Stardust touching the ball again.
+- **The saves were out of reach when they began.** At the moment the goal-line save starts, the car
+  is typically 2000–5000 uu from the point where the ball will cross, at zero boost.
+- **Nexto carries the ball in.** It dribbles at up to 2300 uu/s, boosting as it goes. The shadow runs
+  beside the ball on the inside line, is outpaced once its boost is gone, and the block that follows
+  races parallel to the ball without reaching it. The challenge gate is an arrival race, which a
+  carrier always wins, so a solo defender never steps into a dribble in midfield.
+- **Boost.** Nexto takes about 22 big pads per 5 minutes, Stardust 1–3. Half of Nexto's are the
+  midfield pads beside the play, a third are Stardust's own corner pads, taken while attacking.
+
+Each of these led to a change, measured in the `defense` drill (Nexto attacks from midfield; ≥ 100
+episodes per arm, since 40 proved too few), in self-play against the unchanged build, or against
+Nexto. None survived:
+
+| Change | Measure | Result |
+|---|---|---|
+| Refuel whenever the route through a pad still beats Nexto's quickest shot home | self-play, 63 games; vs Nexto, 12 | −0.27 ± 0.34; −14.9 vs −14.3 (more boost, 14 vs 9 average, same goals) |
+| Final kickoff dodge turned 0.25 rad away from the opponent's car | kickoff drill vs Nexto, 60; self-play kickoffs | kickoffs won 47 % vs 33 % against Nexto, but a mirror opponent gets the first touch 52 to 29, so it loses in self-play |
+| Final dodge later (450–600 uu), none at all, or along the approach | kickoff drill vs Nexto, 60 each | worse or level; without the dodge every kickoff is lost |
+| Shadow holds its depth against a fast attack instead of stepping up | defense drill, 40 | 21 vs 15 conceded |
+| Meet a carried ball with a clearance before a block | defense drill, 40 + 60 | 29 vs 32 per 100 conceded: level |
+| Challenge a carrier whenever its path is reachable within 0.8 s | defense drill, 100 | 36 vs 35: level |
+| Plan saves on a carried-ball path that speeds up with the carrier's boost | defense drill, 2 × 100 | 76 vs 73 per 200: level |
+| Shadow boosts to catch up when 350 uu/s short of its target speed | self-play, 18 games | −1.78 ± 0.53 |
+| Stricter or looser solo challenge margins | vs Nexto, 12 games each | −13.75 and −14.25 against −14.3 to −14.9: not resolvable |
+
+The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
+goal-side with 20–100 boost. The gap to Nexto is not one misjudged threshold: each rule above fixes
+the moment it was built for and gives the time back elsewhere.
+
 ## Build and regressions
 
 Use the .NET 8 SDK. On Linux, make the FlatBuffers generator executable first:
@@ -252,6 +290,7 @@ Set environment variables **before starting the bot process**:
 | `STARDUST_AIR_DRIBBLES` | disabled | Set `1` to pop a controlled hood carry into an air dribble (lab: 60/60 set up, 1.8 s carried; no match gain, see Results) |
 | `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
 | `STARDUST_TRACE_SAVES` | disabled | Set `1` to also log the clearance and block weighed on every emergency planning tick |
+| `STARDUST_TUNE` | unset | `Type.Field=value,...` overrides tuning fields (e.g. `Kickoff.DodgeJump=0.1`), so one build plays as several variants; a bot config whose run command sets it is a variant the `match` command can play |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
 
