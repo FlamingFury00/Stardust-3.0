@@ -69,6 +69,11 @@ Jump strikes line up on the contact line, run up at constant speed and take off 
 time before contact. Flip strikes add the dodge. `DrivenStrike` re-solves the contact every 1/30 s
 against the live prediction and stands down as soon as the touch is out of reach.
 
+In play, `Tactics.SelectShot` first finds the scripted shot. The planner then searches the same
+window, and its strike replaces the scripted shot only when it touches no later. A later touch is
+never taken: in a contested game the earlier ball is the one that matters. Allowing up to 0.3 s
+later cost about a goal per game.
+
 ## Evaluation harness
 
 `tools/simulator` runs bots exactly as RLBot would: each bot is its own process speaking the RLBot v5
@@ -94,8 +99,9 @@ jittered by a few units so deterministic bots do not replay one identical game. 
 are generated from a seed, so two builds face identical fixtures. With `STARDUST_TRACE=1` the bot
 logs its decisions, which the match reports attribute to goals.
 
-A 72-game 1v1 series resolves about ±0.4 goals per game (one standard error), so a change is adopted
-only when repeated series agree.
+A 72-game 1v1 series resolves about ±0.4 goals per game (one standard error), and even 288 games
+only resolve about ±0.2, so changes are judged on repeated series with fresh seeds rather than one
+lucky run.
 
 ## Results
 
@@ -106,7 +112,7 @@ All figures are 1v1, 180-second games, goals per game from the candidate's point
 | Decision layer + kickoff fix | previous release | 36 | **+0.81** |
 | Physics-first "Brain" decision layer (removed) | previous release | 36 | −0.67 to −0.75 |
 | Kickoff fix + planner strikes replacing scripted shots up to 0.3 s later | previous release | 36 | −1.1 before flips, −0.19 with flips |
-| Kickoff fix + planner strikes when no later than the scripted shot | kickoff fix | 72 + 72 | +0.40, +0.11 |
+| Kickoff fix + planner strikes when no later than the scripted shot (shipped) | kickoff fix | 72 + 72 + 144 | +0.40, +0.11, +0.03 (pooled +0.14 ± 0.19) |
 | Kickoff fix + planned aerials only | kickoff fix | 72 | +0.14 |
 | Kickoff fix + planned saves (clear / block before the goal-line save) | kickoff fix | 72 | −0.06 |
 
@@ -119,6 +125,9 @@ What these showed:
 - **Execution was the rest of it.** Flipping into the ball was the largest single missing piece.
   Before flips, planned strikes cost more than a goal per game even when the planner chose the same
   touches as the scripted shots.
+- **Planned strikes are a small gain, not a large one.** Taking the planner's strike only when it
+  touches no later than the scripted shot is positive in every series but not decisively so; it is
+  shipped because it never hurt and it brings the validated flip finishes and hit-model aiming.
 - **Fixture wins do not always carry into matches.** Planned saves stopped 35 % of fixture shots
   against 22 % for the goal-line save, yet were neutral in play and are not enabled.
 
