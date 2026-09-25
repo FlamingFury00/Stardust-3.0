@@ -118,6 +118,14 @@ namespace Bot
             return ball;
         }
 
+        /// <summary>
+        /// How far a solo shadow's line turns from the goal centre toward the front post (0 to 1): pro
+        /// shadow defence sits on the attacker's side, in its straight lane, not inside it.
+        /// </summary>
+        public static float FrontPostShadow = 0f;
+        /// <summary>Distance (uu) inside the post that a front-post shadow line aims at.</summary>
+        private const float FrontPostInset = 150f;
+
         /// <summary>Distance (uu) a support car keeps goal-side of the ball away from our goal; it closes by 290 uu near it.</summary>
         public static float SupportGap = 1050f;
 
@@ -138,7 +146,16 @@ namespace Bot
 
             Vec3 flatBall = new Vec3(ball.x, ball.y, 17);
             Vec3 flatGoal = new Vec3(goal.x, goal.y, 17);
-            Vec3 goalward = ControlMath.FlatUnit(flatGoal - flatBall, new Vec3(0, side, 0));
+            // A shadow covers the attacker's straight lane: the line from the ball to the nearest
+            // point of the goal mouth (the front post for a ball out wide) rather than to its centre.
+            bool frontPost = role == DefensiveRole.Shadow && FrontPostShadow > 0f;
+            Vec3 aim = flatGoal;
+            if (frontPost)
+            {
+                float post = Goal.Width * 0.5f - FrontPostInset;
+                aim.x = flatGoal.x + FrontPostShadow * System.Math.Clamp(flatBall.x - flatGoal.x, -post, post);
+            }
+            Vec3 goalward = ControlMath.FlatUnit(aim - flatBall, new Vec3(0, side, 0));
             float goalDistance = flatBall.FlatDist(flatGoal);
 
             // danger approaches one as the ball enters the defensive third.
@@ -181,7 +198,7 @@ namespace Bot
 
             Vec3 target = flatBall + goalward * gap;
             float lateral = MathF.Tanh((flatBall.x - flatGoal.x) / 900f);
-            target.x -= lateral * lateralBias * (1f - 0.40f * danger);
+            target.x -= lateral * lateralBias * (1f - 0.40f * danger) * (frontPost ? 1f - FrontPostShadow : 1f);
 
             // Deep anchors prefer the far-post half of the mouth. Blend continuously so crossing
             // midfield or a side threshold cannot teleport the target.
