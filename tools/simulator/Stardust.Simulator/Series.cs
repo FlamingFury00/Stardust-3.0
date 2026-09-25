@@ -134,6 +134,7 @@ public static class Series
         sb.AppendLine(string.Create(inv,
             $"Kickoffs: {kickoffs.Count}; {a} first touch {aFirst} ({aFirst / Math.Max(1.0, kickoffs.Count):P0}); " +
             $"ball-side advantage {a} {aAdvantage} / {b} {bAdvantage}; goals within 10 s {a} {aKickoffGoals} / {b} {bKickoffGoals}"));
+        sb.Append(DecisionLog.Section(options.OutputDirectory, results, a, b));
         return sb.ToString();
     }
 

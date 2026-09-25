@@ -119,7 +119,9 @@ non-zero when one fails.
 Series are paired: every seed is played twice with the builds swapping colours. Kickoff spawns are
 jittered by a few units so deterministic bots do not replay one identical game. Scenario episodes
 are generated from a seed, so two builds face identical fixtures. With `STARDUST_TRACE=1` the bot
-logs its decisions, which the match reports attribute to goals.
+logs its decisions, and the series report then attributes every goal to the decision the conceding
+car was running half a second before it (own goals marked), next to each build's time share per
+decision.
 
 A 72-game 1v1 series resolves about ±0.4 goals per game (one standard error), and even 288 games
 only resolve about ±0.2, so changes are judged on repeated series with fresh seeds rather than one
