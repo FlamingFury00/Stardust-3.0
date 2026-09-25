@@ -355,6 +355,58 @@ public sealed class KickoffFollowDrill : Drill
 }
 
 /// <summary>
+/// A loose ball in our defensive third, full bot, no opponent: the car starts goal-side of it with
+/// the little boost it usually has there. Cleared means the ball reaches the opponent half within
+/// four seconds; the first touch's ball speed and its speed toward their goal show how strong the
+/// clearance was. Against a strong attacker a weak clearance comes straight back.
+/// </summary>
+public sealed class ClearDrill : Drill
+{
+    public override string Name => "clear";
+    public override string Description => "Clear a loose ball out of our defensive third from goal-side with low boost.";
+    public override IReadOnlyList<Criterion> Criteria => new[] { Criterion.Rate(0.7) };
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        bool bouncing = r.NextDouble() < 0.3;
+        var ball = V(Uniform(r, -3000, 3000), Uniform(r, -4300, -2300), bouncing ? Uniform(r, 200, 500) : 93.15f);
+        var ballVelocity = V(Uniform(r, -600, 600), Uniform(r, -900, 300), bouncing ? Uniform(r, -200, 300) : 0f);
+        // Goal-side: somewhere between the ball and our goal centre, off the line by up to 45 degrees.
+        float toGoal = MathF.Atan2(-5120 - ball.Y, -ball.X);
+        float bearing = toGoal + Uniform(r, -0.8f, 0.8f);
+        float distance = Uniform(r, 600, 1800);
+        var car = V(Math.Clamp(ball.X + MathF.Cos(bearing) * distance, -3800, 3800),
+            Math.Clamp(ball.Y + MathF.Sin(bearing) * distance, -4950, 4950), 17);
+        float yaw = MathF.Atan2(ball.Y - car.Y, ball.X - car.X) + Uniform(r, -1.2f, 1.2f);
+        float speed = Uniform(r, 0, 1200);
+        return new EpisodeSetup(ball, ballVelocity, new[]
+        {
+            new CarSetup(car, yaw, V(MathF.Cos(yaw) * speed, MathF.Sin(yaw) * speed, 0), Uniform(r, 0, 30)),
+        }, 4f);
+    }
+
+    protected override void Start(MatchSession session, EpisodeSetup setup) => Subject.Director = null;
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        bool touched = !float.IsNaN(trace.FirstTouchTime);
+        bool cleared = trace.GoalTeam < 0 && trace.FinalBallPosition.Y > 0;
+        trace.Metrics["cleared"] = cleared ? 1 : 0;
+        trace.Metrics["conceded"] = trace.GoalTeam == 1 ? 1 : 0;
+        trace.Metrics["touched"] = touched ? 1 : 0;
+        if (touched)
+        {
+            trace.Metrics["touch-s"] = trace.FirstTouchTime;
+            trace.Metrics["touch-speed"] = trace.BallVelocityAfterFirstTouch.Length;
+            trace.Metrics["touch-forward"] = trace.BallVelocityAfterFirstTouch.Y;
+        }
+        trace.Notes.Insert(0, string.Create(CultureInfo.InvariantCulture,
+            $"end-y {trace.FinalBallPosition.Y:F0} out {trace.BallVelocityAfterFirstTouch.Length:F0} fwd {trace.BallVelocityAfterFirstTouch.Y:F0}"));
+        return cleared;
+    }
+}
+
+/// <summary>
 /// Shots at our goal, full bot, no opponent: the scenario suite's save fixture played in-process.
 /// Shots of 1500-3200 uu/s from up to 5000 uu out, the defender in net, at a post, or rotating
 /// back. Saved means no goal before the ball leaves our half.

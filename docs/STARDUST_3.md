@@ -100,6 +100,8 @@ $SIM physics-check --model all
 # Round robin between bot builds and RLBot v5 bot configs (label = path per roster line)
 $SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out tournament
 
+# Loose balls in our third (clear), Nexto's attacks (defense), kickoffs (kickoff-follow) and a
+# time profile (profile) are extra drills, run by name.
 # Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
 # --set Type.Field=value overrides a tuning field for a sweep (as STARDUST_TUNE does in a match)
 $SIM mechanics-lab --drill all --episodes 60
@@ -266,6 +268,7 @@ Nexto. None survived:
 | Block car turned nose-up after its last jump when contact is above 350 / 450 uu | save drill, 200 shots | 126 / 122 vs 125: height gained, width lost |
 | Solo shadow aimed at the front post (half / full blend) | defense drill, 100 each | 27 / 37 vs 31 conceded |
 | Solo challenges up to 0.3–0.6 s late | vs Nexto, 12 games on one seed | −13.50 ± 0.85 against −12.92 ± 0.56 |
+| Defensive-half touches: planned strike accepted up to 0.25 s later, and/or planned as a clearance past 1500 uu deep | clear drill, 150 each | 42–44 % vs 47 % cleared (harder touches, 1339 vs 1191 uu/s, but aimed wide) |
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
