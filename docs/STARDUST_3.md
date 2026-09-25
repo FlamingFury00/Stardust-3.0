@@ -156,6 +156,9 @@ same flawed goal mouths, so their comparisons stand but not their absolute numbe
 | Possession rework with flick decisions and catch fixes | shipped build before the rework | 96 | **+0.77** (61-35) |
 | Air dribbles and flip resets switched on | the same build | 96 | −0.03 (left off) |
 | Refuelling from pads on defensive routes | the same build | 53 of 96, stopped | −0.58 (not shipped) |
+| **Saves rework, air-control roll fix, jump release** (fixed arena) | the build before them | 144 | +0.06 (70-74): level |
+| Roll fix and jump release alone | the build before them | 72 | +0.07 |
+| Jump blocks timed as racing to the point vs coasting from takeoff | each other | 96 | ±0.10: level |
 
 What these showed:
 
@@ -337,6 +340,12 @@ Still open: shots that no block reaches in time. These are the rotating-back cas
 races alongside the ball into its own net. Nexto saves 21 of 69 such shots and Stardust 7. Turning
 the car's roof to the ball after a double jump (a 118 × 84 face instead of a graze) was tried; the
 longer flight it needs is rarely on time, and it changed nothing measurable.
+
+In matches the rework is level with the build before it (+0.06 goals per game over 144 games).
+With decisions traced, the series report shows why: between Stardust builds, about 55 % of goals
+are conceded during the goal-line save and 35 % during a block, both last-line states taking a few
+per cent of the time. The drill's gains are on shots a block reaches; the goals that decide matches
+come from attacks that beat the defence before any block is possible.
 
 ## References
 
