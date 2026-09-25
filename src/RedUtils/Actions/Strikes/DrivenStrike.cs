@@ -12,7 +12,7 @@ namespace RedUtils
     /// contact is re-solved against the live prediction, and the strike stands down as soon as it
     /// can no longer make the touch.
     /// </summary>
-    public class DrivenStrike : Shot
+    public class DrivenStrike : Shot, IStrike
     {
         private const float ResolveInterval = 1f / 30f;
         private const float MaxDeviation = 120f;
@@ -131,7 +131,7 @@ namespace RedUtils
         /// <summary>Ground strike: drive through the contact on time, arriving as fast as possible.</summary>
         private void DriveThrough(RUBot bot, Car car, float now, float remaining, float forwardSpeed)
         {
-            var target = new DriveTarget(TargetLocation, heading, Slice.Time, true);
+            var target = new DriveTarget(TargetLocation, heading, Slice.Time, Plan.UsesBoost);
             DriveCommand command = Navigator.Control(car.Location, car.Forward, forwardSpeed, car.Boost,
                 car.AngularVelocity.z, target, now);
             Apply(bot, command);
@@ -145,7 +145,8 @@ namespace RedUtils
                 // a second, so only a clear shortfall ends the strike.
                 var asap = target;
                 asap.ArrivalTime = float.NaN;
-                RolloutResult check = Navigator.Rollout(Navigator.StartState(car), asap, remaining + 0.3f);
+                RolloutResult check = Navigator.Rollout(Navigator.StartState(car), asap, remaining + 0.3f,
+                    alignment: Navigator.ExecutionAlignment);
                 if (!check.Arrived || check.Time > remaining + LateTolerance)
                     Finish(FormattableString.Invariant($"late eta={check.Time:F2} remaining={remaining:F2}"));
             }
@@ -170,7 +171,7 @@ namespace RedUtils
             {
                 Vec3 lineUp = TargetLocation.Flatten() - heading * Plan.RunUp;
                 float lineUpTime = Slice.Time - Plan.RunUp / Plan.LineSpeed;
-                var target = new DriveTarget(lineUp, heading, lineUpTime, true);
+                var target = new DriveTarget(lineUp, heading, lineUpTime, Plan.UsesBoost);
                 DriveCommand command = Navigator.Control(car.Location, car.Forward, forwardSpeed, car.Boost,
                     car.AngularVelocity.z, target, now);
                 Apply(bot, command);
@@ -181,7 +182,8 @@ namespace RedUtils
                     // The run-up can absorb a late line-up by running faster, up to top speed.
                     var asap = target;
                     asap.ArrivalTime = float.NaN;
-                    RolloutResult check = Navigator.Rollout(Navigator.StartState(car), asap, remaining);
+                    RolloutResult check = Navigator.Rollout(Navigator.StartState(car), asap, remaining,
+                        alignment: Navigator.ExecutionAlignment);
                     float left = remaining - check.Time;
                     if (!check.Arrived || left < Plan.JumpTime + 0.1f || Plan.RunUp / left > RL.CarMaxSpeed)
                         Finish(FormattableString.Invariant($"late eta={check.Time:F2} remaining={remaining:F2}"));
@@ -190,7 +192,7 @@ namespace RedUtils
             }
 
             // Run-up: steer along the contact line, hold the speed that arrives exactly on time.
-            var line = new DriveTarget(TargetLocation, heading, float.NaN, true);
+            var line = new DriveTarget(TargetLocation, heading, float.NaN, Plan.UsesBoost);
             DriveCommand steer = Navigator.Control(car.Location, car.Forward, forwardSpeed, car.Boost,
                 car.AngularVelocity.z, line, now);
             float desired = along / MathF.Max(remaining, 1f / RL.TickRate);

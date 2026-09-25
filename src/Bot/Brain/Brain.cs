@@ -38,6 +38,18 @@ namespace Bot.Brain
         private const float ChallengeDeficit = 0.2f;
         /// <summary>Scoring chance that makes a touch a shot rather than a set-up touch.</summary>
         private const float ShotChance = 0.35f;
+        /// <summary>From our own third only a likely goal is worth more than a clearance.</summary>
+        private const float DangerShotChance = 0.55f;
+        /// <summary>Lead band around <see cref="ClearLead"/> that must be crossed to change mode.</summary>
+        private const float LeadHysteresis = 0.1f;
+        /// <summary>Time cost of a set-up touch: without a shot on, the earliest useful touch keeps the tempo.</summary>
+        private const float AdvanceTimePenalty = 0.6f;
+        /// <summary>Typical speed (uu/s) at which an attack carries the ball toward our net.</summary>
+        private const float ThreatSpeed = 2500f;
+        /// <summary>Slack that makes a planned clearance safer than a block.</summary>
+        private const float ComfortableSlack = 0.1f;
+        /// <summary>Depth of our defensive third from the goal line.</summary>
+        private const float DangerDepth = 3400f;
 
         public Analysis Analysis { get; private set; }
         public Role Role { get; private set; } = Role.Attacker;
@@ -45,10 +57,14 @@ namespace Bot.Brain
         public StrikePlan LastPlan { get; private set; }
 
         private float nextThink = float.NegativeInfinity;
+        private bool attacking;
+        private int boostPad = -1;
 
         public void Reset()
         {
             nextThink = float.NegativeInfinity;
+            attacking = false;
+            boostPad = -1;
             Analysis = null;
             LastPlan = null;
             Role = Role.Attacker;
@@ -134,22 +150,19 @@ namespace Bot.Brain
         {
             switch (bot.Action)
             {
-                case DrivenStrike strike when !strike.Finished:
+                case IStrike strike when !strike.Finished:
                 {
                     float contact = strike.Plan.ContactTime - a.Now;
                     bool threatFirst = a.ThreatTime < contact - 0.05f;
+                    bool goalSide = a.GoalSideOf(a.Me.Location, strike.Plan.Slice.Location) > -100f;
                     bool beaten = a.FirstOpponent.Reachable && a.FirstOpponent.Time - a.Now < contact - 0.3f &&
-                        !strike.Plan.Clear;
+                        !strike.Plan.Clear && !goalSide;
                     bool yielded = Role != Role.Attacker && !strike.Plan.Clear;
                     return !threatFirst && !beaten && !yielded;
                 }
-                case AerialShot aerial when !aerial.Finished:
-                    return aerial.IsPredictionValid(80f);
-                case GoalLineSave save when !save.Finished:
-                    if (!float.IsFinite(a.ThreatTime)) return false;
-                    save.Crossing = a.ThreatPoint;
-                    save.CrossingTime = a.Now + a.ThreatTime;
-                    return true;
+                case Block block when !block.Finished:
+                    // A block on a ball heading for our net holds while that threat does.
+                    return float.IsFinite(a.ThreatTime) || block.Status == "set";
                 default:
                     return false;
             }
@@ -167,28 +180,47 @@ namespace Bot.Brain
             if (float.IsFinite(threat) && threat < oppT + 0.2f && Defend(bot, a, threat))
                 return;
 
-            float lead = oppT - myT;
             if (!a.Mine.Reachable)
             {
+                attacking = false;
                 Shadow(bot, a);
                 return;
             }
 
-            if (lead > ClearLead)
+            // Hysteresis keeps a borderline race from flipping between attack and defence.
+            float lead = oppT - myT;
+            attacking = attacking ? lead > ClearLead - LeadHysteresis : lead > ClearLead + LeadHysteresis;
+            bool danger = InDangerZone(a, a.Mine.Ball);
+
+            if (attacking)
             {
                 float window = MathF.Min(4f, oppT - 0.1f);
                 StrikePlan shot = Plan(bot, a, StrikeGoal.Shoot(a.Team, a.Opponents), window, claims: true);
-                if (shot != null && shot.ScoreChance > ShotChance)
+                if (shot != null && shot.ScoreChance > (danger ? DangerShotChance : ShotChance))
                 {
                     Strike(bot, shot, "attack / shot");
                     return;
                 }
-                if (a.Mine.Aerial && TryAerial(bot, a, window, a.TheirGoal, "attack / aerial"))
-                    return;
-                if (shot != null && shot.Quality > 0.02f)
+                if (danger)
                 {
-                    // No real chance yet: a touch that moves the ball toward their net sets one up.
-                    Strike(bot, shot, "attack / advance");
+                    // In our third a clean clearance beats a speculative touch toward their net.
+                    StrikePlan clear = Plan(bot, a, StrikeGoal.ClearFrom(a.Team, a.Opponents), window, claims: true, aimTolerance: 0.6f);
+                    if (clear != null && clear.Quality > 0f)
+                    {
+                        Strike(bot, clear, "defend / clear");
+                        return;
+                    }
+                    // Nothing clean yet: hold the goal side rather than wander in front of our net.
+                    Shadow(bot, a);
+                    return;
+                }
+                // No real chance yet: an early touch that moves the ball toward their net keeps
+                // the tempo and sets one up.
+                StrikePlan advance = Plan(bot, a, StrikeGoal.Shoot(a.Team, a.Opponents), window, claims: true,
+                    timePenalty: AdvanceTimePenalty, allowBoost: false);
+                if (advance != null && advance.Quality > 0.02f)
+                {
+                    Strike(bot, advance, "attack / advance");
                     return;
                 }
                 SetUp(bot, a);
@@ -198,25 +230,28 @@ namespace Bot.Brain
             bool goalSide = a.GoalSideOf(a.Me.Location, a.Mine.Ball) > -100f;
             if (lead > -ChallengeDeficit && goalSide)
             {
-                // A 50/50: meet the ball as early as possible with the strongest forward touch.
+                // A 50/50: meet the ball as early as possible with the strongest touch away from
+                // danger (a clearance in our third, a forward touch elsewhere).
                 var options = new StrikePlanner.Options
                 {
                     MaxTime = MathF.Min(4f, myT + 0.5f), TimePenalty = 1.2f, AimTolerance = MathF.PI, Claimed = bot.Claimed,
                 };
-                StrikePlan challenge = StrikePlanner.Plan(a.Me, a.Path, a.Now, StrikeGoal.Shoot(a.Team, a.Opponents), options);
+                StrikeGoal goal = danger ? StrikeGoal.ClearFrom(a.Team, a.Opponents) : StrikeGoal.Shoot(a.Team, a.Opponents);
+                StrikePlan challenge = StrikePlanner.Plan(a.Me, a.Path, a.Now, goal, options);
                 if (challenge != null && challenge.Quality > -0.4f)
                 {
                     Strike(bot, challenge, "challenge / 50-50");
                     return;
                 }
-                if (a.Mine.Aerial && TryAerial(bot, a, myT + 0.3f, a.TheirGoal, "challenge / aerial"))
-                    return;
                 Go(bot, new DriveTarget(a.Mine.Ball, Vec3.Zero), "challenge / meet");
                 return;
             }
 
             Shadow(bot, a);
         }
+
+        /// <summary>Whether a ball is in our defensive third.</summary>
+        private static bool InDangerZone(Analysis a, Vec3 ball) => (ball.y - a.OwnGoal.y) * -a.Side < DangerDepth;
 
         /// <summary>Stops a ball that will otherwise go in. Returns false when nothing can reach it.</summary>
         private bool Defend(Stardust bot, Analysis a, float threat)
@@ -233,6 +268,21 @@ namespace Bot.Brain
                 Strike(bot, counter, "defend / counter shot");
                 return true;
             }
+            // A clearance that is comfortably on beats a block, which can leave the ball in front of
+            // our net; otherwise the reliable save is to put the car in the ball's path.
+            if (clear != null && clear.Quality > 0.2f && clear.Slack > ComfortableSlack &&
+                clear.Kind is StrikeKind.Ground or StrikeKind.Aerial)
+            {
+                Strike(bot, clear, "defend / clear");
+                return true;
+            }
+            BlockPlan block = BlockPlanner.Plan(a.Me, a.Path, a.Now, threat + 0.1f);
+            if (block != null && block.Feasible)
+            {
+                bot.Action = new Block(block);
+                SetDecision(bot, "defend / block");
+                return true;
+            }
             if (clear != null && clear.Quality > -0.5f)
             {
                 Strike(bot, clear, "defend / clear");
@@ -241,19 +291,21 @@ namespace Bot.Brain
 
             // Any touch that keeps the ball out beats a tidy one that is too late.
             var blockOptions = new StrikePlanner.Options { MaxTime = window, TimePenalty = 1.5f, AimTolerance = MathF.PI };
-            StrikePlan block = StrikePlanner.Plan(a.Me, a.Path, a.Now, StrikeGoal.ClearFrom(a.Team, a.Opponents), blockOptions);
-            if (block != null && block.Quality > -1.5f)
+            StrikePlan touch = StrikePlanner.Plan(a.Me, a.Path, a.Now, StrikeGoal.ClearFrom(a.Team, a.Opponents), blockOptions);
+            if (touch != null && touch.Quality > -1.5f)
             {
-                Strike(bot, block, "defend / block");
+                Strike(bot, touch, "defend / touch");
                 return true;
             }
-            if (TryAerial(bot, a, window, ClearTarget(a), "defend / aerial clear"))
-                return true;
 
-            if (!(bot.Action is GoalLineSave))
-                bot.Action = new GoalLineSave(a.Me, a.ThreatPoint, a.Now + threat);
-            SetDecision(bot, "defend / goal-line save");
-            return true;
+            if (block != null)
+            {
+                // Nothing reaches the ball cleanly: throw the car into its path anyway.
+                bot.Action = new Block(block);
+                SetDecision(bot, "defend / desperate block");
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -266,7 +318,8 @@ namespace Bot.Brain
             Vec3 toGoal = (a.TheirGoal - ball).Flatten().Normalize();
             Vec3 spot = Field.LimitToNearestSurface(ball - toGoal * 900f).Flatten();
             spot = ClampToField(spot, 300f);
-            Go(bot, new DriveTarget(spot, toGoal, float.NaN, allowBoost: true), "attack / set up");
+            if (TryBoost(bot, a, spot, 50f, "attack / set up via boost")) return;
+            Go(bot, new DriveTarget(spot, toGoal, float.NaN, allowBoost: false), "attack / set up");
         }
 
         // ------------------------------------------------------------------ positioning
@@ -285,9 +338,9 @@ namespace Bot.Brain
             }
 
             Vec3 spot = ShadowSpot(a, reference, 0.4f, 700f, 2000f);
-            if (TryBoost(bot, a, spot, 30f, "defend / shadow via boost")) return;
+            if (TryBoost(bot, a, spot, 40f, "defend / shadow via boost")) return;
             Vec3 face = (reference - spot).Flatten();
-            Go(bot, Positioning(spot, face), "defend / shadow");
+            Go(bot, Positioning(spot, face, Urgent(a, spot)), "defend / shadow");
         }
 
         private void Support(Stardust bot, Analysis a)
@@ -303,7 +356,7 @@ namespace Bot.Brain
             Vec3 spot = ClampToField(new Vec3(ball.x * 0.5f, y, 0f), 400f);
             if (MathF.Abs(spot.y) > 4700f) spot = new Vec3(spot.x * 0.5f, a.Side * 4700f, 0f);
             if (TryBoost(bot, a, spot, 60f, "support / boost")) return;
-            Go(bot, Positioning(spot, (ball - spot).Flatten()), "support / second man");
+            Go(bot, Positioning(spot, (ball - spot).Flatten(), false), "support / second man");
         }
 
         private void Anchor(Stardust bot, Analysis a)
@@ -318,7 +371,7 @@ namespace Bot.Brain
             float depth = MathF.Min(MathF.Abs(ball.y - a.OwnGoal.y) * 0.5f, 3000f);
             Vec3 spot = new(System.Math.Clamp(ball.x * 0.3f, -900f, 900f), a.Side * (5000f - MathF.Max(depth, 600f)), 0f);
             if (TryBoost(bot, a, spot, 45f, "anchor / boost")) return;
-            Go(bot, Positioning(spot, (ball - spot).Flatten()), "anchor / cover");
+            Go(bot, Positioning(spot, (ball - spot).Flatten(), Urgent(a, spot)), "anchor / cover");
         }
 
         /// <summary>Goal-side point on the line from <paramref name="reference"/> to our net.</summary>
@@ -345,36 +398,47 @@ namespace Bot.Brain
             bool pastBall = (me.y - ball.y) * a.Side > -200f;
             Vec3 target = pastBall || MathF.Abs(me.x - ball.x) > 700f ? post : ClampToField(waypoint, 300f);
             if (TryBoost(bot, a, target, 25f, decision + " via boost")) return;
-            Go(bot, new DriveTarget(target, Vec3.Zero), decision);
+            Go(bot, new DriveTarget(target, Vec3.Zero, float.NaN, allowBoost: Urgent(a, target)), decision);
         }
 
-        private static DriveTarget Positioning(Vec3 spot, Vec3 face) =>
-            new(spot, face, float.NaN, allowBoost: true, maxLead: 600f) { ArrivalSpeed = 0f };
+        private static DriveTarget Positioning(Vec3 spot, Vec3 face, bool urgent) =>
+            new(spot, face, float.NaN, allowBoost: urgent, maxLead: 600f) { ArrivalSpeed = 0f };
+
+        /// <summary>
+        /// Whether getting to <paramref name="spot"/> is worth boost: the opponent is about to play
+        /// the ball and we are far from where we need to be.
+        /// </summary>
+        private static bool Urgent(Analysis a, Vec3 spot)
+        {
+            float distance = a.Me.Location.FlatDist(spot);
+            float opponent = Relative(a.FirstOpponent, a);
+            return distance > 1500f && (opponent < 2f || a.ThreatTime < 3f);
+        }
 
         /// <summary>Detour for a boost pad when low and the detour is cheap for the time available.</summary>
         private bool TryBoost(Stardust bot, Analysis a, Vec3 destination, float wanted, string decision)
         {
             Car me = a.Me;
-            if (me.Boost >= wanted || !me.IsGrounded) return false;
-            float available = MathF.Min(Relative(a.FirstOpponent, a), a.ThreatTime);
-            if (available < 1.2f) return false;
+            if (!me.IsGrounded) return false;
+            // Time before we are needed: the opponent must reach the ball and then bring it to our net.
+            float available = MathF.Min(Relative(a.FirstOpponent, a) + Ball.Location.FlatDist(a.OwnGoal) / ThreatSpeed,
+                a.ThreatTime);
+
+            // Stay committed to the pad already chosen while it is still worth the trip.
+            Boost committed = boostPad >= 0 && boostPad < Field.Boosts.Count ? Field.Boosts[boostPad] : null;
+            if (committed != null && me.Boost < 90f && PadCost(a, committed, destination, available) < float.PositiveInfinity)
+            {
+                Go(bot, new DriveTarget(committed.Location, Vec3.Zero, float.NaN, allowBoost: false), decision);
+                return true;
+            }
+            boostPad = -1;
+            if (me.Boost >= wanted || available < 1.2f) return false;
 
             Boost best = null;
             float bestCost = float.PositiveInfinity;
-            Vec3 start = me.Location.Flatten();
-            float direct = start.FlatDist(destination);
             foreach (Boost pad in Field.Boosts)
             {
-                float toPad = start.FlatDist(pad.Location);
-                float eta = toPad / MathF.Max(1200f, me.Velocity.Length());
-                if (!pad.IsActive && pad.TimeUntilActive > eta) continue;
-                // Pads on the wrong side of the ball pull the car out of position.
-                if (a.GoalSideOf(pad.Location, Ball.Location) < -300f) continue;
-                float detour = toPad + pad.Location.FlatDist(destination) - direct;
-                float limit = pad.IsLarge ? MathF.Min(2200f, 900f * (available - 0.8f)) : 350f;
-                if (detour > limit || eta > available - 0.5f) continue;
-                float gain = MathF.Min(100f - me.Boost, pad.IsLarge ? 100f : 12f);
-                float cost = detour - gain * (pad.IsLarge ? 14f : 20f);
+                float cost = PadCost(a, pad, destination, available);
                 if (cost < bestCost)
                 {
                     bestCost = cost;
@@ -382,45 +446,51 @@ namespace Bot.Brain
                 }
             }
             if (best == null) return false;
-            Go(bot, new DriveTarget(best.Location, Vec3.Zero), decision);
+            boostPad = best.Index;
+            Go(bot, new DriveTarget(best.Location, Vec3.Zero, float.NaN, allowBoost: false), decision);
             return true;
+        }
+
+        /// <summary>
+        /// Cost of collecting <paramref name="pad"/> on the way to <paramref name="destination"/>:
+        /// detour length less the value of the boost, or infinity when it cannot be fitted in the
+        /// time available or lies on the wrong side of the ball.
+        /// </summary>
+        private static float PadCost(Analysis a, Boost pad, Vec3 destination, float available)
+        {
+            Car me = a.Me;
+            Vec3 start = me.Location.Flatten();
+            float toPad = start.FlatDist(pad.Location);
+            float eta = toPad / MathF.Max(1100f, me.Velocity.Flatten().Length());
+            if (!pad.IsActive && pad.TimeUntilActive > eta) return float.PositiveInfinity;
+            // Pads well upfield of the ball pull the car out of position.
+            if (a.GoalSideOf(pad.Location, Ball.Location) < -400f) return float.PositiveInfinity;
+            float detour = toPad + pad.Location.FlatDist(destination) - start.FlatDist(destination);
+            float limit = pad.IsLarge ? MathF.Min(2600f, 1000f * (available - 1f)) : 400f;
+            if (detour > limit || eta > available - 0.6f) return float.PositiveInfinity;
+            float gain = MathF.Min(100f - me.Boost, pad.IsLarge ? 100f : 12f);
+            return detour - gain * (pad.IsLarge ? 16f : 20f);
         }
 
         // ------------------------------------------------------------------ helpers
 
-        private StrikePlan Plan(Stardust bot, Analysis a, StrikeGoal goal, float window, bool claims)
+        private StrikePlan Plan(Stardust bot, Analysis a, StrikeGoal goal, float window, bool claims, float aimTolerance = 0.35f,
+            float timePenalty = 0.15f, bool allowBoost = true)
         {
             if (window <= 0.05f) return null;
-            var options = new StrikePlanner.Options { MaxTime = MathF.Min(4f, window), Claimed = claims ? bot.Claimed : null };
+            var options = new StrikePlanner.Options
+            {
+                MaxTime = MathF.Min(4f, window), Claimed = claims ? bot.Claimed : null, AimTolerance = aimTolerance,
+                TimePenalty = timePenalty, AllowBoost = allowBoost,
+            };
             return StrikePlanner.Plan(a.Me, a.Path, a.Now, goal, options);
         }
 
         private void Strike(Stardust bot, StrikePlan plan, string decision)
         {
             LastPlan = plan;
-            bot.Action = new DrivenStrike(bot.Me, plan);
-            SetDecision(bot, decision);
-        }
-
-        /// <summary>Aerial touches still use the legacy controller until the planned aerial lands.</summary>
-        private bool TryAerial(Stardust bot, Analysis a, float window, Vec3 target, string decision)
-        {
-            if (a.Me.Boost < 15f) return false;
-            float next = a.Now + 0.2f;
-            foreach (BallSlice slice in Ball.Prediction.Slices)
-            {
-                if (slice == null || slice.Time < next) continue;
-                float t = slice.Time - a.Now;
-                if (t > window) break;
-                next = slice.Time + 0.05f;
-                if (slice.Location.z < StrikePlanner.JumpMaxBallHeight || MathF.Abs(slice.Location.y) > 5100f) continue;
-                var shot = new AerialShot(a.Me, slice, target);
-                if (!shot.IsValid(a.Me)) continue;
-                bot.Action = shot;
-                SetDecision(bot, decision);
-                return true;
-            }
-            return false;
+            bot.Action = plan.Kind == StrikeKind.Aerial ? new AerialStrike(plan) : new DrivenStrike(bot.Me, plan);
+            SetDecision(bot, plan.Kind == StrikeKind.Aerial ? decision + " (aerial)" : decision);
         }
 
         private void Go(Stardust bot, DriveTarget target, string decision)
@@ -440,8 +510,6 @@ namespace Bot.Brain
         }
 
         private static float Relative(in Intercept i, Analysis a) => i.Reachable ? i.Time - a.Now : float.PositiveInfinity;
-
-        private static Vec3 ClearTarget(Analysis a) => new(0f, -a.Side * 2000f, 0f);
 
         /// <summary>Keeps a ground point inside the field walls, with the goal mouths open.</summary>
         private static Vec3 ClampToField(Vec3 point, float margin)

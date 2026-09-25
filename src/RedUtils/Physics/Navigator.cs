@@ -64,6 +64,14 @@ namespace RedUtils.Physics
         public const float TimingSlack = 0.04f;
         /// <summary>Speed floor while turning hard (turn radius about 200 uu).</summary>
         public const float MinimumTurnSpeed = 450f;
+        /// <summary>Heading agreement (cosine) a directed arrival needs to count as arrived.</summary>
+        public const float ArrivalAlignment = 0.95f;
+        /// <summary>
+        /// Looser agreement used to judge whether an action under way can still arrive: execution
+        /// follows a slightly different path than the plan's flat-out rollout, and a few degrees
+        /// of heading at contact only shade the touch.
+        /// </summary>
+        public const float ExecutionAlignment = 0.85f;
         /// <summary>Step multiple used by rollouts while cruising straight far from the target.</summary>
         public const int CruiseStepFactor = 3;
         /// <summary>Speed band (uu/s) around a held speed inside which the throttle only trickles.</summary>
@@ -323,7 +331,7 @@ namespace RedUtils.Physics
         /// aligned when a direction is required) or the time budget runs out.
         /// </summary>
         public static RolloutResult Rollout(GroundState start, in DriveTarget target, float maxTime,
-            BallPath ballPath = null, float now = 0f, float dt = 1f / 60f)
+            BallPath ballPath = null, float now = 0f, float dt = 1f / 60f, float alignment = ArrivalAlignment)
         {
             var result = new RolloutResult { ClosestBallApproach = float.NaN };
             GroundState s = start;
@@ -336,7 +344,7 @@ namespace RedUtils.Physics
             {
                 Vec3 to = new(target.Point.x - s.Position.x, target.Point.y - s.Position.y, 0);
                 float distance = to.Length();
-                bool aligned = !target.HasDirection || s.Forward.Dot(target.Direction) > 0.95f;
+                bool aligned = !target.HasDirection || s.Forward.Dot(target.Direction) > alignment;
                 bool passing = distance < ArrivalRadius || (distance < 160f && distance > previousDistance && to.Dot(s.Forward) < 0f);
                 if (passing)
                 {

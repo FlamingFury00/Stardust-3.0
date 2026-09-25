@@ -13,6 +13,11 @@ public sealed class MatchOptions
     public float GoalPauseSeconds { get; set; } = 0.5f;
     public float KickoffAutoActiveSeconds { get; set; } = 2.0f;
     public float OvertimeCapSeconds { get; set; } = 180f;
+    /// <summary>
+    /// Seeded offset (uu) applied to kickoff spawns. Deterministic bots otherwise replay the same
+    /// game from each of the five spawns until the first goal, so series need a little variety.
+    /// </summary>
+    public float SpawnJitter { get; set; } = 10f;
     public string? LogDirectory { get; set; }
     public ReplayRecorder? Replay { get; set; }
 }
@@ -132,6 +137,19 @@ public sealed class MatchSession : IDisposable
         Time += seconds;
         foreach (Participant p in participants)
             p.LastInput = new ControllerStateT();
+    }
+
+    private void JitterSpawns(int seed, float jitter)
+    {
+        if (jitter <= 0f) return;
+        var random = new Random(seed);
+        foreach (Participant p in participants)
+        {
+            RsbCarState car = arena.GetCar(p.CarId);
+            car.Physics.Position = new RsbVec(car.Physics.Position.X + (float)(random.NextDouble() * 2 - 1) * jitter,
+                car.Physics.Position.Y + (float)(random.NextDouble() * 2 - 1) * jitter, car.Physics.Position.Z);
+            arena.SetCar(p.CarId, car);
+        }
     }
 
     public void Snapshot()
@@ -384,6 +402,7 @@ public sealed class MatchSession : IDisposable
             {
                 kickoffNumber++;
                 arena.ResetKickoff(options.Seed * 1009 + kickoffNumber);
+                JitterSpawns(options.Seed * 7919 + kickoffNumber, options.SpawnJitter);
                 Snapshot();
                 ResetTouchState();
                 stats.ResetBoostBaseline(cars);

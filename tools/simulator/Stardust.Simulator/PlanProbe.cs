@@ -14,7 +14,7 @@ namespace Stardust.Simulator;
 /// </summary>
 public static class PlanProbe
 {
-    public static int Run(string suite, int episode, int seed)
+    public static int Run(string suite, int episode, int seed, string goalName)
     {
         Scenario scenario = Suites.Select(suite).First();
         var random = new Random(seed);
@@ -59,17 +59,25 @@ public static class PlanProbe
             Boost = state.Boost,
         };
         Console.WriteLine($"episode {episode}: ball {setup.BallPosition} v{setup.BallVelocity}; car {setup.Cars[0].Position} yaw {c.Yaw:F2} v {c.Velocity}");
+        if (goalName == "block")
+        {
+            BlockPlan block = BlockPlanner.Plan(car, new BallPath(slices), 0f, 4f, Console.WriteLine);
+            Console.WriteLine(block == null ? "no block" : "block " + block);
+            return 0;
+        }
         bool quiet = Environment.GetEnvironmentVariable("STARDUST_PROBE_QUIET") == "1";
         var options = new StrikePlanner.Options { Log = quiet ? null : Console.WriteLine };
         var path = new BallPath(slices);
-        StrikePlan plan = StrikePlanner.Plan(car, path, 0f, StrikeGoal.Shoot(0, Array.Empty<Car>()), options);
+        StrikeGoal goal = goalName == "clear" ? StrikeGoal.ClearFrom(0, Array.Empty<Car>()) : StrikeGoal.Shoot(0, Array.Empty<Car>());
+        if (goalName == "clear") options.AimTolerance = MathF.PI;
+        StrikePlan plan = StrikePlanner.Plan(car, path, 0f, goal, options);
         Console.WriteLine(plan == null ? "no plan" : "chosen " + plan);
 
         // Planner cost without diagnostics.
         options.Log = null;
         var watch = System.Diagnostics.Stopwatch.StartNew();
         const int repeats = 20;
-        for (int i = 0; i < repeats; i++) StrikePlanner.Plan(car, path, 0f, StrikeGoal.Shoot(0, Array.Empty<Car>()), options);
+        for (int i = 0; i < repeats; i++) StrikePlanner.Plan(car, path, 0f, goal, options);
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"planner time {watch.Elapsed.TotalMilliseconds / repeats:F2} ms"));
         return 0;
     }

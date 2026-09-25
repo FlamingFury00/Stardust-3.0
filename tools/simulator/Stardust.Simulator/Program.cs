@@ -70,7 +70,8 @@ switch (command)
         return 0;
     }
     case "plan-probe":
-        return PlanProbe.Run(arguments.Get("suite", "open-net"), arguments.GetInt("episode", 0), arguments.GetInt("seed", 7));
+        return PlanProbe.Run(arguments.Get("suite", "open-net"), arguments.GetInt("episode", 0), arguments.GetInt("seed", 7),
+            arguments.Get("goal", "shoot"));
     case "physics-check":
         return PhysicsCheck.Run(arguments.Get("model", "all"), arguments.GetInt("trials", 300), arguments.GetInt("seed", 3));
     default:

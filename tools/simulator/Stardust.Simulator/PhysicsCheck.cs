@@ -35,6 +35,7 @@ public static class PhysicsCheck
         if (all || which == "dodge") failures += DodgeCheck(trials, seed);
         if (all || which == "orient") failures += OrientCheck(trials, seed);
         if (all || which == "flight") failures += FlightCheck(trials, seed);
+        if (all || which == "aerial") failures += AerialCheck(trials, seed);
         return failures;
     }
 
@@ -627,6 +628,82 @@ public static class PhysicsCheck
                 Console.WriteLine(string.Create(inv, $"  {va,6:F0}: decel {(va - vb) / 0.1f,6:F0} then {(vb - vd) / 0.1f,6:F0}  yaw {w1 / full1:F2} {w2 / full2:F2}  slip {lateral:F0}"));
             }
         }
+    }
+
+    /// <summary>
+    /// Fast aerials from the ground: the aerial guidance flown closed-loop in RocketSim toward
+    /// targets the model says it reaches, measuring the miss at the planned arrival time.
+    /// </summary>
+    private static readonly float AerialMargin = float.Parse(Environment.GetEnvironmentVariable("STARDUST_AERIAL_MARGIN") ?? "0.15", CultureInfo.InvariantCulture);
+
+    private static int AerialCheck(int trials, int seed)
+    {
+        var random = new Random(seed + 10);
+        float R(float a, float b) => a + (float)random.NextDouble() * (b - a);
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        var misses = new List<double>();
+        int planned = 0;
+        bool verbose = Environment.GetEnvironmentVariable("STARDUST_CHECK_VERBOSE") == "1";
+        for (int trial = 0; trial < trials; trial++)
+        {
+            float yaw = R(-3.1f, 3.1f);
+            var s = GroundCar(arena, car, R(0, 1500), yaw);
+            s.Physics.Position = new RsbVec(R(-2000, 2000), R(-3000, 3000), 17.01f);
+            s.Boost = 100;
+            arena.SetCar(car, s);
+            // Let the suspension settle before taking off.
+            for (int i = 0; i < 12; i++) { arena.SetControls(car, new RsbControls { Throttle = 0.02f }); arena.Step(); }
+            s = arena.GetCar(car);
+            Vec3 start = ToVec(s.Physics.Position), forward = ToVec(s.Physics.Forward);
+            float bearing = yaw + R(-1.0f, 1.0f);
+            Vec3 target = start + new Vec3(MathF.Cos(bearing), MathF.Sin(bearing), 0) * R(600, 2400) + new Vec3(0, 0, R(350, 1500));
+            bool doubleJump = trial % 2 == 0;
+            Vec3 nose = (target - start).Normalize();
+            var state = new FlightState(start, ToVec(s.Physics.Velocity), ToVec(s.Physics.AngularVelocity), forward,
+                ToVec(s.Physics.Right), ToVec(s.Physics.Up), s.Boost);
+
+            float duration = float.NaN;
+            for (float t = 0.6f; t <= 3.0f; t += 0.05f)
+            {
+                if (AerialGuidance.Simulate(state, true, t, target, nose, doubleJump).Reached) { duration = t; break; }
+            }
+            if (float.IsNaN(duration)) continue;
+            planned++;
+            duration += AerialMargin;
+            AerialResult model = AerialGuidance.Simulate(state, true, duration, target, nose, doubleJump);
+
+            float since = 0f;
+            bool secondDone = false;
+            int ticks = (int)MathF.Round(duration * 120f);
+            for (int tick = 0; tick < ticks; tick++)
+            {
+                var c = arena.GetCar(car);
+                var live = new FlightState(ToVec(c.Physics.Position), ToVec(c.Physics.Velocity), ToVec(c.Physics.AngularVelocity),
+                    ToVec(c.Physics.Forward), ToVec(c.Physics.Right), ToVec(c.Physics.Up), c.Boost);
+                AerialCommand command = AerialGuidance.Control(live, duration - tick / 120f, target, nose, since, doubleJump && !secondDone);
+                if (doubleJump && command.Jump && since >= AerialGuidance.SecondJumpAt) secondDone = true;
+                arena.SetControls(car, new RsbControls
+                {
+                    Pitch = command.Input.Pitch, Yaw = command.Input.Yaw, Roll = command.Input.Roll,
+                    Boost = command.Boost ? 1 : 0, Jump = command.Jump ? 1 : 0, Throttle = command.Throttle,
+                });
+                arena.Step();
+                since += 1f / 120f;
+            }
+            float miss = (ToVec(arena.GetCar(car).Physics.Position) - target).Length();
+            misses.Add(miss);
+            if (verbose && miss > 100)
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"  miss {miss:F0}: target {target - start} t={duration:F2} double={doubleJump} model miss {model.Miss:F0} sim end {ToVec(arena.GetCar(car).Physics.Position) - start} model end {model.Final.Position - start}"));
+        }
+        var inv = CultureInfo.InvariantCulture;
+        Console.WriteLine(string.Create(inv,
+            $"aerial: {misses.Count}/{planned} flown; miss p50 {Percentile(misses, 0.5):F0} uu p90 {Percentile(misses, 0.9):F0} uu; within 60 uu {misses.Count(m => m < 60) * 100.0 / Math.Max(1, misses.Count):F0} %"));
+        bool ok = misses.Count > 0 && Percentile(misses, 0.5) < 40 && Percentile(misses, 0.9) < 100;
+        Console.WriteLine(ok ? "aerial: PASS" : "aerial: FAIL");
+        return ok ? 0 : 1;
     }
 
     /// <summary>Throughput of the navigation rollout that planning is built on.</summary>

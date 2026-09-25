@@ -19,11 +19,13 @@ public sealed class KickoffScenario(int spawn) : Scenario
     public override EpisodeSetup Generate(Random random)
     {
         var (x, y, yaw) = Spawns[spawn];
+        // A few units of spawn jitter so deterministic bots do not replay one identical kickoff.
+        float J() => Uniform(random, -10f, 10f);
         return new EpisodeSetup(V(0, 0, 93.15f), V(0, 0, 0),
             new[]
             {
-                new CarSetup(V(x, y, 17), yaw, V(0, 0, 0), 33.3f),
-                new CarSetup(V(-x, -y, 17), yaw + MathF.PI, V(0, 0, 0), 33.3f),
+                new CarSetup(V(x + J(), y + J(), 17), yaw, V(0, 0, 0), 33.3f),
+                new CarSetup(V(-x + J(), -y + J(), 17), yaw + MathF.PI, V(0, 0, 0), 33.3f),
             }, 6f, Kickoff: true);
     }
 
@@ -106,7 +108,9 @@ public sealed class KeeperScenario : Scenario
 public sealed class AerialScenario : Scenario
 {
     public override string Name => "aerial";
-    public override string Description => "Meet a lofted ball in the air (z > 500) and send it goalward.";
+    public override string Description => "Win a lofted ball before a chaser takes it on the bounce, and send it goalward.";
+    public override int SeatCount => 2;
+    public override IAgent? ScriptedOpponent(int seat) => new ChaserAgent();
 
     public override EpisodeSetup Generate(Random r)
     {
@@ -121,8 +125,14 @@ public sealed class AerialScenario : Scenario
             Math.Clamp(by + MathF.Sin(angle) * distance, -4900, 4900), 17);
         float yaw = MathF.Atan2(by - car.Y, bx - car.X) + Uniform(r, -0.6f, 0.6f);
         float speed = Uniform(r, 500, 1600);
-        return new EpisodeSetup(ball, ballVel,
-            new[] { new CarSetup(car, yaw, V(MathF.Cos(yaw) * speed, MathF.Sin(yaw) * speed, 0), Uniform(r, 60, 100)) }, 5f);
+        // The chaser starts upfield of the ball, facing it, about as far away as the bot.
+        var chaser = V(Math.Clamp(bx + Uniform(r, -800, 800), -3800, 3800), Math.Clamp(by + Uniform(r, 1600, 2800), -4900, 5000), 17);
+        float chaserYaw = MathF.Atan2(by - chaser.Y, bx - chaser.X);
+        return new EpisodeSetup(ball, ballVel, new[]
+        {
+            new CarSetup(car, yaw, V(MathF.Cos(yaw) * speed, MathF.Sin(yaw) * speed, 0), Uniform(r, 60, 100)),
+            new CarSetup(chaser, chaserYaw, V(MathF.Cos(chaserYaw) * 800, MathF.Sin(chaserYaw) * 800, 0), 100),
+        }, 5f);
     }
 
     public override bool ShouldStop(MatchSession session, EpisodeTrace trace) =>
@@ -130,13 +140,14 @@ public sealed class AerialScenario : Scenario
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
-        bool aerialTouch = !float.IsNaN(trace.FirstTouchTime) && trace.BallPositionAtFirstTouch.Z > 500;
+        bool ours = trace.FirstToucher == 0;
+        bool aerialTouch = ours && trace.BallPositionAtFirstTouch.Z > 500;
         RsbVec v = trace.BallVelocityAfterFirstTouch;
-        bool goalward = aerialTouch && v.Y > 300;
+        trace.Metrics["won"] = ours ? 1 : 0;
         trace.Metrics["touch-s"] = aerialTouch ? trace.FirstTouchTime : double.NaN;
         trace.Metrics["touch-z"] = aerialTouch ? trace.BallPositionAtFirstTouch.Z : double.NaN;
         trace.Metrics["aerial-touch"] = aerialTouch ? 1 : 0;
-        return goalward;
+        return ours && v.Y > 300;
     }
 }
 

@@ -102,3 +102,50 @@ public sealed class GoalieAgent : ScriptedAgent
         return controls;
     }
 }
+
+/// <summary>
+/// An opponent that races to where the ball first comes down within reach and hits it there:
+/// it boosts to the predicted landing point and jumps at a low bounce. It makes a lofted ball
+/// contested, so the bot must win it in the air rather than wait for the bounce.
+/// </summary>
+public sealed class ChaserAgent : ScriptedAgent
+{
+    private float jumpStarted = float.NaN;
+    public override string Description => "chaser";
+
+    protected override ControllerStateT Act(Participant self, GamePacketT packet, BallPredictionT prediction)
+    {
+        PlayerInfoT car = packet.Players[self.Index];
+        float now = packet.MatchInfo.SecondsElapsed;
+        var controls = new ControllerStateT();
+        if (float.IsFinite(jumpStarted))
+        {
+            controls.Jump = now - jumpStarted < 0.2f;
+            if (car.AirState == AirState.OnGround && now - jumpStarted > 0.4f) jumpStarted = float.NaN;
+            return controls;
+        }
+
+        var ball = packet.Balls[0].Physics.Location;
+        float tx = ball.X, ty = ball.Y, tz = ball.Z;
+        foreach (PredictionSliceT slice in prediction.Slices)
+        {
+            if (slice.Physics.Location.Z < 180)
+            {
+                tx = slice.Physics.Location.X;
+                ty = slice.Physics.Location.Y;
+                tz = slice.Physics.Location.Z;
+                break;
+            }
+        }
+        controls.Steer = Flat.SteerToward(car, tx, ty);
+        controls.Throttle = 1;
+        controls.Boost = MathF.Abs(controls.Steer) < 0.3f;
+        float dx = ball.X - car.Physics.Location.X, dy = ball.Y - car.Physics.Location.Y;
+        if (car.AirState == AirState.OnGround && dx * dx + dy * dy < 350 * 350 && ball.Z > 110 && ball.Z < 260)
+        {
+            jumpStarted = now;
+            controls.Jump = true;
+        }
+        return controls;
+    }
+}

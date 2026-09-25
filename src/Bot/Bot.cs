@@ -48,7 +48,11 @@ namespace Bot
         public Stardust(string defaultAgentId = null) : base(defaultAgentId)
         {
             if (Options.StrikeDiagnostics)
+            {
                 DrivenStrike.Diagnostics = message => Console.WriteLine($"stardust car={Index} {message}");
+                AerialStrike.Diagnostics = message => Console.WriteLine($"stardust car={Index} {message}");
+                Block.Diagnostics = message => Console.WriteLine($"stardust car={Index} {message}");
+            }
             // The packaged RLBot process enables file telemetry by default. Test/probe instances pass
             // an explicit agent id and remain quiet unless STARDUST_TELEMETRY was explicitly provided.
             bool productionEntry = defaultAgentId == null;
@@ -73,8 +77,10 @@ namespace Bot
             }
 
             if (Options.Trace) TraceActionEnd();
-            if (Options.Trace && OwnTouchThisTick && Action is DrivenStrike strike)
+            if (Options.Trace && OwnTouchThisTick && Action is IStrike strike)
                 Trace($"touch planned_t={strike.Plan.ContactTime:F3} predicted={strike.Plan.Contact.BallVelocity} actual={Ball.Velocity}");
+            if (Options.Trace && OwnTouchThisTick && Action is Block touchedBlock)
+                Trace($"touch planned_t={touchedBlock.Plan.ContactTime:F3} predicted=(0, 0, 0) actual={Ball.Velocity}");
 
             Brain.Think(this);
             UpdateSituation();
@@ -86,8 +92,10 @@ namespace Bot
         /// <summary>Logs a strike that ended since the last tick, with the reason it stood down.</summary>
         private void TraceActionEnd()
         {
-            if (tracedAction is DrivenStrike ended && !ReferenceEquals(ended, Action))
-                Trace($"strike end kind={ended.Kind} planned_t={ended.Plan.ContactTime:F3} status={ended.Status}");
+            if (tracedAction is IStrike ended && !ReferenceEquals(ended, Action))
+                Trace($"strike end kind={ended.Plan.Kind} planned_t={ended.Plan.ContactTime:F3} status={ended.Status}");
+            if (tracedAction is Block block && !ReferenceEquals(block, Action))
+                Trace($"strike end kind=Block planned_t={block.Plan.ContactTime:F3} status={block.Status}");
             if (!ReferenceEquals(tracedAction, Action)) tracedAction = Action;
         }
 
@@ -95,8 +103,10 @@ namespace Bot
         {
             if (ReferenceEquals(tracedAction, Action)) return;
             tracedAction = Action;
-            if (Action is DrivenStrike started)
+            if (Action is IStrike started)
                 Trace($"strike start decision={Decision} plan={started.Plan}");
+            if (Action is Block block)
+                Trace($"strike start decision={Decision} plan={block.Plan}");
         }
 
         private void Trace(FormattableString message) =>
@@ -168,6 +178,28 @@ namespace Bot
             }
         }
 
-        protected override void OnOutputReady() => telemetry.Sample(this);
+        protected override void OnOutputReady()
+        {
+            telemetry.Sample(this);
+            if (Options.Trace) TraceBoostUse();
+        }
+
+        private readonly System.Collections.Generic.Dictionary<string, float> boostSeconds = new();
+        private float nextBoostReport = 60f;
+
+        /// <summary>Accumulates boosting time per action type and reports it once a game-minute.</summary>
+        private void TraceBoostUse()
+        {
+            if (Controller.Boost && Me.Boost > 0f)
+            {
+                string key = Action?.GetType().Name ?? "none";
+                boostSeconds[key] = (boostSeconds.TryGetValue(key, out float seconds) ? seconds : 0f) + DeltaTime;
+            }
+            if (Game.Time < nextBoostReport) return;
+            nextBoostReport = Game.Time + 60f;
+            var parts = new System.Collections.Generic.List<string>();
+            foreach (var pair in boostSeconds) parts.Add(FormattableString.Invariant($"{pair.Key}={pair.Value:F1}s"));
+            Trace($"boost use {string.Join(" ", parts)}");
+        }
     }
 }

@@ -34,6 +34,12 @@ namespace RedUtils.Planning
         public bool Clear;
         /// <summary>Seconds between takeoff and contact for jump strikes (0 on the ground).</summary>
         public float JumpTime;
+        /// <summary>Whether the drive may spend boost (planned without it when boost is not worth it).</summary>
+        public bool UsesBoost = true;
+        /// <summary>Aerials: whether the takeoff includes the fast aerial's double jump.</summary>
+        public bool DoubleJump;
+        /// <summary>Aerials: boost the simulated flight spends.</summary>
+        public float BoostUsed;
         /// <summary>Jump strikes: length of the straight run-up along the contact line.</summary>
         public float RunUp;
         /// <summary>Jump strikes: constant speed along the run-up, carried through the flight to contact.</summary>
@@ -106,6 +112,7 @@ namespace RedUtils.Planning
             public float TimePenalty = 0.15f;
             public Func<float, bool> Claimed;
             public bool AllowBoost = true;
+            public bool AllowAerials = true;
             /// <summary>Largest accepted angle between the predicted and aimed ball direction.</summary>
             public float AimTolerance = 0.35f;
             /// <summary>Optional diagnostics sink (planner rejections and accepted candidates).</summary>
@@ -133,7 +140,18 @@ namespace RedUtils.Planning
                 // Past the first feasible touch the search only refines, so it can sample coarser.
                 nextSample = slice.Time + (float.IsFinite(firstFeasible) ? RefineStep : SearchStep);
                 if (options.Claimed != null && options.Claimed(slice.Time)) continue;
-                if (MathF.Abs(slice.Location.y) > 5200f || slice.Location.z > DoubleJumpMaxBallHeight) continue;
+                if (MathF.Abs(slice.Location.y) > 5200f) continue;
+
+                if (options.AllowAerials && slice.Location.z >= AerialMinBallHeight)
+                {
+                    StrikePlan aerial = PlanAerial(car, slice, now, goal, geometry, options);
+                    if (aerial != null)
+                    {
+                        if (!float.IsFinite(firstFeasible)) firstFeasible = slice.Time;
+                        if (best == null || aerial.Score > best.Score) best = aerial;
+                    }
+                }
+                if (slice.Location.z > DoubleJumpMaxBallHeight) continue;
 
                 // Lower bound: straight-line flat-out travel from the post-landing state.
                 float distance = MathF.Max(0f, (slice.Location - start.Position).Flatten().Length() - geometry.FrontReach - RL.BallRadius);
@@ -146,6 +164,70 @@ namespace RedUtils.Planning
                     StrikePlan plan = PlanDriven(kind, start, slice, now, goal, geometry, options, skip);
                     if (plan == null) continue;
                     if (!float.IsFinite(firstFeasible)) firstFeasible = slice.Time;
+                    if (best == null || plan.Score > best.Score) best = plan;
+                }
+            }
+            return best;
+        }
+
+        public const float AerialMinBallHeight = 300f;
+        /// <summary>An aerial must be reachable this much earlier than planned; flown with that margin it hits within a few units.</summary>
+        public const float AerialMargin = 0.15f;
+        /// <summary>Overlap (uu) planned between the nose and the ball so the planned contact really touches.</summary>
+        private const float AerialOverlap = 8f;
+        /// <summary>Score cost per unit of boost an aerial spends, and for the recovery it leaves.</summary>
+        private const float AerialBoostCost = 0.003f;
+        private const float AerialRecoveryCost = 0.1f;
+
+        /// <summary>
+        /// An aerial touch on <paramref name="slice"/>: for a few nose directions between the aim and
+        /// the approach, the car origin sits one nose-length behind the ball. The guidance is
+        /// simulated to that point (it must also reach it a margin earlier), and the simulated
+        /// arrival pose goes through the hit model.
+        /// </summary>
+        private static StrikePlan PlanAerial(Car car, BallSlice slice, float now, StrikeGoal goal, CarGeometry geometry, Options options)
+        {
+            float t = slice.Time - now;
+            if (!options.AllowBoost || t < AerialMargin + 0.35f || car.Boost < 5f) return null;
+            bool grounded = car.IsGrounded;
+            if (grounded && car.Up.z < 0.9f) return null;
+            FlightState flight = FlightState.From(car);
+            Vec3 ball = slice.Location;
+
+            // Bound: after gravity and the takeoff jumps, boost must supply the rest on average.
+            float jumpSpeed = grounded ? 2f * RL.JumpImpulse + RL.JumpHoldAccel * JumpModel.MaximumHold : 0f;
+            Vec3 coast = flight.Position + flight.Velocity * t + new Vec3(0f, 0f, 0.5f * RL.Gravity * t * t + jumpSpeed * t);
+            float need = 2f * (ball - coast).Length() / (t * t);
+            if (need > RL.BoostAccelAir || need / RL.BoostAccelAir * t * RL.BoostPerSecond > car.Boost + 10f) return null;
+
+            Vec3 approach = (ball - flight.Position).Normalize();
+            StrikePlan best = null;
+            foreach (Vec3 aim in AimPoints(ball, goal))
+            {
+                Vec3 desired = (aim - ball).Normalize();
+                foreach (Vec3 nose in new[] { (desired + approach).Normalize(), approach })
+                {
+                    Vec3 lift = Vec3.Up - nose * nose.Dot(Vec3.Up);
+                    lift = lift.Length() > 0.1f ? lift.Normalize() : Vec3.Up;
+                    Vec3 target = ball - nose * (RL.BallRadius + geometry.FrontReach - AerialOverlap) - lift * geometry.HitboxOffset.z;
+                    if (target.z < 60f) continue;
+                    bool doubleJump = grounded && target.z - flight.Position.z > 450f;
+                    if (!AerialGuidance.Simulate(flight, grounded, t - AerialMargin, target, nose, doubleJump).Reached) continue;
+                    AerialResult flown = AerialGuidance.Simulate(flight, grounded, t, target, nose, doubleJump);
+                    FlightState f = flown.Final;
+                    var pose = new CarPose(f.Position, f.Forward, f.Right, f.Up, f.Velocity, f.AngularVelocity,
+                        geometry.HitboxSize, geometry.HitboxOffset);
+                    HitModel.Result hit = HitModel.Collide(pose, ball, slice.Velocity, slice.AngularVelocity, 12f);
+                    if (!hit.Contact) continue;
+                    Vec3 flat = hit.Velocity.Flatten();
+                    float aimError = flat.Length() > 1f ? GroundModel.SignedAngle(desired.Flatten().Normalize(), flat) : MathF.PI;
+                    if (MathF.Abs(aimError) > options.AimTolerance) continue;
+                    var contact = new ContactSolution(target, nose, 0f, hit.Velocity, aimError);
+                    StrikePlan plan = Score(StrikeKind.Aerial, slice, contact, aim, now, now + t - AerialMargin, f.Velocity.Length(), goal, options);
+                    plan.Score -= AerialRecoveryCost + AerialBoostCost * flown.BoostUsed;
+                    plan.DoubleJump = doubleJump;
+                    plan.BoostUsed = flown.BoostUsed;
+                    options.Log?.Invoke("  aerial candidate " + plan);
                     if (best == null || plan.Score > best.Score) best = plan;
                 }
             }
@@ -308,6 +390,7 @@ namespace RedUtils.Planning
                 ContactSolution contact = Contact.Aim(ball, slice.Velocity, heading, carVelocity, height, aim, geometry);
                 if (!contact.Valid || MathF.Abs(contact.AimError) > options.AimTolerance) continue;
                 StrikePlan plan = Score(kind, slice, contact, aim, now, now + arrival, groundSpeed, goal, options);
+                plan.UsesBoost = options.AllowBoost;
                 plan.JumpTime = jumpTime;
                 plan.RunUp = runUp;
                 plan.LineSpeed = lineSpeed;
@@ -334,8 +417,8 @@ namespace RedUtils.Planning
         /// The drive a strike executes: to the contact's ground position along its heading, or for
         /// jump strikes to the line-up point where the run-up begins.
         /// </summary>
-        public static DriveTarget StrikeTarget(StrikePlan plan, bool allowBoost = true) =>
-            new(plan.Kind == StrikeKind.Ground ? plan.Contact.CarPosition : plan.LineUpPoint, plan.Contact.Heading, float.NaN, allowBoost);
+        public static DriveTarget StrikeTarget(StrikePlan plan) =>
+            new(plan.Kind == StrikeKind.Ground ? plan.Contact.CarPosition : plan.LineUpPoint, plan.Contact.Heading, float.NaN, plan.UsesBoost);
 
         private static Vec3 AimPointsFirst(Vec3 ball, StrikeGoal goal)
         {
