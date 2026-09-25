@@ -266,6 +266,21 @@ namespace Bot
             return null;
         }
 
+        /// <summary>
+        /// Whether to take a carry into the air: settled, with boost, nobody within 1.5 s of the ball,
+        /// and 2500-6000 uu from goal: far enough to have room to fly, near enough that the air dribble
+        /// ends in a shot.
+        /// </summary>
+        public static bool ShouldAirDribble(Car car, Ball ball, Vec3 lane, IEnumerable<Car> opponents, Vec3 theirGoal)
+        {
+            if (!AirDribbleSetup.CanStart(car, ball)) return false;
+            float goalDistance = ball.location.FlatDist(theirGoal);
+            return goalDistance is > AirDribbleMinRange and < AirDribbleMaxRange &&
+                MostImminent(ball, lane, opponents).Contact > AirDribbleClearance;
+        }
+
+        public const float AirDribbleMinRange = 2500f, AirDribbleMaxRange = 6000f, AirDribbleClearance = 1.5f;
+
         /// <summary>Time to a committed challenger's contact inside which the flick goes (lob apex clears a car at 600 uu).</summary>
         public const float ChallengeWindow = 0.45f;
         /// <summary>Distance to the opponent goal inside which a power flick is a shot.</summary>

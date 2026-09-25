@@ -15,7 +15,7 @@ public static class MechanicsLab
     public static IReadOnlyList<Drill> All() => new Drill[]
     {
         new CarryDrill(), new FlickDrill(), new CatchDrill(), new PickupDrill(), new DribbleDuelDrill(),
-        new AirDribbleDrill(), new FlipResetDrill(),
+        new AirDribbleDrill(), new FlipResetDrill(), new HoodToAirDrill(),
     };
 
     /// <summary>Drills run only by name, not as part of "all".</summary>

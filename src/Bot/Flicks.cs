@@ -186,4 +186,95 @@ namespace Bot
             bot.Controller.Roll = recipe.TiltRoll;
         }
     }
+
+    /// <summary>
+    /// Takes a hood carry into the air: the ball is moved forward on the roof, a short jump pops it
+    /// off the nose, and the car pitches up and boosts to fly under it, then hands over to
+    /// <see cref="AerialCarry"/>. This is how pros start an air dribble from the ground; without it
+    /// an aerial carry only ever begins by accident.
+    /// </summary>
+    public sealed class AirDribbleSetup : IPossessionAction
+    {
+        /// <summary>
+        /// Ball spot on the roof at takeoff, jump hold (the full 0.2 s: shorter pops leave the car
+        /// under a ball it cannot follow), nose-up stick during the hold, the nose pitch (rad above the
+        /// horizon) flown under boost, when the carry takes over, the alignment needed to boost, and
+        /// the longest wait for the ball to reach its spot. Tuned in the mechanics lab (hood-to-air:
+        /// 60/60 into the air, median 1.8 s carried).
+        /// </summary>
+        private static float Spot = 30f, Hold = 0.2f, PopPitch = 1f, FlyPitch = 0.75f, Handover = 0.3f,
+            BoostAlignment = 0.5f, PlaceTime = 0.3f;
+        private readonly HoodCarry carry;
+        private readonly float started = Game.Time;
+        private Vec3 lane;
+        private float jumped = float.NaN;
+        private readonly BoostGate boost = new();
+
+        public bool Finished { get; private set; }
+        public bool Interruptible => !float.IsFinite(jumped);
+        public float ClaimTime => Game.Time + 0.4f;
+
+        public AirDribbleSetup(Vec3 lane, HoodCarry carry = null)
+        {
+            this.lane = lane.Flatten().Normalize();
+            this.carry = carry ?? new HoodCarry();
+        }
+
+        /// <summary>A settled carry at a pace the pop can follow, with boost for the flight and room ahead.</summary>
+        public static bool CanStart(Car car, Ball ball) =>
+            PossessionControl.HasControlledPossession(car, ball) && car.Boost >= 45f &&
+            car.Velocity.Dot(car.Forward) is > 600f and < 1500f;
+
+        public void Run(RUBot bot)
+        {
+            Car car = bot.Me;
+            float now = Game.Time;
+            if (!float.IsFinite(jumped))
+            {
+                Vec3 local = car.Local(Ball.Location - car.Location);
+                if (!car.IsGrounded || local.z < GroundCatch.RoofRest(car) - 25f || MathF.Abs(local.y) > 80f)
+                {
+                    Finished = true;
+                    return;
+                }
+                carry.SteerToward(car, Ball.MainBall, lane);
+                carry.Spot = new Vec3(Spot, carry.Spot.y, 0);
+                bool placed = MathF.Abs(local.x - Spot) < 10f && MathF.Abs(local.y) < 15f;
+                if (placed || now - started > PlaceTime)
+                {
+                    jumped = now;
+                    bot.Controller.Jump = true;
+                    bot.Controller.Pitch = PopPitch;
+                    bot.Controller.Throttle = 1f;
+                    return;
+                }
+                bot.Controller = carry.Step(car, Ball.MainBall, bot.DeltaTime, allowBoost: true);
+                return;
+            }
+
+            float elapsed = now - jumped;
+            if (elapsed >= Handover)
+            {
+                bot.Action = new AerialCarry();
+                bot.Action.Run(bot);
+                return;
+            }
+            bot.Controller.Throttle = 1f;
+            bot.Controller.Jump = elapsed < Hold;
+            if (elapsed < Hold)
+            {
+                bot.Controller.Pitch = PopPitch;
+                return;
+            }
+            // Pitch the nose up along the lane and boost under the ball.
+            Vec3 nose = (lane * MathF.Cos(FlyPitch) + Vec3.Up * MathF.Sin(FlyPitch)).Normalize();
+            RedUtils.Physics.AirInput air = RedUtils.Physics.AirControl.Orient(car.Forward, car.Right, car.Up,
+                new Vec3(car.AngularVelocity.Dot(car.Forward), car.AngularVelocity.Dot(car.Right), car.AngularVelocity.Dot(car.Up)),
+                nose, Vec3.Up);
+            bot.Controller.Pitch = air.Pitch;
+            bot.Controller.Yaw = air.Yaw;
+            bot.Controller.Roll = air.Roll;
+            bot.Controller.Boost = car.Forward.Dot(nose) > BoostAlignment && car.Boost > 0f;
+        }
+    }
 }

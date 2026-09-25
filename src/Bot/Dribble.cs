@@ -126,6 +126,14 @@ namespace Bot
                 return;
             }
 
+            if (carried && Game.Time - stableSince >= 0.25f && bot is Stardust { Options.AirDribbles: true } &&
+                PossessionControl.ShouldAirDribble(car, Ball.MainBall, lane, bot.LivingOpponents, bot.TheirGoal.Location))
+            {
+                bot.Action = new AirDribbleSetup(lane, carry);
+                bot.Action.Run(bot);
+                return;
+            }
+
             // With a challenger on the way, carry the ball where the flick starts, so it can go at once.
             PossessionControl.Challenge challenge = PossessionControl.MostImminent(Ball.MainBall, lane, bot.LivingOpponents);
             carry.SteerToward(car, Ball.MainBall, lane);

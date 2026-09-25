@@ -183,3 +183,78 @@ public sealed class FlipResetDrill : Drill
         return acquired && used;
     }
 }
+
+/// <summary>
+/// Hood carry into an air dribble: the carry starts on the ground, then the setup pops the ball and
+/// flies under it, and the aerial carry keeps it. Success is at least 1.5 s with car and ball both in
+/// the air and within reach.
+/// </summary>
+public sealed class HoodToAirDrill : Drill
+{
+    private const float OctaneRoofRest = 131.34f;
+    private float airborneSince, carried, startY;
+    private bool setup;
+    private RsbVec endBall;
+
+    public override string Name => "hood-to-air";
+    public override string Description => "Pop a hood carry into an air dribble and keep it for 1.5 s.";
+    public override IReadOnlyList<Criterion> Criteria => new[] { Criterion.Rate(0.7), Criterion.Median("air-carry-s", 1.5) };
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        var car = V(Uniform(r, -1500, 1500), Uniform(r, -3000, -1500), 17.01f);
+        float yaw = MathF.Atan2(5120 - car.Y, -car.X) + Uniform(r, -0.2f, 0.2f);
+        RsbVec forward = Heading(yaw);
+        RsbVec velocity = forward * Uniform(r, 800, 1300);
+        RsbVec ball = car + forward * Uniform(r, 0, 20) + V(0, 0, OctaneRoofRest + 0.5f);
+        return new EpisodeSetup(ball, velocity, new[] { new CarSetup(car, yaw, velocity, 100) }, 4.5f);
+    }
+
+    protected override void Start(MatchSession session, EpisodeSetup setup)
+    {
+        airborneSince = float.NaN;
+        carried = 0;
+        this.setup = false;
+        startY = setup.BallPosition.Y;
+        HoodCarry carry = new();
+        float started = float.NaN;
+        Subject.Director = bot =>
+        {
+            if (float.IsNaN(started))
+            {
+                started = RedUtils.Game.Time;
+                bot.Action = new GroundDribble(carry);
+                return;
+            }
+            if (this.setup || RedUtils.Game.Time - started < 0.4f) return;
+            RedUtils.Math.Vec3 lane = (bot.TheirGoal.Location - RedUtils.Ball.Location).FlatNorm();
+            bot.Action = new AirDribbleSetup(lane, carry);
+            this.setup = true;
+        };
+    }
+
+    protected override void Measure(MatchSession session, EpisodeTrace trace)
+    {
+        RsbCarState car = session.Cars[0];
+        RsbVec ball = session.Ball.Physics.Position;
+        bool inAir = car.IsOnGround == 0 && ball.Z > 200 && ball.Distance(car.Physics.Position) < 240;
+        if (inAir)
+        {
+            if (float.IsNaN(airborneSince)) airborneSince = trace.Elapsed;
+            carried = MathF.Max(carried, trace.Elapsed - airborneSince);
+        }
+        else if (!float.IsNaN(airborneSince) && car.IsOnGround != 0) airborneSince = float.NaN;
+        endBall = ball;
+    }
+
+    public override bool ShouldStop(MatchSession session, EpisodeTrace trace) =>
+        trace.GoalTeam >= 0 || (setup && session.Cars[0].IsOnGround != 0 && carried > 0.2f);
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        trace.Metrics["air-carry-s"] = carried;
+        trace.Metrics["progress"] = endBall.Y - startY;
+        trace.Metrics["goal"] = trace.GoalTeam == 0 ? 1 : 0;
+        return carried >= 1.5f || trace.GoalTeam == 0;
+    }
+}
