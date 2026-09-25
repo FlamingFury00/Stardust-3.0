@@ -230,6 +230,49 @@ public sealed class RecoveryScenario : Scenario
     }
 }
 
+/// <summary>
+/// A contested loose ball in midfield: both cars race for it from their own halves at similar
+/// distances. Measures who wins the ball and what the play produces, against a real opponent
+/// build (--opponent) rather than a scripted one.
+/// </summary>
+public sealed class DuelScenario : Scenario
+{
+    public override string Name => "duel";
+    public override string Description => "Win a contested midfield ball against an opponent build and turn it into territory or a goal.";
+    public override int SeatCount => 2;
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        float bx = Uniform(r, -2000, 2000), by = Uniform(r, -1200, 1200);
+        bool air = r.NextDouble() < 0.3;
+        var ball = V(bx, by, air ? Uniform(r, 200, 600) : 93.15f);
+        var ballVel = V(Uniform(r, -600, 600), Uniform(r, -600, 600), air ? Uniform(r, -200, 400) : 0);
+        float distance = Uniform(r, 1500, 2800);
+        CarSetup Place(float side, float jitter)
+        {
+            float angle = side * MathF.PI / 2 + Uniform(r, -0.9f, 0.9f);
+            float d = distance + jitter;
+            var car = V(Math.Clamp(bx - MathF.Cos(angle) * d, -3800, 3800), Math.Clamp(by - MathF.Sin(angle) * d, -4800, 4800), 17);
+            float yaw = MathF.Atan2(by - car.Y, bx - car.X) + Uniform(r, -0.5f, 0.5f);
+            float speed = Uniform(r, 0, 1200);
+            return new CarSetup(car, yaw, V(MathF.Cos(yaw) * speed, MathF.Sin(yaw) * speed, 0), Uniform(r, 30, 80));
+        }
+        // Seat 0 (blue) comes from its own half (-y), seat 1 (orange) from the other.
+        return new EpisodeSetup(ball, ballVel, new[] { Place(1f, Uniform(r, -250, 250)), Place(-1f, Uniform(r, -250, 250)) }, 6f);
+    }
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        trace.Metrics["won-ball"] = trace.FirstToucher == 0 ? 1 : 0;
+        trace.Metrics["lost-ball"] = trace.FirstToucher == 1 ? 1 : 0;
+        trace.Metrics["scored"] = trace.GoalTeam == 0 ? 1 : 0;
+        trace.Metrics["conceded"] = trace.GoalTeam == 1 ? 1 : 0;
+        trace.Metrics["ball-y-end"] = trace.GoalTeam < 0 ? trace.FinalBallPosition.Y : double.NaN;
+        // Won: scored, or the ball ends deep in the opponent half without conceding.
+        return trace.GoalTeam == 0 || (trace.GoalTeam < 0 && trace.FinalBallPosition.Y > 1500);
+    }
+}
+
 /// <summary>Bouncing balls in the attacking half: touches that need a jump or double jump.</summary>
 public sealed class JumpTouchScenario : Scenario
 {
@@ -271,7 +314,7 @@ public static class Suites
     {
         new KickoffScenario(0), new KickoffScenario(1), new KickoffScenario(2), new KickoffScenario(3),
         new KickoffScenario(4), new OpenNetScenario(), new KeeperScenario(), new AerialScenario(),
-        new SaveScenario(), new RecoveryScenario(), new JumpTouchScenario(),
+        new SaveScenario(), new RecoveryScenario(), new JumpTouchScenario(), new DuelScenario(),
     };
 
     public static IReadOnlyList<Scenario> Select(string names) =>

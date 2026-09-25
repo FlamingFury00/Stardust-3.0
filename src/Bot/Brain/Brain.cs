@@ -35,7 +35,7 @@ namespace Bot.Brain
         /// <summary>Earliest-touch lead that makes the ball ours rather than contested.</summary>
         private const float ClearLead = 0.3f;
         /// <summary>Earliest-touch deficit still worth challenging from the goal side.</summary>
-        private const float ChallengeDeficit = 0.2f;
+        private const float ChallengeDeficit = 0.35f;
         /// <summary>Scoring chance that makes a touch a shot rather than a set-up touch.</summary>
         private const float ShotChance = 0.35f;
         /// <summary>From our own third only a likely goal is worth more than a clearance.</summary>

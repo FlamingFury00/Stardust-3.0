@@ -26,6 +26,7 @@ public static class PhysicsCheck
         if (which == "nav-trace") NavTrace();
         if (which == "brake-probe") BrakeProbe();
         if (which == "rollout-bench") RolloutBenchmark(trials, seed);
+        if (which == "kickoff-probe") KickoffProbe();
         if (which == "jump-probe") JumpProbe();
         if (which == "flight-probe") FlightProbe();
         if (all || which == "drive") failures += DriveOpenLoop(trials, seed);
@@ -704,6 +705,71 @@ public static class PhysicsCheck
         bool ok = misses.Count > 0 && Percentile(misses, 0.5) < 40 && Percentile(misses, 0.9) < 100;
         Console.WriteLine(ok ? "aerial: PASS" : "aerial: FAIL");
         return ok ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Kickoff arrival times from each spawn: boosting straight at the ball with a closing front
+    /// flip, versus a speed flip first. Reports when the car first touches the ball and at what
+    /// speed, to tune the kickoff (KICKOFF_DODGE=distance at which to dodge into the ball).
+    /// </summary>
+    private static void KickoffProbe()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        float dodgeAt = float.Parse(Environment.GetEnvironmentVariable("KICKOFF_DODGE") ?? "650", inv);
+        var spawns = new (string Name, float X, float Y, float Yaw)[]
+        {
+            ("diagonal", -2048, -2560, MathF.PI / 4), ("off-centre", -256, -3840, MathF.PI / 2), ("back", 0, -4608, MathF.PI / 2),
+        };
+        foreach (var spawn in spawns)
+        foreach (string style in new[] { "straight", "speedflip" })
+        {
+            using var arena = new SimArena();
+            uint car = arena.AddCar(0);
+            arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 0, 93.15f), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+            var s0 = GroundCar(arena, car, 0f, spawn.Yaw);
+            s0.Physics.Position = new RsbVec(spawn.X, spawn.Y, 17.01f);
+            s0.Boost = 33.3f;
+            arena.SetCar(car, s0);
+            var timeline = new RedUtils.SpeedFlipTimeline();
+            float dodgeStarted = float.NaN, flipStarted = float.NaN;
+            float touch = float.NaN, touchSpeed = 0f;
+            for (int tick = 0; tick < 480; tick++)
+            {
+                float t = tick / 120f;
+                var c = arena.GetCar(car);
+                Vec3 pos = ToVec(c.Physics.Position), fwd = ToVec(c.Physics.Forward), vel = ToVec(c.Physics.Velocity);
+                var ball = arena.Ball;
+                if ((ToVec(ball.Physics.Velocity)).Length() > 50f) { touch = t; touchSpeed = vel.Length(); break; }
+                Vec3 to = (new Vec3(0, 0, 0) - pos).Flatten();
+                float angle = GroundModel.SignedAngle(fwd.Flatten().Normalize(), to);
+                var controls = new RsbControls { Throttle = 1, Boost = 1, Steer = Math.Clamp(3f * angle, -1, 1) };
+                bool grounded = c.IsOnGround != 0;
+                if (style == "speedflip" && t >= 0.12f && float.IsNaN(dodgeStarted))
+                {
+                    if (float.IsNaN(flipStarted)) flipStarted = t;
+                    RedUtils.SpeedFlipFrame frame = timeline.Step(t, spawn.X < 0 ? 1 : -1);
+                    if (!frame.Finished)
+                    {
+                        controls.Jump = frame.Jump ? 1 : 0;
+                        controls.Pitch = frame.Pitch; controls.Yaw = frame.Yaw; controls.Roll = frame.Roll;
+                        controls.Handbrake = frame.Handbrake ? 1 : 0;
+                        controls.Steer = 0;
+                    }
+                    else flipStarted = float.PositiveInfinity;
+                }
+                if (float.IsNaN(dodgeStarted) && grounded && to.Length() < dodgeAt && (style == "straight" || float.IsInfinity(flipStarted)))
+                    dodgeStarted = t;
+                if (!float.IsNaN(dodgeStarted))
+                {
+                    float d = t - dodgeStarted;
+                    controls.Jump = d < 0.05f || (d > 0.1f && d < 0.15f) ? 1 : 0;
+                    controls.Pitch = d > 0.1f ? -1 : 0;
+                }
+                arena.SetControls(car, controls);
+                arena.Step();
+            }
+            Console.WriteLine(string.Create(inv, $"{spawn.Name,-11} {style,-9}: touch at {touch:F3} s, car speed {touchSpeed:F0}"));
+        }
     }
 
     /// <summary>Throughput of the navigation rollout that planning is built on.</summary>
