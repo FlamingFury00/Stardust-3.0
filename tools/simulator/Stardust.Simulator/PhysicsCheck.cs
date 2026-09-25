@@ -20,6 +20,7 @@ public static class PhysicsCheck
         bool all = which == "all";
         int failures = 0;
         if (all || which == "arena") failures += ArenaCheck(trials, seed);
+        if (all || which == "kickoff") failures += KickoffCheck(trials, seed);
         if (all || which == "hit") failures += Hit(trials, seed);
         if (which == "drive-probe") DriveProbe();
         if (which == "drive-cases") DriveCases();
@@ -361,6 +362,35 @@ public static class PhysicsCheck
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"arena: {bad}/{samples} floor placements disturbed{worst}"));
         bool ok = bad == 0;
         Console.WriteLine(ok ? "arena: PASS" : "arena: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The consecutive kickoffs of a match (the seeds <see cref="Match.MatchSession"/> passes) spread
+    /// over the 1v1 spawns like the game's own draw, 40 % diagonal, 40 % off-centre and 20 % centre,
+    /// and one kickoff's spawn says no more about the next than chance (a repeat rate near 0.36).
+    /// </summary>
+    private static int KickoffCheck(int trials, int seed)
+    {
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        int kickoffs = Math.Max(trials, 200), repeats = 0, previous = -1;
+        var counts = new int[3];
+        for (int k = 1; k <= kickoffs; k++)
+        {
+            arena.ResetKickoff(seed * 1009 + k);
+            float x = MathF.Abs(arena.GetCar(car).Physics.Position.X);
+            int spawn = x > 1000f ? 0 : x > 100f ? 1 : 2;
+            counts[spawn]++;
+            if (spawn == previous) repeats++;
+            previous = spawn;
+        }
+        double diagonal = counts[0] / (double)kickoffs, offCentre = counts[1] / (double)kickoffs, centre = counts[2] / (double)kickoffs;
+        double repeat = repeats / (double)(kickoffs - 1);
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+            $"kickoff: {kickoffs} spawns, diagonal {diagonal:P0}, off-centre {offCentre:P0}, centre {centre:P0}; repeat rate {repeat:F2}"));
+        bool ok = Math.Abs(diagonal - 0.4) < 0.07 && Math.Abs(offCentre - 0.4) < 0.07 && Math.Abs(centre - 0.2) < 0.06 && repeat < 0.46;
+        Console.WriteLine(ok ? "kickoff: PASS" : "kickoff: FAIL");
         return ok ? 0 : 1;
     }
 

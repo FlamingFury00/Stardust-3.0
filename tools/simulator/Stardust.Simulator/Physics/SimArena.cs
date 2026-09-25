@@ -33,7 +33,20 @@ public sealed unsafe class SimArena : IDisposable
         return (size, offset);
     }
 
-    public void ResetKickoff(int seed) => RocketSimNative.rsb_reset_kickoff(Handle, seed);
+    /// <summary>
+    /// Resets to a random kickoff. RocketSim shuffles the spawns with a linear congruential engine
+    /// seeded directly, and nearby seeds shuffle almost alike, so the consecutive kickoffs of a game
+    /// would repeat one spawn several times running; a SplitMix64 finaliser decorrelates them.
+    /// </summary>
+    public void ResetKickoff(int seed) => RocketSimNative.rsb_reset_kickoff(Handle, Mix(seed));
+
+    private static int Mix(int seed)
+    {
+        ulong z = (uint)seed + 0x9E3779B97F4A7C15UL;
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+        return (int)((z ^ (z >> 31)) & 0x7FFFFFFF);
+    }
     public void Step(int ticks = 1) => RocketSimNative.rsb_step(Handle, ticks);
 
     public RsbBallState Ball

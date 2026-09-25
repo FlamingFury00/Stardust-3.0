@@ -137,6 +137,15 @@ that bump. Fixture cars are also placed with nothing of their previous motion le
 still held from the last episode used to swallow the first jump of the next, because the game only
 jumps on a press.
 
+**Kickoff spawns.** RocketSim shuffles the five 1v1 spawns with a linear congruential engine seeded
+directly by the kickoff seed, and consecutive seeds, one per kickoff of a game, shuffled almost
+alike. Within a game one spawn repeated for several kickoffs in a row (sequences like
+`DDDDOODD`); a run of 300 consecutive seeds drew no diagonal kickoff at all, 81 % off-centre, and
+repeated the previous spawn 62 % of the time. Pooled over many games the mix still came out near the
+true 40 / 40 / 20 %, so series results stand, but single games were lopsided. Seeds now pass through
+a SplitMix64 finaliser, and `physics-check --model kickoff` checks the mix (42 / 35 / 23 %, repeat
+rate 0.32 against 0.36 by chance).
+
 ## Results
 
 All figures are 1v1, 180-second games unless noted, goals per game from the candidate's point of view.

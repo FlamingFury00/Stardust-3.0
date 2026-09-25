@@ -296,12 +296,27 @@ public sealed class KickoffFollowDrill : Drill
         (-2048, -2560, MathF.PI / 4), (2048, -2560, 3 * MathF.PI / 4),
         (-256, -3840, MathF.PI / 2), (256, -3840, MathF.PI / 2), (0, -4608, MathF.PI / 2),
     };
+    /// <summary>How long after the first touch the kickoff's outcome is read: the 50/50 has settled, the chase has not.</summary>
+    private const float OutcomeDelay = 1f;
     private int spawn;
+    private bool read;
+    private float ballAhead, ballLead;
 
     public override string Name => "kickoff-follow";
     public override string Description => "Kickoff plus the next ten seconds against the opponent build.";
     public override int SeatCount => 2;
     public override IReadOnlyList<Criterion> Criteria => new[] { Criterion.Mean("conceded", 0.1, atLeast: false) };
+
+    protected override void Measure(MatchSession session, EpisodeTrace trace)
+    {
+        if (read || float.IsNaN(trace.FirstTouchTime) || trace.Elapsed < trace.FirstTouchTime + OutcomeDelay) return;
+        // Stardust is blue: the ball's y is how far it went toward the opponent's goal, and the
+        // lead is how much nearer to it our car is than the opponent's.
+        RsbVec ball = session.Ball.Physics.Position;
+        ballAhead = ball.Y;
+        ballLead = ball.Distance(session.Cars[1].Physics.Position) - ball.Distance(session.Cars[0].Physics.Position);
+        read = true;
+    }
 
     public override EpisodeSetup Generate(Random r)
     {
@@ -314,12 +329,24 @@ public sealed class KickoffFollowDrill : Drill
         }, 10f, Kickoff: true);
     }
 
-    protected override void Start(MatchSession session, EpisodeSetup setup) => Subject.Director = null;
+    protected override void Start(MatchSession session, EpisodeSetup setup)
+    {
+        Subject.Director = null;
+        read = false;
+    }
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
-        trace.Notes.Insert(0, $"spawn{spawn}");
+        trace.Notes.Insert(0, string.Create(CultureInfo.InvariantCulture, $"spawn{spawn} ahead {ballAhead:F0} lead {ballLead:F0}"));
         trace.Metrics["first-touch"] = trace.FirstToucher == 0 ? 1 : 0;
+        if (read)
+        {
+            trace.Metrics["ball-ahead"] = ballAhead;
+            trace.Metrics["ball-lead"] = ballLead;
+            // Won: the ball is heading for their half and we are the nearer car to it.
+            trace.Metrics["won"] = ballAhead > 0 && ballLead > 0 ? 1 : 0;
+            trace.Metrics["lost"] = ballAhead < 0 && ballLead < 0 ? 1 : 0;
+        }
         trace.Metrics["conceded"] = trace.GoalTeam == 1 ? 1 : 0;
         trace.Metrics["scored"] = trace.GoalTeam == 0 ? 1 : 0;
         trace.Metrics["goal-s"] = trace.GoalTeam >= 0 ? trace.GoalTime : double.NaN;
