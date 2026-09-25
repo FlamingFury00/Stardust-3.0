@@ -121,16 +121,24 @@ void BuildShell(TriangleMesh& mesh) {
         return CircularInset(ramp, z) + CeilingInset(z);
     };
 
-    // Vertex i sits on the intersection of the offset lines of its two neighbouring edges.
+    // Vertex i moves inward along the bisector of its two edges by its own inset, stretched by the
+    // miter factor so both edges stay offset by that inset. The floor ramp narrows from the side
+    // and corner walls to the back wall across the corner fillet that turns onto the back wall.
+    // (Intersecting the neighbouring edges' offset lines instead fails there: the fillet meets
+    // the back wall almost tangentially, and two nearly parallel lines with different insets
+    // cross thousands of units along the wall, which once put ramp triangles in the goal mouth.)
     auto insetVertex = [&](size_t i, double z) -> Point2 {
         size_t previous = (i + edgeCount - 1) % edgeCount;
         Point2 n1 = inward[previous], n2 = inward[i];
-        Point2 a1 = outline[previous], a2 = outline[i];
-        double c1 = n1.x * a1.x + n1.y * a1.y + edgeInset(previous, z);
-        double c2 = n2.x * a2.x + n2.y * a2.y + edgeInset(i, z);
-        double det = n1.x * n2.y - n1.y * n2.x;
-        if (std::abs(det) < 1e-9) return a2 + n2 * edgeInset(i, z);
-        return {(c1 * n2.y - c2 * n1.y) / det, (n1.x * c2 - n2.x * c1) / det};
+        Point2 bisector = n1 + n2;
+        double length = std::hypot(bisector.x, bisector.y);
+        bisector = length > 1e-9 ? bisector * (1.0 / length) : n2;
+        double miter = std::max(0.5, bisector.x * n2.x + bisector.y * n2.y);
+        const double diagonal = std::sqrt(0.5);
+        double backward = std::clamp((std::abs(bisector.y) - diagonal) / (1.0 - diagonal), 0.0, 1.0);
+        double ramp = kSideRampRadius + (kBackRampRadius - kSideRampRadius) * backward;
+        double inset = CircularInset(ramp, z) + CeilingInset(z);
+        return outline[i] + bisector * (inset / miter);
     };
 
     // Ring heights: dense floor-ramp samples, the crossbar height, and the ceiling curve.

@@ -19,6 +19,7 @@ public static class PhysicsCheck
     {
         bool all = which == "all";
         int failures = 0;
+        if (all || which == "arena") failures += ArenaCheck(trials, seed);
         if (all || which == "hit") failures += Hit(trials, seed);
         if (which == "drive-probe") DriveProbe();
         if (which == "drive-cases") DriveCases();
@@ -300,6 +301,66 @@ public static class PhysicsCheck
             $"bias {(timing.Count > 0 ? timing.Average() : 0):+0.000;-0.000} s; early by >0.1 s: {early}; late by >0.1 s: {late}"));
         return (Percentile(absolute, 0.5), feasible > 0 ? (double)arrived / feasible : 0);
     }
+
+    /// <summary>
+    /// The procedural arena's floor is flat wherever the real one is: an idle car placed on the
+    /// floor away from the wall ramps stays at rest height without touching anything. The goal
+    /// mouths are sampled densely, since the back-wall ramp must end at the posts.
+    /// </summary>
+    private static int ArenaCheck(int trials, int seed)
+    {
+        var random = new Random(seed + 11);
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 0, 1500), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        const float CarReach = 90f;
+        int bad = 0, samples = 0;
+        float worstLift = 0f;
+        string worst = "";
+        for (int trial = 0; trial < trials; trial++)
+        {
+            bool mouth = trial % 2 == 0;
+            float side = random.NextDouble() < 0.5 ? -1f : 1f;
+            // The mouth runs from the posts' inner faces up to the goal line; elsewhere the floor
+            // is flat until the side ramps (256 uu) and back-wall ramps (160 uu) begin.
+            float x = mouth ? Uniform(random, -892.755f + CarReach, 892.755f - CarReach) : Uniform(random, -4096f + 256f + CarReach, 4096f - 256f - CarReach);
+            float y = mouth ? side * Uniform(random, 4700f, 5120f - CarReach) : Uniform(random, -5120f + 160f + CarReach, 5120f - 160f - CarReach);
+            if (!mouth && MathF.Abs(x) + MathF.Abs(y) > 8064f - 700f) continue;
+            float yaw = Uniform(random, -MathF.PI, MathF.PI);
+            RsbCarState state = arena.GetCar(car);
+            state.Physics = ScenarioRunner.Orientation(0f, yaw, 0f);
+            state.Physics.Position = new RsbVec(x, y, 17f);
+            state.IsOnGround = 1;
+            state.HasJumped = state.HasDoubleJumped = state.HasFlipped = 0;
+            arena.SetCar(car, state);
+            float lift = 0f;
+            bool touched = false;
+            for (int tick = 0; tick < 60; tick++)
+            {
+                arena.SetControls(car, new RsbControls());
+                arena.Step();
+                RsbCarState now = arena.GetCar(car);
+                lift = MathF.Max(lift, MathF.Abs(now.Physics.Position.Z - 17f));
+                touched |= now.HasWorldContact != 0;
+            }
+            samples++;
+            if (lift > 1.5f || touched)
+            {
+                bad++;
+                if (lift > worstLift)
+                {
+                    worstLift = lift;
+                    worst = string.Create(CultureInfo.InvariantCulture, $" worst at ({x:F0}, {y:F0}) lift {lift:F1} uu");
+                }
+            }
+        }
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"arena: {bad}/{samples} floor placements disturbed{worst}"));
+        bool ok = bad == 0;
+        Console.WriteLine(ok ? "arena: PASS" : "arena: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    private static float Uniform(Random random, float low, float high) => low + (float)random.NextDouble() * (high - low);
 
     /// <summary>Random hold times and double-jump timings: JumpModel against RocketSim heights.</summary>
     private static int JumpCheck(int trials, int seed)

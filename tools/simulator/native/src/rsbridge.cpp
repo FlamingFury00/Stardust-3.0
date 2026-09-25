@@ -273,8 +273,10 @@ RSB_EXPORT int32_t rsb_get_car(void* arenaHandle, uint32_t id, RsbCarState* out)
     return 0;
 }
 
-/// Sets kinematics, boost and jump flags. Persistent flags are applied as given so fixtures can
-/// start airborne with a spent or available flip.
+/// Places a car as if freshly set up: kinematics, boost and jump flags come from the fixture, and
+/// nothing of its previous motion carries over. Persistent flags are applied as given so fixtures
+/// can start airborne with a spent or available flip. Last tick's controls are cleared too: the
+/// game only jumps on a press, so a jump still held from before would swallow the first press.
 RSB_EXPORT int32_t rsb_set_car(void* arenaHandle, uint32_t id, const RsbCarState* state) {
     Car* car = static_cast<ArenaHandle*>(arenaHandle)->arena->GetCar(id);
     if (!car) return -1;
@@ -285,15 +287,30 @@ RSB_EXPORT int32_t rsb_set_car(void* arenaHandle, uint32_t id, const RsbCarState
     s.hasJumped = state->hasJumped != 0;
     s.hasDoubleJumped = state->hasDoubleJumped != 0;
     s.hasFlipped = state->hasFlipped != 0;
+    s.flipRelTorque = Vec(0, 0, 0);
     s.isJumping = false;
     s.isFlipping = false;
     s.jumpTime = 0;
     s.flipTime = 0;
     s.airTime = state->airTime;
     s.airTimeSinceJump = state->airTimeSinceJump;
+    s.isBoosting = false;
+    s.boostingTime = 0;
+    s.timeSinceBoosted = 0;
+    s.isSupersonic = false;
+    s.supersonicTime = 0;
+    s.handbrakeVal = 0;
+    s.isAutoFlipping = false;
+    s.autoFlipTimer = 0;
+    s.autoFlipTorqueScale = 0;
+    s.worldContact.hasContact = false;
+    s.carContact.otherCarID = 0;
+    s.carContact.cooldownTimer = 0;
+    s.lastControls = CarControls();
     s.isDemoed = false;
     s.demoRespawnTimer = 0;
     car->SetState(s);
+    car->controls = CarControls();
     return 0;
 }
 
