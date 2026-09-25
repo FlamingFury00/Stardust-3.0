@@ -291,6 +291,8 @@ namespace Bot
         public static float SoloPressureMargin = -0.10f;
         /// <summary>Race margin (s) a solo challenge needs without pressure.</summary>
         public static float SoloMargin = 0.05f;
+        /// <summary>Race margin (s) a challenge needs while a teammate covers the goal; negative allows arriving that much later.</summary>
+        public static float CoveredMargin = -0.12f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, within 3300 uu of our goal.</summary>
         public static float ContinueDeficitNear = 0.38f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, further out.</summary>
@@ -327,7 +329,7 @@ namespace Bot
 
             float requiredMargin;
             if (frame.HasCover)
-                requiredMargin = -0.12f;
+                requiredMargin = CoveredMargin;
             else if (frame.UnderPressure)
                 requiredMargin = frame.TeamCount <= 1 ? SoloPressureMargin : -0.05f;
             else
@@ -446,6 +448,11 @@ namespace Bot
             return System.Math.Clamp(frame.OpponentEta + continuation, 0f, 3f);
         }
 
+        /// <summary>Ball depth (uu toward our goal; negative is their half) an uncovered support car may refill behind.</summary>
+        public static float SupportRefillDepth = -900f;
+        /// <summary>Opponent arrival time (s) an uncovered support car's refill needs.</summary>
+        public static float SupportRefillWindow = 2.5f;
+
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
         {
             if (frame == null || car == null || pressure ||
@@ -469,8 +476,8 @@ namespace Bot
 
             // Without explicit cover, only a non-first-man may refill when the ball is clearly
             // out of our half and the opponent contact window is long.
-            bool ballSafelyUpfield = defensiveDepth < -900f;
-            return ballSafelyUpfield && frame.OpponentEta > 2.5f;
+            bool ballSafelyUpfield = defensiveDepth < SupportRefillDepth;
+            return ballSafelyUpfield && frame.OpponentEta > SupportRefillWindow;
         }
 
         /// <summary>

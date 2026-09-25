@@ -7,6 +7,15 @@ namespace Bot
 {
     public static class RoutePlanner
     {
+        /// <summary>Boost at or above which no refill is sought.</summary>
+        public static float RefillBelow = 35f;
+        /// <summary>Boost below which a big pad is worth a real excursion.</summary>
+        public static float FullPadBelow = 20f;
+        /// <summary>Longest extra path (uu) a big-pad excursion may add.</summary>
+        public static float FullPadDetour = 2600f;
+        /// <summary>Time (s) the opponent must still need to reach the ball after the pickup.</summary>
+        public static float FullPadWindow = 1.0f;
+
         public static float Detour(Vec3 start, Vec3 pad, Vec3 destination) =>
             MathF.Max(0, start.FlatDist(pad) + pad.FlatDist(destination) - start.FlatDist(destination));
 
@@ -17,11 +26,11 @@ namespace Bot
         public static Boost SelectBoost(Car car, IEnumerable<Boost> pads, Vec3 ball, Vec3 destination,
             int team, float opponentEta, Func<Car, Vec3, float> travelTime = null)
         {
-            if (pads == null || car.IsDemolished || car.Boost >= 35 || !float.IsFinite(opponentEta) || opponentEta < 1)
+            if (pads == null || car.IsDemolished || car.Boost >= RefillBelow || !float.IsFinite(opponentEta) || opponentEta < 1)
                 return null;
 
             travelTime ??= (c, target) => Drive.GetEta(c, target);
-            bool critical = car.Boost < 20;
+            bool critical = car.Boost < FullPadBelow;
             Boost best = null;
             float bestCost = float.PositiveInfinity;
 
@@ -37,8 +46,8 @@ namespace Bot
                 if (!pad.IsActive && pad.TimeUntilActive > eta + 0.12f) continue;
 
                 float detour = Detour(car.Location, pad.Location, destination);
-                bool deliberateFull = pad.IsLarge && critical && detour <= 2600 &&
-                    opponentEta >= eta + 1.0f;
+                bool deliberateFull = pad.IsLarge && critical && detour <= FullPadDetour &&
+                    opponentEta >= eta + FullPadWindow;
 
                 if (!deliberateFull)
                 {
