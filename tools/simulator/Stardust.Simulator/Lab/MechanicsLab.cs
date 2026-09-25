@@ -78,7 +78,7 @@ public static class MechanicsLab
                 return string.Create(inv, $"{(pass ? "✅" : "❌")} {c.Label} {value:0.###} ({(c.AtLeast ? "≥" : "≤")} {c.Threshold:0.###})");
             }).ToList();
             string metrics = string.Join(", ", outcome.Metrics.OrderBy(m => m.Key).Select(m =>
-                string.Create(inv, $"{m.Key} p10/50/90 {Statistics.Quantile(m.Value, 0.1):0.##}/{Statistics.Quantile(m.Value, 0.5):0.##}/{Statistics.Quantile(m.Value, 0.9):0.##} (n={m.Value.Count})")));
+                string.Create(inv, $"{m.Key} mean {(m.Value.Count > 0 ? m.Value.Average() : double.NaN):0.###} p10/50/90 {Statistics.Quantile(m.Value, 0.1):0.##}/{Statistics.Quantile(m.Value, 0.5):0.##}/{Statistics.Quantile(m.Value, 0.9):0.##} (n={m.Value.Count})")));
             var (low, high) = Series.Wilson(outcome.Successes, outcome.Episodes);
             report.AppendLine(string.Create(inv,
                 $"| {drill.Name} | {outcome.Successes}/{outcome.Episodes} = {outcome.Rate:P0} [{low:P0}–{high:P0}] | {string.Join("<br>", verdicts)} | {metrics} |"));

@@ -349,6 +349,7 @@ public sealed class CatchDrill : RoofDrill
 public sealed class PickupDrill : RoofDrill
 {
     private float roofSince, pickedAt;
+    private bool toward;
 
     public override string Name => "pickup";
     public override string Description => "Lift a rolling ball onto the roof and carry it for 0.5 s.";
@@ -359,7 +360,7 @@ public sealed class PickupDrill : RoofDrill
         float yaw = MathF.PI / 2 + Uniform(r, -0.5f, 0.5f);
         var car = V(Uniform(r, -2000, 2000), Uniform(r, -4000, -1500), 17.01f);
         float ballSpeed = Uniform(r, 0, 1000);
-        bool toward = r.NextDouble() < 0.5;
+        toward = r.NextDouble() < 0.5;
         float gap = toward ? Uniform(r, 900, 1600) : Uniform(r, 250, 500);
         RsbVec ball = car + Heading(yaw) * gap;
         ball.Z = 93.15f;
@@ -396,6 +397,7 @@ public sealed class PickupDrill : RoofDrill
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
         trace.Metrics["pickup-s"] = pickedAt;
+        trace.Metrics[toward ? "oncoming-picked" : "behind-picked"] = float.IsNaN(pickedAt) ? 0 : 1;
         return !float.IsNaN(pickedAt);
     }
 }
