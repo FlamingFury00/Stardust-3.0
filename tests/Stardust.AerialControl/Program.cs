@@ -136,6 +136,21 @@ Test("attitude: a near-vertical nose target keeps the car's roll", () =>
     }
 });
 
+Test("attitude: an upside-down car going over the top keeps its roll near vertical", () =>
+{
+    // Nose +y, roof down: swinging the nose up to vertical leaves the roof facing +y, opposite to
+    // the world-up hint square to the nose. The target must stay a pure pitch, not a degenerate frame.
+    Vec3 forward = new(0, 1, 0), up = new(0, 0, -1), right = up.Cross(forward);
+    foreach (float lean in new[] { 0.02f, 0.1f, 0.17f, 0.25f })
+    {
+        Vec3 target = new Vec3(0, lean, 1).Normalize();
+        Vec3 error = RedUtils.Physics.AirControl.RotationError(forward, right, up, target, Vec3.Up);
+        float turn = error.Length();
+        Check(float.IsFinite(turn) && MathF.Abs(error.x) < 0.25f * turn,
+            $"lean {lean}: rotation {error} forces a roll ({error.x:F2} of {turn:F2} rad)");
+    }
+});
+
 Test("attitude: the roof target is continuous as the nose nears vertical", () =>
 {
     Vec3 forward = new(0, 1, 0), right = new(-1, 0, 0), up = new(0, 0, 1);

@@ -354,24 +354,25 @@ public sealed class SaveDrill : Drill
     private float closestGap;
     private RsbVec closestLocal, hitboxHalf;
     private bool airborneAtClosest;
-    private float touchGoalward;
+    private float touchGoalward, lastGoalward;
 
     protected override void Start(MatchSession session, EpisodeSetup setup)
     {
         Subject.Director = null;
         closestGap = float.PositiveInfinity;
-        touchGoalward = float.NaN;
+        touchGoalward = lastGoalward = float.NaN;
     }
 
     protected override void Measure(MatchSession session, EpisodeTrace trace)
     {
         if (!float.IsNaN(trace.FirstTouchTime))
         {
-            // The car's speed toward our goal (-y) as it first meets the ball: a block that
-            // meets the ball while racing goalward pushes it on.
-            if (float.IsNaN(touchGoalward)) touchGoalward = -session.Cars[0].Physics.Velocity.Y;
+            // The car's speed toward our goal (-y) as it met the ball, read on the tick before the
+            // contact changed it: a block that meets the ball while racing goalward pushes it on.
+            if (float.IsNaN(touchGoalward)) touchGoalward = lastGoalward;
             return;
         }
+        lastGoalward = -session.Cars[0].Physics.Velocity.Y;
         Participant p = session.Participants[0];
         RsbCarState car = session.Cars[0];
         RsbVec local = Local(car.Physics, session.Ball.Physics.Position) - p.HitboxOffset;

@@ -29,6 +29,7 @@ constexpr double kGoalBackCurveDepth = 624.0;   // centre of that quarter-pipe b
 constexpr double kGoalRoofBackDepth = 733.0;    // measured top of the back curve
 constexpr double kGoalRoofBackHeight = 477.0;
 constexpr double kGoalRoofFrontDepth = 224.0;   // roof meets the flat lintel here
+constexpr double kMinMiter = 0.5;               // cap the miter stretch at 2x (turns under 120 degrees)
 constexpr int kCornerArcSegments = 14;
 constexpr int kFloorRampSegments = 16;
 constexpr int kCeilingSegments = 16;
@@ -133,7 +134,8 @@ void BuildShell(TriangleMesh& mesh) {
         Point2 bisector = n1 + n2;
         double length = std::hypot(bisector.x, bisector.y);
         bisector = length > 1e-9 ? bisector * (1.0 / length) : n2;
-        double miter = std::max(0.5, bisector.x * n2.x + bisector.y * n2.y);
+        // cos of half the turn at the vertex; the outline only turns gently, the floor guards a spike.
+        double miter = std::max(kMinMiter, bisector.x * n2.x + bisector.y * n2.y);
         const double diagonal = std::sqrt(0.5);
         double backward = std::clamp((std::abs(bisector.y) - diagonal) / (1.0 - diagonal), 0.0, 1.0);
         double ramp = kSideRampRadius + (kBackRampRadius - kSideRampRadius) * backward;

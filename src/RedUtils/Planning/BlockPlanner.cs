@@ -8,12 +8,12 @@ namespace RedUtils.Planning
     public sealed class BlockPlan
     {
         public BallSlice Slice;
-        /// <summary>Ground point the car occupies at contact, beside the ball's ground track.</summary>
+        /// <summary>Ground point the car occupies at contact: on the ball's ground track for a jump block, beside it on the wheels.</summary>
         public Vec3 Point;
         /// <summary>Seconds from takeoff to contact; 0 when the ball is low enough to block on the wheels.</summary>
         public float JumpTime;
         public bool DoubleJump;
-        /// <summary>Absolute time the car can reach <see cref="Point"/> driving flat out.</summary>
+        /// <summary>Absolute time the car can pass <see cref="Point"/>: flat out, then coasting from takeoff for a jump block.</summary>
         public float EarliestArrival;
         /// <summary>False for a best-effort block that the car is predicted to reach a little late.</summary>
         public bool Feasible = true;
@@ -108,6 +108,8 @@ namespace RedUtils.Planning
                 // through the point at contact: the drive and the flight share the time.
                 float available = t - SettleTime - (jumpTime > 0f ? MinimumRunIn : 0f);
                 if (available <= start.Time) continue;
+                // A jump that would have to start before the car can leave the ground is too late.
+                if (jumpTime > 0f && t - jumpTime < start.Time) continue;
 
                 Vec3 point = BlockPoint(ball, start.Position, jumpTime > 0f);
                 float distance = (point - start.Position).Flatten().Length();
@@ -145,6 +147,8 @@ namespace RedUtils.Planning
         /// </summary>
         public static float ThroughTime(GroundState start, Vec3 point, float takeoff, float maxTime)
         {
+            // A takeoff that is already due: the car carries on at its speed from here.
+            takeoff = MathF.Max(takeoff, start.Time);
             var drive = new DriveTarget(point, Vec3.Zero);
             RolloutResult rollout = Navigator.Rollout(start, drive, MathF.Min(takeoff, maxTime));
             if (rollout.Arrived) return rollout.Time;
@@ -152,6 +156,8 @@ namespace RedUtils.Planning
             GroundState s = rollout.Final;
             Vec3 heading = s.Forward.Flatten().Normalize();
             Vec3 to = (point - s.Position).Flatten();
+            // The rollout's last step can carry the car just past the point: that is a pass.
+            if (to.Length() < CoastReach) return s.Time;
             float along = to.Dot(heading);
             if (along <= 0f || s.Speed < MinimumCoastSpeed || (to - heading * along).Length() > CoastReach)
                 return float.PositiveInfinity;

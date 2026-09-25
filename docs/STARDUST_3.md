@@ -239,6 +239,7 @@ Set environment variables **before starting the bot process**:
 | `STARDUST_FLIP_RESETS` | disabled | Set `1` to let an aerial carry go for a flip reset (lab: 72 % acquired, 51 % used) |
 | `STARDUST_AIR_DRIBBLES` | disabled | Set `1` to pop a controlled hood carry into an air dribble (lab: 60/60 set up, 1.8 s carried; no match gain, see Results) |
 | `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
+| `STARDUST_TRACE_SAVES` | disabled | Set `1` to also log the clearance and block weighed on every emergency planning tick |
 | `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
 | `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
 
@@ -329,7 +330,8 @@ much. That pointed at each of these in turn:
   aerials. Near the roof hint, the roof the shortest nose swing leaves now takes over.
 - **Swallowed takeoffs** (`RUBot`). The game jumps only on a press. An action taking over from one
   that held jump lost its takeoff, so a jump held since the last tick that started nothing is
-  released for one tick.
+  released for one tick. It keys off the input the game reports it applied, not the bot's own last
+  output, so a press still in flight under input latency is never mistaken for a stale hold.
 
 Still open: shots that no block reaches in time. These are the rotating-back cases, where the car
 races alongside the ball into its own net. Nexto saves 21 of 69 such shots and Stardust 7. Turning

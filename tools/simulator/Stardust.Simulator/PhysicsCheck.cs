@@ -312,8 +312,9 @@ public static class PhysicsCheck
         var random = new Random(seed + 11);
         using var arena = new SimArena();
         uint car = arena.AddCar(0);
-        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 0, 1500), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
         const float CarReach = 90f;
+        // Goal mouth half width and the |x| + |y| of the flat corner walls (RocketSim arena constants).
+        const float GoalHalfWidth = 892.755f, CornerPlane = 8064f, CornerFillet = 700f;
         int bad = 0, samples = 0;
         float worstLift = 0f;
         string worst = "";
@@ -323,9 +324,12 @@ public static class PhysicsCheck
             float side = random.NextDouble() < 0.5 ? -1f : 1f;
             // The mouth runs from the posts' inner faces up to the goal line; elsewhere the floor
             // is flat until the side ramps (256 uu) and back-wall ramps (160 uu) begin.
-            float x = mouth ? Uniform(random, -892.755f + CarReach, 892.755f - CarReach) : Uniform(random, -4096f + 256f + CarReach, 4096f - 256f - CarReach);
+            float x = mouth ? Uniform(random, -GoalHalfWidth + CarReach, GoalHalfWidth - CarReach) : Uniform(random, -4096f + 256f + CarReach, 4096f - 256f - CarReach);
             float y = mouth ? side * Uniform(random, 4700f, 5120f - CarReach) : Uniform(random, -5120f + 160f + CarReach, 5120f - 160f - CarReach);
-            if (!mouth && MathF.Abs(x) + MathF.Abs(y) > 8064f - 700f) continue;
+            if (!mouth && MathF.Abs(x) + MathF.Abs(y) > CornerPlane - CornerFillet) continue;
+            // The ball waits high above the pitch each trial, out of every placement's way.
+            arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 0, 1800), Velocity = new RsbVec(0, 0, -0.01f),
+                Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
             float yaw = Uniform(random, -MathF.PI, MathF.PI);
             RsbCarState state = arena.GetCar(car);
             state.Physics = ScenarioRunner.Orientation(0f, yaw, 0f);

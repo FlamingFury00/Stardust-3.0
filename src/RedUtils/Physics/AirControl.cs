@@ -32,11 +32,15 @@ namespace RedUtils.Physics
             // The roof goes toward the hint square to the nose. As the nose nears the hint that
             // direction becomes undefined, so the roof the car would have after the shortest swing
             // of its nose onto the target takes over (no roll is forced), blended in continuously
-            // from RollFreeCone.
+            // from RollFreeCone. A swung roof facing away from the hint (a car going over the top)
+            // is kept whole inside the cone: adding the two would cancel them to nothing.
             Vec3 hinted = upHint - f * f.Dot(upHint);
             float defined = hinted.Length();
             if (defined < RollFreeCone)
-                upHint = hinted + SwungUp(carForward, carUp, f) * (RollFreeCone - defined);
+            {
+                Vec3 swung = SwungUp(carForward, carUp, f);
+                upHint = hinted.Dot(swung) < 0f ? swung : hinted + swung * (RollFreeCone - defined);
+            }
             Vec3 r = Unit(upHint.Cross(f), carRight);
             Vec3 u = Unit(f.Cross(r), carUp);
             // Rotation matrix of the target expressed in car-local axes (columns = target axes).

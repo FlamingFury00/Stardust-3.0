@@ -53,6 +53,7 @@ public abstract class Drill : Scenario
         Action<string>? sink = episode == TraceEpisode ? Console.WriteLine : null;
         RedUtils.AerialStrike.Diagnostics = sink;
         RedUtils.Block.Diagnostics = sink;
+        RedUtils.DrivenStrike.Diagnostics = sink;
         Start(session, setup);
     }
 

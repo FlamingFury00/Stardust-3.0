@@ -13,7 +13,7 @@ namespace RedUtils
         private static readonly object WorldGate = new();
         private readonly TickClock clock = new();
         private readonly ShotClaimLedger claims = new();
-        private bool ready, hasOutput, shotClaimActive, touchBaselined, jumpHeld;
+        private bool ready, hasOutput, shotClaimActive, touchBaselined;
         private float lastTouchTime = -1f, lastClaimSent = float.NegativeInfinity;
         private float kickoffTouchBaseline = -1f;
 
@@ -88,7 +88,6 @@ namespace RedUtils
                     Index < 0 || Index >= packet.Players.Count || !float.IsFinite(packet.MatchInfo.SecondsElapsed))
                 {
                     Action = null;
-                    jumpHeld = false;
                     return Controller = new ControllerStateT();
                 }
                 DeltaTime = clock.Step(packet.MatchInfo.SecondsElapsed);
@@ -101,7 +100,6 @@ namespace RedUtils
                     Action = null;
                     OwnTouchThisTick = false;
                     UpdateShotClaimState();
-                    jumpHeld = false;
                     return Controller = new ControllerStateT();
                 }
                 if (DeltaTime == 0 && hasOutput) return Controller;
@@ -130,8 +128,7 @@ namespace RedUtils
                     }
                     UpdateShotClaimState();
                     Controller = ControlRuntime.Sanitize(Controller, Me.IsDemolished, Me.Boost);
-                    Controller.Jump = ControlRuntime.JumpOutput(Controller.Jump, jumpHeld, Me.IsGrounded, Me.JumpStarted);
-                    jumpHeld = Controller.Jump;
+                    Controller.Jump = ControlRuntime.JumpOutput(Controller.Jump, Me.LastInput?.Jump == true, Me.IsGrounded, Me.JumpStarted);
                     OnOutputReady();
                     return Controller;
                 }

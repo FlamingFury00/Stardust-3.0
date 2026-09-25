@@ -27,6 +27,8 @@ namespace RedUtils
         private const float ParkedSpeed = 150f;
         /// <summary>How close the car's projected position at contact must be to the point to take off.</summary>
         private const float TakeoffReach = 130f;
+        /// <summary>How long past its planned takeoff a car waits to cover the point before it jumps regardless.</summary>
+        private const float LateTakeoff = 0.08f;
 
         /// <summary>Optional per-tick diagnostics sink for mechanics debugging (null in play).</summary>
         public static Action<string> Diagnostics;
@@ -41,6 +43,9 @@ namespace RedUtils
         private float lastTouch = float.NaN;
         private float jumpStarted = float.NaN;
         private bool secondJumpSent;
+        private bool racing;
+        /// <summary>Heading held across the ball's path from takeoff, so a head-on ball cannot flip it mid-flight.</summary>
+        private Vec3 flightHeading;
 
         public Block(BlockPlan plan)
         {
@@ -73,17 +78,19 @@ namespace RedUtils
                 Point = BlockPlanner.BlockPoint(live.Location, car.Location, Plan.JumpTime > 0f);
             }
 
-            Vec3 face = Broadside(car, Ball.Location, Ball.Velocity);
             Diagnostics?.Invoke(FormattableString.Invariant(
                 $"block tick t={now:F3} remaining={remaining:F3} status={Status} car={car.Location} v={car.Velocity} point={Point} ball={Ball.Location} jump={Plan.JumpTime:F2}"));
             if (float.IsFinite(jumpStarted))
             {
-                Fly(bot, car, now, face);
+                Fly(bot, car, now);
                 return;
             }
             if (!car.IsGrounded)
             {
-                AirInput land = AirControl.Orient(car.Forward, car.Right, car.Up, LocalAngular(car), face.Normalize(), Vec3.Up);
+                // Land facing the point, ready to drive to it.
+                Vec3 toPoint = (Point - car.Location).Flatten();
+                AirInput land = AirControl.Orient(car.Forward, car.Right, car.Up, LocalAngular(car),
+                    toPoint.Length() > 1f ? toPoint.Normalize() : car.Forward.Flatten().Normalize(), Vec3.Up);
                 bot.Controller.Pitch = land.Pitch;
                 bot.Controller.Yaw = land.Yaw;
                 bot.Controller.Roll = land.Roll;
@@ -98,11 +105,12 @@ namespace RedUtils
                 // past the last moment jump regardless, as a late body in the path may still deflect it.
                 Vec3 projected = car.Location + car.Velocity.Flatten() * remaining;
                 bool covers = (projected - Point).Flatten().Length() < TakeoffReach;
-                if (covers || remaining < Plan.JumpTime - 0.08f)
+                if (covers || remaining < Plan.JumpTime - LateTakeoff)
                 {
                     jumpStarted = now;
+                    flightHeading = Broadside(car, Ball.Location, Ball.Velocity);
                     Status = "jump";
-                    Fly(bot, car, now, face);
+                    Fly(bot, car, now);
                     return;
                 }
             }
@@ -111,7 +119,7 @@ namespace RedUtils
             float takeoffIn = remaining - Plan.JumpTime;
             var park = new DriveTarget(Point, Vec3.Zero) { ArrivalSpeed = 0f };
             bool parked = distance <= SettledRadius && MathF.Abs(speed) < ParkedSpeed;
-            if (parked || (distance > SettledRadius && ParkEta(car, park, takeoffIn) + ParkSettle <= takeoffIn))
+            if (parked || (distance > SettledRadius && ParkEta(car, park, takeoffIn - ParkSettle) + ParkSettle <= takeoffIn))
             {
                 // Early enough to stop on the point: settle there and wait for the ball.
                 if (distance > SettledRadius)
@@ -131,7 +139,9 @@ namespace RedUtils
             float arrival = BlockPlanner.ThroughTime(Navigator.StartState(car), Point,
                 Plan.JumpTime > 0f ? takeoffIn : float.PositiveInfinity, remaining + LateHorizon);
             bot.Controller.Steer = steer.Steer;
-            if (remaining - arrival > PaceSlack)
+            // Hysteresis: a car racing to be on time paces again only with clear time in hand.
+            racing = remaining - arrival <= (racing ? 2f * PaceSlack : PaceSlack);
+            if (!racing)
             {
                 float path = Navigator.EstimatePathLength(car.Location, car.Forward, speed, through);
                 DriveCommand pace = Navigator.HoldSpeed(MathF.Min(path / MathF.Max(remaining, 1f / RL.TickRate), RL.CarMaxSpeed),
@@ -147,12 +157,12 @@ namespace RedUtils
             }
         }
 
-        /// <summary>Time for a stopping approach to the point, or infinity when it would not settle before <paramref name="within"/>.</summary>
+        /// <summary>Time for a stopping approach to the point, or infinity when it would not settle within <paramref name="within"/>.</summary>
         private static float ParkEta(Car car, in DriveTarget park, float within)
         {
             if (within <= 0f) return float.PositiveInfinity;
-            RolloutResult rollout = Navigator.Rollout(Navigator.StartState(car), park, within + 0.1f);
-            return rollout.Arrived ? rollout.Time : float.PositiveInfinity;
+            RolloutResult rollout = Navigator.Rollout(Navigator.StartState(car), park, within);
+            return rollout.Arrived && rollout.Time <= within ? rollout.Time : float.PositiveInfinity;
         }
 
         private static void Apply(RUBot bot, DriveCommand command)
@@ -162,8 +172,9 @@ namespace RedUtils
             bot.Controller.Boost = command.Boost;
         }
 
-        private void Fly(RUBot bot, Car car, float now, Vec3 face)
+        private void Fly(RUBot bot, Car car, float now)
         {
+            Vec3 face = flightHeading;
             float elapsed = now - jumpStarted;
             bool hold = elapsed < JumpModel.MaximumHold;
             bool second = Plan.DoubleJump && !hold && !secondJumpSent && elapsed >= JumpModel.MaximumHold + 1.5f / RL.TickRate;

@@ -14,6 +14,8 @@ namespace Bot
         public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
         public bool AirDribbles { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AIR_DRIBBLES") == "1";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
+        /// <summary>Also log the save options weighed on every planning tick (verbose).</summary>
+        public bool TraceSaves { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE_SAVES") == "1";
         public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
         public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
         public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
@@ -550,7 +552,7 @@ namespace Bot
                 return Strike(clear, "defend / planned clear");
 
             BlockPlan block = BlockPlanner.Plan(Me, path, Game.Time, threat + 0.1f);
-            if (Options.Trace)
+            if (Options.TraceSaves)
                 Console.WriteLine(FormattableString.Invariant(
                     $"stardust t={Game.Time:F3} car={Index} save threat={threat:F2} clear={clear?.ToString() ?? "none"} block={block?.ToString() ?? "none"}"));
             if (block != null && block.Feasible)
