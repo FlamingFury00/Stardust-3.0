@@ -7,6 +7,8 @@ CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
 var arguments = CommandLine.Parse(args);
 string command = arguments.Command;
+// Tuning overrides for the in-process bot and planners (the lab, probes and physics checks).
+if (arguments.Has("set")) Stardust.Simulator.Lab.MechanicsLab.Override(arguments.Require("set"));
 
 switch (command)
 {
@@ -93,7 +95,6 @@ switch (command)
         return Stardust.Simulator.Lab.FlickSearch.Run(arguments.GetInt("top", 40), arguments.Get("out", "sim-flicks"),
             arguments.Get("spots", "10,30,50").Split(',').Select(v => float.Parse(v, CultureInfo.InvariantCulture)).ToList());
     case "mechanics-lab":
-        if (arguments.Has("set")) Stardust.Simulator.Lab.MechanicsLab.Override(arguments.Require("set"));
         return Stardust.Simulator.Lab.MechanicsLab.Run(arguments.Get("drill", "all"), arguments.GetInt("episodes", 60),
             arguments.GetInt("seed", 11), arguments.Get("out", "sim-mechanics"), arguments.GetInt("trace", -1),
             arguments.Has("opponent") ? BotBuild.FromPath("opponent", arguments.Require("opponent")) : null);
@@ -131,6 +132,9 @@ switch (command)
 
               physics-check [--model all|...] [--trials 300] [--seed 3]
                     Validates the physics models against RocketSim.
+
+              Any command takes --set Type.Field=value,... to override tuning fields of the in-process
+              bot and planners (bots started as processes take STARDUST_TUNE instead).
             """);
         return command == "help" ? 0 : 1;
 }

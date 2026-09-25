@@ -103,7 +103,7 @@ $SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out t
 # Loose balls in our third (clear), Nexto's attacks (defense), kickoffs (kickoff-follow) and a
 # time profile (profile) are extra drills, run by name.
 # Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
-# --set Type.Field=value overrides a tuning field for a sweep (as STARDUST_TUNE does in a match)
+# --set Type.Field=value (any command) overrides a tuning field (as STARDUST_TUNE does in a match)
 $SIM mechanics-lab --drill all --episodes 60
 $SIM mechanics-lab --drill defense --opponent nexto.toml --episodes 60
 $SIM mechanics-lab --drill profile --opponent <bot> --episodes 12
@@ -271,6 +271,7 @@ Nexto. None survived:
 | Defensive-half touches: planned strike accepted up to 0.25 s later, and/or planned as a clearance past 1500 uu deep | clear drill, 150 each | 42–44 % vs 47 % cleared (harder touches, 1339 vs 1191 uu/s, but aimed wide) |
 | 2v2: a covered first man challenges up to 0.35 s late | 2v2 self-play, 72 games | +0.06 ± 0.30 |
 | No new ground catch or carry deeper than 1500 uu in our half | clear drill, 150; vs Nexto, 12 on one seed | 52 % vs 47 % cleared; −13.67 ± 0.71 against −12.92 ± 0.56 |
+| Aerial climb turning the nose by the quickest swing, roof left free | save drill, 200; aerial planner on the missed saves | 124 vs 125; best simulated miss 142 vs 152 uu: the flights are short, not slow to turn |
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
