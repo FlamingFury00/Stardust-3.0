@@ -139,17 +139,40 @@ public sealed class MatchSession : IDisposable
             p.LastInput = new ControllerStateT();
     }
 
+    /// <summary>
+    /// Shifts kickoff spawns by a few units so games differ between seeds. Each blue car and its
+    /// point-mirrored orange counterpart get mirrored offsets, so both stay exactly as far from the
+    /// ball as in the game: kickoff logic keyed on equal distances (as in Nexto) still recognises them.
+    /// </summary>
     private void JitterSpawns(int seed, float jitter)
     {
         if (jitter <= 0f) return;
         var random = new Random(seed);
-        foreach (Participant p in participants)
+        float Offset() => (float)(random.NextDouble() * 2 - 1) * jitter;
+        var orange = participants.Where(p => p.Team == 1).ToList();
+        foreach (Participant blue in participants.Where(p => p.Team == 0))
         {
-            RsbCarState car = arena.GetCar(p.CarId);
-            car.Physics.Position = new RsbVec(car.Physics.Position.X + (float)(random.NextDouble() * 2 - 1) * jitter,
-                car.Physics.Position.Y + (float)(random.NextDouble() * 2 - 1) * jitter, car.Physics.Position.Z);
-            arena.SetCar(p.CarId, car);
+            RsbVec position = arena.GetCar(blue.CarId).Physics.Position;
+            float dx = Offset(), dy = Offset();
+            Shift(blue, dx, dy);
+            Participant? twin = orange.OrderBy(o =>
+            {
+                RsbVec q = arena.GetCar(o.CarId).Physics.Position;
+                return MathF.Abs(q.X + position.X) + MathF.Abs(q.Y + position.Y);
+            }).FirstOrDefault();
+            if (twin == null) continue;
+            Shift(twin, -dx, -dy);
+            orange.Remove(twin);
         }
+        foreach (Participant unmatched in orange)
+            Shift(unmatched, Offset(), Offset());
+    }
+
+    private void Shift(Participant participant, float dx, float dy)
+    {
+        RsbCarState car = arena.GetCar(participant.CarId);
+        car.Physics.Position = new RsbVec(car.Physics.Position.X + dx, car.Physics.Position.Y + dy, car.Physics.Position.Z);
+        arena.SetCar(participant.CarId, car);
     }
 
     public void Snapshot()
