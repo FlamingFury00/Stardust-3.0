@@ -269,6 +269,8 @@ Nexto. None survived:
 | Solo shadow aimed at the front post (half / full blend) | defense drill, 100 each | 27 / 37 vs 31 conceded |
 | Solo challenges up to 0.3–0.6 s late | vs Nexto, 12 games on one seed | −13.50 ± 0.85 against −12.92 ± 0.56 |
 | Defensive-half touches: planned strike accepted up to 0.25 s later, and/or planned as a clearance past 1500 uu deep | clear drill, 150 each | 42–44 % vs 47 % cleared (harder touches, 1339 vs 1191 uu/s, but aimed wide) |
+| 2v2: a covered first man challenges up to 0.35 s late | 2v2 self-play, 72 games | +0.06 ± 0.30 |
+| No new ground catch or carry deeper than 1500 uu in our half | clear drill, 150; vs Nexto, 12 on one seed | 52 % vs 47 % cleared; −13.67 ± 0.71 against −12.92 ± 0.56 |
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
