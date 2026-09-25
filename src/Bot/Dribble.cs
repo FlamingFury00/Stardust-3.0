@@ -80,4 +80,64 @@ namespace Bot
             return ControlRuntime.Axis((speed >= 0f ? 1f : -1f) * rolling * lateral / authority);
         }
     }
+
+    public sealed class GroundDribble : IPossessionAction
+    {
+        private readonly float started = Game.Time;
+        private readonly HoodCarry carry;
+        private float stableSince = float.NaN;
+        public bool Finished { get; private set; }
+        public bool Interruptible => true;
+        public float ClaimTime => Game.Time + 0.25f;
+
+        /// <param name="carry">Carry controller to continue with, e.g. from the catch that settled the ball.</param>
+        public GroundDribble(HoodCarry carry = null) { this.carry = carry ?? new HoodCarry(); }
+
+        public static bool CanStart(Car car, Ball ball, float freeTime)
+        {
+            if (car == null || ball == null || !car.IsGrounded || car.Up.z <= 0.9f)
+                return false;
+
+            Vec3 local = car.Local(ball.location - car.Location);
+            float relativeSpeed = (ball.velocity - car.Velocity).Length();
+            bool alreadyControlled = PossessionControl.HasControlledPossession(car, ball);
+            return ball.location.z < 300f &&
+                local.x > -105f && local.x < 590f && MathF.Abs(local.y) < 195f &&
+                relativeSpeed < 1100f && (alreadyControlled || freeTime > 0.10f);
+        }
+        public void Run(RUBot bot)
+        {
+            Car car = bot.Me;
+            Vec3 offset = Ball.Location - car.Location;
+            if (!car.IsGrounded || offset.Length() > 850f || Game.Time - started > 8f || Ball.Location.z > 365f)
+            { Finished = true; return; }
+
+            Vec3 lane = PossessionControl.AttackingLane(
+                car, Ball.MainBall, bot.LivingOpponents,
+                bot.TheirGoal.Location, bot.OurGoal.Location);
+            bool carried = PossessionControl.HasControlledPossession(car, Ball.MainBall);
+            stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
+
+            float pressure = bot is Stardust stardust
+                ? MathF.Min(stardust.Situation.OpponentEta, stardust.Situation.PressureTime)
+                : 6f;
+            float opponentDistance = float.PositiveInfinity;
+            foreach (Car opponent in bot.LivingOpponents)
+                opponentDistance = MathF.Min(opponentDistance, opponent.Location.Dist(Ball.Location));
+
+            float requiredStable = pressure < 0.40f || opponentDistance < 450f ? 0.06f : 0.13f;
+            if (carried && Game.Time - stableSince >= requiredStable &&
+                PossessionControl.ShouldFlick(
+                    car, Ball.MainBall, lane, pressure, opponentDistance, bot.OurGoal.Location))
+            {
+                bot.Action = new Flick(FlickKind.Power, lane, carry);
+                return;
+            }
+
+            // Stay on the ball under pressure. The pressure response is the flick above, not abandoning
+            // possession and driving back into a shadow lane.
+            carry.SteerToward(car, Ball.MainBall, lane);
+            bot.Controller = carry.Step(car, Ball.MainBall, bot.DeltaTime, allowBoost: true);
+        }
+    }
 }

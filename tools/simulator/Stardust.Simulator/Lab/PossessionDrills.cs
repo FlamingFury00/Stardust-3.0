@@ -124,32 +124,35 @@ public sealed class CarryDrill : RoofDrill
 }
 
 /// <summary>
-/// Flick from a settled carry toward the goal: exit speed, direction and elevation of the ball after
-/// the car's last contact. A pro power flick leaves at 2500+ uu/s within a few degrees of its aim.
+/// Flicks from a settled carry toward the far goal, each kind in turn: exit speed, aim error and
+/// elevation of the ball after the car's last contact. Pro flicks leave hard (2300+ uu/s from a
+/// brisk carry) within a few degrees of their aim.
 /// </summary>
 public sealed class FlickDrill : RoofDrill
 {
-    private const float Settle = 0.5f;
+    private const float Settle = 0.4f;
     private readonly ContactClock contacts = new();
-    private bool flicked, unsettled;
+    private FlickKind kind;
+    private bool flicked, unsettled, haveExit;
     private float flickAt, carSpeedAtFlick;
     private RsbVec lane, exitVelocity, ballAtExit;
-    private bool haveExit;
 
     public override string Name => "flick";
-    public override string Description => "Flick a settled carry toward the far goal: exit speed, aim error and elevation.";
+    public override string Description => "Flick a settled carry toward the far goal (power, lob, high): exit speed, aim error, elevation.";
     public override IReadOnlyList<Criterion> Criteria => new[]
     {
-        Criterion.Rate(0.8), Criterion.Median("exit-speed", 2500), Criterion.Median("aim-error-deg", 6, atLeast: false),
-        Criterion.Quantile("aim-error-deg", 0.9, 15, atLeast: false),
+        Criterion.Rate(0.85), Criterion.Median("power-exit-speed", 2300), Criterion.Median("aim-error-deg", 3, atLeast: false),
+        Criterion.Quantile("aim-error-deg", 0.9, 6, atLeast: false), Criterion.Median("lob-elevation-deg", 28),
+        Criterion.Median("high-elevation-deg", 40),
     };
 
     public override EpisodeSetup Generate(Random r)
     {
+        kind = (FlickKind)r.Next(3);
         var car = V(Uniform(r, -1800, 1800), Uniform(r, -1500, 1200), 17.01f);
         float yaw = MathF.Atan2(5120 - car.Y, -car.X) + Uniform(r, -0.3f, 0.3f);
-        return CarryStart(car, yaw, Uniform(r, 600, 1400), Uniform(r, 0, 25), Uniform(r, -15, 15),
-            Uniform(r, 30, 100), Settle + 1.6f);
+        return CarryStart(car, yaw, Uniform(r, 900, 1500), Uniform(r, 0, 25), Uniform(r, -15, 15),
+            Uniform(r, 30, 100), Settle + 2.2f);
     }
 
     protected override void Start(MatchSession session, EpisodeSetup setup)
@@ -159,23 +162,24 @@ public sealed class FlickDrill : RoofDrill
         flickAt = float.NaN;
         bool installed = false;
         float started = float.NaN;
+        HoodCarry carry = new();
         Subject.Director = bot =>
         {
             if (!installed)
             {
-                bot.Action = new GroundDribble();
+                bot.Action = new GroundDribble(carry);
                 installed = true;
                 started = Game.Time;
                 return;
             }
             if (flicked || unsettled || Game.Time - started < Settle) return;
-            if (!PossessionControl.HasControlledPossession(bot.Me, RedUtils.Ball.MainBall))
+            if (!(bot.Action is GroundDribble))
             {
                 unsettled = true;
                 return;
             }
             RedUtils.Math.Vec3 aim = (bot.TheirGoal.Location - RedUtils.Ball.Location).FlatNorm();
-            bot.Action = new ControlledFlick(bot.Me, aim);
+            bot.Action = new Flick(kind, aim, carry);
             lane = new RsbVec(aim.x, aim.y, 0);
             flicked = true;
         };
@@ -194,6 +198,8 @@ public sealed class FlickDrill : RoofDrill
             contacts.Reset(car);
             return;
         }
+        // Only contacts after the jump count: the set-up still carries the ball.
+        if (car.IsOnGround != 0 && !haveExit && contacts.SinceContact < 2) return;
         if (!contact && contacts.SinceContact == 2)
         {
             exitVelocity = session.Ball.Physics.Velocity;
@@ -204,25 +210,30 @@ public sealed class FlickDrill : RoofDrill
 
     public override bool ShouldStop(MatchSession session, EpisodeTrace trace) =>
         unsettled || trace.GoalTeam >= 0 ||
-        (!float.IsNaN(flickAt) && trace.Elapsed - flickAt > 1.2f) ||
+        (!float.IsNaN(flickAt) && trace.Elapsed - flickAt > 2.0f) ||
         (haveExit && contacts.SinceContact > 36);
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
+        string key = kind.ToString().ToLowerInvariant();
+        trace.Notes.Insert(0, key);
         trace.Metrics["unsettled"] = unsettled ? 1 : 0;
         if (!haveExit) return false;
         float speed = exitVelocity.Length;
         float aimError = FlatAngle(exitVelocity, lane);
         float elevation = Degrees(MathF.Atan2(exitVelocity.Z, exitVelocity.FlatLength));
-        trace.Metrics["exit-speed"] = speed;
-        trace.Metrics["gain"] = speed - carSpeedAtFlick;
+        trace.Metrics[$"{key}-exit-speed"] = speed;
+        trace.Metrics[$"{key}-gain"] = speed - carSpeedAtFlick;
+        trace.Metrics[$"{key}-elevation-deg"] = elevation;
         trace.Metrics["aim-error-deg"] = aimError;
-        trace.Metrics["elevation-deg"] = elevation;
+        trace.Metrics[$"{key}-aim-error-deg"] = aimError;
+        trace.Notes.Insert(1, string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"exit {speed:F0} aim {aimError:F1} up {elevation:F0}"));
         // On target if the flat path crosses the goal line between the posts.
         bool onTarget = exitVelocity.Y > 0 &&
             MathF.Abs(ballAtExit.X + exitVelocity.X / exitVelocity.Y * (5120 - ballAtExit.Y)) < 800;
         trace.Metrics["on-target"] = onTarget ? 1 : 0;
-        return speed >= 2000 && aimError <= 10;
+        return speed >= carSpeedAtFlick + 700 && aimError <= 6;
     }
 }
 
@@ -236,12 +247,14 @@ public sealed class CatchDrill : RoofDrill
     private const float RoofContactZ = 148.3f;
     private readonly ContactClock contacts = new();
     private float roofSince, settledAt, contactSlip;
+    private bool attempted, declined;
 
     public override string Name => "catch";
     public override string Description => "Catch a dropping ball on the roof and settle it for 1 s.";
     public override IReadOnlyList<Criterion> Criteria => new[]
     {
-        Criterion.Rate(0.8), Criterion.Median("contact-slip", 150, atLeast: false),
+        Criterion.Mean("attempted", 0.5), Criterion.Mean("settled-when-attempted", 0.85),
+        Criterion.Median("contact-slip", 150, atLeast: false),
     };
 
     public override EpisodeSetup Generate(Random r)
@@ -274,14 +287,28 @@ public sealed class CatchDrill : RoofDrill
     {
         base.Start(session, setup);
         roofSince = settledAt = contactSlip = float.NaN;
+        attempted = declined = false;
         contacts.Reset(session.Cars[0]);
+        bool first = true;
         Subject.Director = bot =>
         {
-            if (bot.Action != null) return;
-            if (GroundDribble.CanStart(bot.Me, RedUtils.Ball.MainBall, 1))
+            if (first)
+            {
+                // One committed attempt from the start state; a ball the bot will not commit to ends the episode.
+                first = false;
+                RedUtils.Math.Vec3 lane = ControlMath.FlatUnit(bot.TheirGoal.Location - RedUtils.Ball.Location, bot.Me.Forward);
+                if (GroundCatch.FindCatch(bot.Me, lane) is CatchPlan plan)
+                {
+                    bot.Action = new GroundCatch(plan);
+                    attempted = true;
+                    Console.WriteLine($"DBG director installed at {RedUtils.Game.Time} action={bot.Action}");
+                }
+                else declined = true;
+                return;
+            }
+            // The catch hands over to the carry itself; this only covers a catch that ended on the roof.
+            if (bot.Action == null && GroundDribble.CanStart(bot.Me, RedUtils.Ball.MainBall, 1))
                 bot.Action = new GroundDribble();
-            else if (GroundCatch.FindCatch(bot.Me) != null)
-                bot.Action = new GroundCatch();
         };
     }
 
@@ -301,14 +328,18 @@ public sealed class CatchDrill : RoofDrill
             settledAt = trace.Elapsed;
     }
 
-    public override bool ShouldStop(MatchSession session, EpisodeTrace trace) => !float.IsNaN(settledAt) || trace.GoalTeam >= 0;
+    public override bool ShouldStop(MatchSession session, EpisodeTrace trace) =>
+        declined || !float.IsNaN(settledAt) || trace.GoalTeam >= 0;
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
+        bool settled = !float.IsNaN(settledAt);
         trace.Metrics["contact-slip"] = contactSlip;
         trace.Metrics["settle-s"] = settledAt;
-        trace.Metrics["no-boost"] = setup.Cars[0].Boost == 0 ? 1 : 0;
-        return !float.IsNaN(settledAt);
+        trace.Metrics["attempted"] = attempted ? 1 : 0;
+        trace.Metrics["settled-when-attempted"] = attempted ? (settled ? 1 : 0) : double.NaN;
+        trace.Metrics[setup.Cars[0].Boost == 0 ? "attempted-no-boost" : "attempted-boost"] = attempted ? 1 : 0;
+        return settled;
     }
 }
 

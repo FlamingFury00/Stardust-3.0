@@ -43,14 +43,24 @@ public abstract class Drill : Scenario
     public int TraceEpisode { get; set; } = -1;
     private int episode = -1;
 
+    private string? lastAction;
+
     public sealed override void Begin(MatchSession session, EpisodeSetup setup)
     {
         episode++;
+        lastAction = null;
         Start(session, setup);
     }
 
     public sealed override void Observe(MatchSession session, EpisodeTrace trace)
     {
+        // The episode log records each change of the bot's action, e.g. "0.01:GroundCatch 1.71:GroundDribble".
+        string action = Subject.Action?.GetType().Name ?? "-";
+        if (action != lastAction)
+        {
+            trace.Notes.Add(string.Create(CultureInfo.InvariantCulture, $"{trace.Elapsed:F2}:{action}"));
+            lastAction = action;
+        }
         if (episode == TraceEpisode)
         {
             RsbCarState car = session.Cars[0];

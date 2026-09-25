@@ -73,7 +73,8 @@ public static class ScenarioRunner
             episodeLog?.Add(string.Create(CultureInfo.InvariantCulture,
                 $"episode {episode} start {trace.StartTime:F3} end {trace.StartTime + trace.Elapsed:F3} success {success} " +
                 $"ball {setup.BallPosition} v{setup.BallVelocity} car {setup.Cars[0].Position} yaw {setup.Cars[0].Yaw:F2} " +
-                $"speed {setup.Cars[0].Velocity.Length:F0} goal {trace.GoalTeam} first-touch {trace.FirstTouchTime:F2}"));
+                $"speed {setup.Cars[0].Velocity.Length:F0} goal {trace.GoalTeam} first-touch {trace.FirstTouchTime:F2}") +
+                (trace.Notes.Count > 0 ? " | " + string.Join(" ", trace.Notes) : ""));
             outcome.Episodes++;
             if (success) outcome.Successes++;
             else if (outcome.Failures.Count < 12)

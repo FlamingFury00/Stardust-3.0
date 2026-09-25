@@ -117,7 +117,7 @@ Test("ground dribble: pre-contact pressure triggers the flick window", () =>
     dribble.Run(bot);
     Set(typeof(Game), nameof(Game.Time), null, 0.30f);
     dribble.Run(bot);
-    Check(bot.Action is ControlledFlick,
+    Check(bot.Action is Flick,
         $"imminent pre-contact pressure did not trigger flick; action is {bot.Action?.GetType().Name ?? "null"}");
 });
 

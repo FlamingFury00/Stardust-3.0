@@ -33,6 +33,8 @@ public sealed class EpisodeTrace
     public bool CarLandedUpright;
     public List<(float Time, int Toucher)> TouchLog { get; } = new();
     public Dictionary<string, double> Metrics { get; } = new();
+    /// <summary>Free-form notes for the episode log, e.g. the sequence of actions a bot ran.</summary>
+    public List<string> Notes { get; } = new();
 }
 
 /// <summary>

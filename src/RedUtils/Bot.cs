@@ -13,7 +13,7 @@ namespace RedUtils
         private static readonly object WorldGate = new();
         private readonly TickClock clock = new();
         private readonly ShotClaimLedger claims = new();
-        private bool ready, hasOutput, shotClaimActive;
+        private bool ready, hasOutput, shotClaimActive, touchBaselined;
         private float lastTouchTime = -1f, lastClaimSent = float.NegativeInfinity;
         private float kickoffTouchBaseline = -1f;
 
@@ -63,11 +63,14 @@ namespace RedUtils
             // seconds without a touch, so the phase alone must not end the kickoff routine.
             bool kickoffPhase = Game.MatchPhase == MatchPhase.Kickoff;
             bool kickoffStart = kickoffPhase && !IsKickoff;
-            if (kickoffStart || ClockReset)
+            if (kickoffStart || ClockReset || !touchBaselined)
             {
                 Action = null;
                 claims.Clear();
-                lastTouchTime = -1f;
+                // The packet keeps every car's latest touch, however old. Baseline it so only a
+                // touch made after the reset counts as new (else an old own touch reads as one now).
+                lastTouchTime = Ball.LatestTouch?.Time ?? -1f;
+                touchBaselined = true;
                 lastClaimSent = float.NegativeInfinity;
                 kickoffTouchBaseline = Ball.LatestTouch?.Time ?? -1f;
             }

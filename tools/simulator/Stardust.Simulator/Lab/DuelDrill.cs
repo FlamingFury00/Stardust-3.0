@@ -119,7 +119,7 @@ public sealed class DribbleDuelDrill : RoofDrill
 
     protected override void Measure(MatchSession session, EpisodeTrace trace)
     {
-        flicked |= Subject.Action is global::Bot.ControlledFlick;
+        flicked |= Subject.Action is global::Bot.Flick;
     }
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)

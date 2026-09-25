@@ -380,14 +380,14 @@ namespace Bot
             }
 
             Shot attack = priorityAttack;
-            BallSlice catchSlice = canPossessGround && Ball.Location.z > 175f
-                ? GroundCatch.FindCatch(Me)
+            CatchPlan catchPlan = canPossessGround
+                ? GroundCatch.FindCatch(Me, ControlMath.FlatUnit(TheirGoal.Location - Ball.Location, Me.Forward))
                 : null;
 
             // Prefer a real scoring/clearing contact when it is imminent or contested. With time and a
             // descending ball, keep the softer catch available instead of forcing every touch.
             if (attack != null &&
-                (underPressure || catchSlice == null || attack.Slice.Time - Game.Time <= 0.72f))
+                (underPressure || catchPlan == null || attack.Slice.Time - Game.Time <= 0.72f))
             {
                 Action = attack;
                 SetDecision(underPressure
@@ -405,9 +405,9 @@ namespace Bot
                 return;
             }
 
-            if (catchSlice != null)
+            if (catchPlan != null)
             {
-                Action = new GroundCatch();
+                Action = new GroundCatch(catchPlan);
                 SetDecision(underPressure
                     ? "mechanic / contested cushion catch"
                     : "mechanic / cushion catch");
