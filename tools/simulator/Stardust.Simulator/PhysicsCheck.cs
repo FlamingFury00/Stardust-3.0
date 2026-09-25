@@ -36,6 +36,7 @@ public static class PhysicsCheck
         if (all || which == "timed") failures += NavigateTimed(trials, seed);
         if (all || which == "jump") failures += JumpCheck(trials, seed);
         if (all || which == "dodge") failures += DodgeCheck(trials, seed);
+        if (all || which == "flip") failures += FlipCheck(trials, seed);
         if (all || which == "orient") failures += OrientCheck(trials, seed);
         if (all || which == "flight") failures += FlightCheck(trials, seed);
         if (all || which == "aerial") failures += AerialCheck(trials, seed);
@@ -377,6 +378,121 @@ public static class PhysicsCheck
         // Components under 0.1 are zeroed by the game, so a few directions are unreachable by ~2 degrees.
         bool ok = Percentile(angle, 0.9) < 3 && Percentile(magnitude, 0.9) < 0.06 && Percentile(steering, 0.9) < 3;
         Console.WriteLine(ok ? "dodge: PASS" : "dodge: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Planned flip touches: a car running at a random speed toward a ball at a random height
+    /// (resting, or at the top of a bounce) takes off FlipModel.TimeToHeight before contact, releases
+    /// jump on the contact clock and dodges FlipModel.Lead before contact, exactly as DrivenStrike
+    /// does. The touch must happen on time and the ball must leave as Contact.Aim predicts.
+    /// </summary>
+    private static int FlipCheck(int trials, int seed)
+    {
+        var random = new Random(seed + 11);
+        float R(float a, float b) => a + (float)random.NextDouble() * (b - a);
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        var geometry = new RedUtils.Planning.CarGeometry(CarPose.OctaneHitbox, CarPose.OctaneOffset);
+        const int RunIn = 30;
+        const float Tick = 1f / 120f;
+        var direction = new List<double>();
+        var speedError = new List<double>();
+        var gaps = new List<double>();
+        int planned = 0, touched = 0;
+        for (int trial = 0; trial < trials; trial++)
+        {
+            float speed = R(800f, 1900f);
+            // Rolling balls rest at 93; bouncing ones are met at the top of the bounce.
+            float ballZ = random.NextDouble() < 0.35 ? 93f : R(125f, 210f);
+            Vec3 heading = Vec3.Y;
+            float jumpTime = FlipModel.TimeToHeight(ballZ - 25f);
+            if (!float.IsFinite(jumpTime)) continue;
+            int flight = (int)MathF.Round(jumpTime / Tick);
+            var (height, vertical) = FlipModel.AtContact(flight * Tick);
+            float contactSpeed = FlipModel.SpeedAfter(speed, vertical);
+            var ball = new Vec3(R(-200f, 200f), 0f, ballZ);
+            Vec3 aim = ball + GroundModel.Rotate(heading, R(-0.4f, 0.4f)) * 3000f;
+            var contact = RedUtils.Planning.Contact.Aim(ball, Vec3.Zero, heading, heading * contactSpeed + new Vec3(0f, 0f, vertical),
+                height, aim, geometry, FlipModel.Pitch(FlipModel.Lead), RL.CarMaxAngularSpeed);
+            if (!contact.Valid) continue;
+            planned++;
+
+            // Back the car off along the heading: the flight, then the run-in on the ground.
+            float airborne = speed * (flight * Tick - FlipModel.Lead) + contactSpeed * FlipModel.Lead;
+            Vec3 start = contact.CarPosition.Flatten() - heading * (airborne + speed * RunIn * Tick);
+            var state = GroundCar(arena, car, speed);
+            state.Physics.Position = new RsbVec(start.x, start.y, 17.01f);
+            arena.SetCar(car, state);
+            int contactTick = RunIn + flight;
+            arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(3000, 3000, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+            ulong hitBefore = arena.GetCar(car).LastHitTick;
+
+            bool jumpHeld = false, dodged = false;
+            bool hit = false;
+            for (int tick = 0; tick < contactTick + 30; tick++)
+            {
+                // The ball appears 0.3 s before contact and peaks (or rests) at the contact point.
+                int appear = contactTick - 36;
+                if (tick == System.Math.Max(0, appear))
+                {
+                    float rise = (contactTick - System.Math.Max(0, appear)) * Tick;
+                    bool bounce = ballZ > 93f;
+                    float z0 = bounce ? ballZ + 0.5f * RL.Gravity * rise * rise : 93f;
+                    float vz = bounce ? -RL.Gravity * rise : 0f;
+                    arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(ball.x, ball.y, z0), Velocity = new RsbVec(0, 0, vz), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+                }
+                var c = arena.GetCar(car);
+                var controls = new RsbControls { Throttle = speed < 1410f ? Navigator.HoldThrottle : 1f };
+                if (tick >= RunIn && !dodged)
+                {
+                    float elapsed = (tick - RunIn) * Tick, remaining = (contactTick - tick) * Tick;
+                    bool hold = elapsed < JumpModel.MinimumTime - 0.5f * Tick ||
+                        (elapsed < JumpModel.MaximumHold - 0.5f * Tick && remaining > FlipModel.Lead + 1.5f * Tick);
+                    if (!hold && !jumpHeld && remaining <= FlipModel.Lead + 0.5f * Tick && elapsed >= FlipModel.EarliestDodge - 0.5f * Tick)
+                    {
+                        (float pitch, float yaw) = DodgeModel.InputToward(ToVec(c.Physics.Forward), heading, c.Physics.Velocity.Dot(c.Physics.Forward));
+                        controls = new RsbControls { Jump = 1, Pitch = pitch, Yaw = yaw };
+                        dodged = true;
+                    }
+                    else
+                        controls = new RsbControls { Jump = hold ? 1 : 0 };
+                    jumpHeld = controls.Jump == 1;
+                }
+                else if (dodged)
+                    controls = new RsbControls();
+                arena.SetControls(car, controls);
+                arena.Step();
+                if (tick + 1 == contactTick)
+                {
+                    // RocketSim registers a hit a couple of steps after first contact, so timing is
+                    // judged geometrically: the car's box should just reach the ball on the planned tick.
+                    Vec3 b = ToVec(arena.Ball.Physics.Position);
+                    gaps.Add((Pose(arena.GetCar(car)).ClosestPoint(b) - b).Length() - RL.BallRadius);
+                }
+                if (arena.GetCar(car).LastHitTick != hitBefore)
+                {
+                    hit = true;
+                    break;
+                }
+            }
+            if (!hit) continue;
+            touched++;
+            // Let the contact finish, then undo the gravity accumulated since.
+            for (int after = 0; after < 3; after++) { arena.SetControls(car, new RsbControls()); arena.Step(); }
+            Vec3 actual = ToVec(arena.Ball.Physics.Velocity) - new Vec3(0f, 0f, RL.Gravity * 3 * Tick);
+            Vec3 predicted = contact.BallVelocity;
+            direction.Add(Math.Abs(GroundModel.SignedAngle(predicted.Flatten(), actual.Flatten())) * 180 / Math.PI);
+            speedError.Add((actual.Length() - predicted.Length()) / MathF.Max(predicted.Length(), 1f));
+        }
+        var inv = CultureInfo.InvariantCulture;
+        var absoluteSpeed = speedError.Select(Math.Abs).ToList();
+        Console.WriteLine(string.Create(inv,
+            $"flip: touched {touched}/{planned}; box-to-ball gap on the planned contact tick p50 {Percentile(gaps, 0.5):F1} uu p90 {Percentile(gaps, 0.9):F1}; " +
+            $"flat direction error p50 {Percentile(direction, 0.5):F1} deg p90 {Percentile(direction, 0.9):F1}; speed error p50 {Percentile(absoluteSpeed, 0.5):P1} p90 {Percentile(absoluteSpeed, 0.9):P1}, bias {(speedError.Count > 0 ? speedError.Average() : 0):P1}"));
+        bool ok = planned > 0 && touched >= 0.9 * planned && Percentile(direction, 0.5) < 4 && Percentile(direction, 0.9) < 12 &&
+            Percentile(absoluteSpeed, 0.5) < 0.08 && Percentile(gaps.Select(Math.Abs), 0.9) < 25;
+        Console.WriteLine(ok ? "flip: PASS" : "flip: FAIL");
         return ok ? 0 : 1;
     }
 
