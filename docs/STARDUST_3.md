@@ -254,12 +254,13 @@ Nexto. None survived:
 | Refuel whenever the route through a pad still beats Nexto's quickest shot home | self-play, 63 games; vs Nexto, 12 | −0.27 ± 0.34; −14.9 vs −14.3 (more boost, 14 vs 9 average, same goals) |
 | Final kickoff dodge turned 0.25 rad away from the opponent's car | kickoff drill vs Nexto, 60; self-play kickoffs | kickoffs won 47 % vs 33 % against Nexto, but a mirror opponent gets the first touch 52 to 29, so it loses in self-play |
 | Final dodge later (450–600 uu), none at all, or along the approach | kickoff drill vs Nexto, 60 each | worse or level; without the dodge every kickoff is lost |
+| Final dodge held 0.1 s instead of 0.18 s, hitting the ball lower | self-play, 24 games | −1.33 ± 0.65: ball-side advantage after the kickoff 75 to 126 |
 | Shadow holds its depth against a fast attack instead of stepping up | defense drill, 40 | 21 vs 15 conceded |
 | Meet a carried ball with a clearance before a block | defense drill, 40 + 60 | 29 vs 32 per 100 conceded: level |
 | Challenge a carrier whenever its path is reachable within 0.8 s | defense drill, 100 | 36 vs 35: level |
 | Plan saves on a carried-ball path that speeds up with the carrier's boost | defense drill, 2 × 100 | 76 vs 73 per 200: level |
 | Shadow boosts to catch up when 350 uu/s short of its target speed | self-play, 18 games | −1.78 ± 0.53 |
-| Stricter or looser solo challenge margins | vs Nexto, 12 games each | −13.75 and −14.25 against −14.3 to −14.9: not resolvable |
+| Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
 goal-side with 20–100 boost. The gap to Nexto is not one misjudged threshold: each rule above fixes
