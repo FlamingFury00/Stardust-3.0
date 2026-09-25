@@ -30,6 +30,8 @@ public static class Series
     {
         WriteIndented = true,
         NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals,
+        // Results are read back (tournament resume): fill their get-only lists.
+        PreferredObjectCreationHandling = System.Text.Json.Serialization.JsonObjectCreationHandling.Populate,
     };
 
     public static List<MatchResult> Run(SeriesOptions options)

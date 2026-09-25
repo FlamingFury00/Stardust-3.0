@@ -31,6 +31,21 @@ switch (command)
         Console.WriteLine(report);
         return results.All(r => r.Error == null) ? 0 : 2;
     }
+    case "tournament":
+    {
+        var options = new TournamentOptions
+        {
+            Bots = Tournament.ReadRoster(arguments.Require("roster")),
+            GamesPerPair = arguments.GetInt("games", 8),
+            TeamSize = arguments.GetInt("size", 1),
+            Seed = arguments.GetInt("seed", 1),
+            Parallel = arguments.GetInt("parallel", Math.Max(1, Environment.ProcessorCount / 2)),
+            MatchSeconds = arguments.GetFloat("seconds", 300f),
+            OutputDirectory = arguments.Get("out", "sim-tournament"),
+        };
+        Console.WriteLine(Tournament.Run(options));
+        return 0;
+    }
     case "scenarios":
     {
         var bots = new List<BotBuild> { BotBuild.FromPath(arguments.Get("a-label", "candidate"), arguments.Require("a")) };
@@ -81,6 +96,14 @@ switch (command)
               match --a <bot build dir> --b <bot build dir> [--a-label candidate] [--b-label baseline]
                     [--size 1|2|3] [--games 10] [--seed 1] [--parallel N] [--seconds 300]
                     [--out sim-results] [--replays]
+
+              tournament --roster <file: one "label = bot" per line> [--size 1|2|3] [--games 8]
+                    [--seed 1] [--parallel N] [--seconds 300] [--out sim-tournament]
+                    Round robin of paired series; ranks bots by Bradley-Terry Elo. Finished pairs are
+                    reused, so a tournament can be resumed or extended.
+
+              A bot is a .NET build directory (Bot.dll), an entry assembly, or an RLBot v5 bot
+              config (*.toml), which starts with its Linux run command.
 
               scenarios --a <bot build dir> [--b <bot build dir>] [--opponent <bot build dir>]
                     [--suite all|kickoff|open-net|vs-keeper|aerial|save|recovery] [--episodes 40]

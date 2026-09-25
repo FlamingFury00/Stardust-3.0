@@ -82,6 +82,7 @@ public static class PacketBuilder
     {
         Physics = Physics(ball.Physics),
         Shape = CollisionShapeUnion.FromSphereShape(new SphereShapeT { Diameter = SimArena.BallRadius * 2 }),
+        ChargeLevel = -1, // not a dropshot ball
     };
 
     public static BallPredictionT Prediction(RsbBallState[] states, int count, float now)
@@ -140,6 +141,7 @@ public static class PacketBuilder
                 new GoalInfoT { TeamNum = 1, Location = new Vector3T { X = 0, Y = 5120, Z = 321.3875f },
                     Direction = new Vector3T { X = 0, Y = -1, Z = 0 }, Width = 1785.55f, Height = 642.775f },
             ],
+            Tiles = [], // Soccar has no dropshot tiles
         };
     }
 

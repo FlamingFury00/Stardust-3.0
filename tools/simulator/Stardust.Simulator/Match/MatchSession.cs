@@ -265,6 +265,7 @@ public sealed class MatchSession : IDisposable
                 Timer = pad.IsActive != 0 ? 0 : MathF.Max(0, PacketBuilder.PadRespawn(pad.IsBig != 0) - pad.Cooldown),
             }).ToList(),
             Balls = new List<BallInfoT> { PacketBuilder.Ball(ball) },
+            Tiles = [], // Soccar has no dropshot tiles
             MatchInfo = new MatchInfoT
             {
                 SecondsElapsed = Time,

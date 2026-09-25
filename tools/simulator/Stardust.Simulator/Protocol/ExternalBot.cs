@@ -6,18 +6,70 @@ using Stardust.Simulator.Match;
 
 namespace Stardust.Simulator.Protocol;
 
-/// <summary>Where a bot build lives and how to start it.</summary>
-public sealed record BotBuild(string Label, string EntryAssembly)
+/// <summary>How to start a bot process: program, arguments and working directory.</summary>
+public sealed record BotBuild(string Label, string Program, IReadOnlyList<string> Arguments, string WorkingDirectory, string Source)
 {
-    /// <summary>Accepts a build directory (containing Bot.dll) or a path to the entry assembly.</summary>
+    /// <summary>
+    /// Accepts a .NET build directory (containing Bot.dll), a path to an entry assembly, or an RLBot v5
+    /// bot config (<c>*.toml</c>), which is started with its Linux run command from its root directory.
+    /// </summary>
     public static BotBuild FromPath(string label, string path)
     {
         string full = Path.GetFullPath(path);
+        if (full.EndsWith(".toml", StringComparison.OrdinalIgnoreCase))
+            return FromConfig(label, full);
         if (Directory.Exists(full))
             full = Path.Combine(full, "Bot.dll");
         if (!File.Exists(full))
             throw new FileNotFoundException($"Bot entry assembly not found: {full}");
-        return new BotBuild(label, full);
+        string directory = Path.GetDirectoryName(full)!;
+        return new BotBuild(label, "dotnet", [full], directory, Path.GetFileName(directory));
+    }
+
+    /// <summary>
+    /// Reads <c>[settings]</c> of a bot config. <c>run_command_linux</c> is used when present; otherwise the
+    /// Windows <c>run_command</c> is translated (path separators, venv <c>Scripts</c> to <c>bin</c>, no <c>.exe</c>).
+    /// </summary>
+    public static BotBuild FromConfig(string label, string configPath)
+    {
+        if (!File.Exists(configPath))
+            throw new FileNotFoundException($"Bot config not found: {configPath}");
+        Dictionary<string, string> settings = ReadTomlSection(configPath, "settings");
+        string command = settings.GetValueOrDefault("run_command_linux") ?? settings.GetValueOrDefault("run_command")
+            ?? throw new InvalidDataException($"{configPath} has no run_command.");
+        if (!settings.ContainsKey("run_command_linux"))
+            command = command.Replace('\\', '/').Replace("/Scripts/", "/bin/").Replace(".exe", "");
+        string root = settings.GetValueOrDefault("root_dir") ?? "";
+        string directory = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(configPath)!, root));
+        return new BotBuild(label, "/bin/sh", ["-c", command], directory, Path.GetFileName(configPath));
+    }
+
+    /// <summary>String values of one table of a TOML file (enough for RLBot bot configs).</summary>
+    private static Dictionary<string, string> ReadTomlSection(string path, string section)
+    {
+        var values = new Dictionary<string, string>();
+        string current = "";
+        foreach (string raw in File.ReadLines(path))
+        {
+            string line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            if (line.StartsWith('['))
+            {
+                current = line.Trim('[', ']', ' ');
+                continue;
+            }
+            int equals = line.IndexOf('=');
+            if (current != section || equals < 0) continue;
+            string key = line[..equals].Trim();
+            string value = line[(equals + 1)..].Trim();
+            if (value.Length >= 2 && value[0] == '"')
+            {
+                int end = value.LastIndexOf('"');
+                value = value[1..end].Replace("\\\\", "\\").Replace("\\\"", "\"");
+            }
+            values[key] = value;
+        }
+        return values;
     }
 }
 
@@ -38,7 +90,7 @@ public sealed class ExternalBotAgent : IAgent
     }
 
     public BotBuild Build { get; }
-    public string Description => $"{Build.Label} ({Path.GetFileName(Path.GetDirectoryName(Build.EntryAssembly))})";
+    public string Description => $"{Build.Label} ({Build.Source})";
     public int TimeoutMilliseconds { get; set; } = 20000;
 
     public void Send(Participant self, byte[] framedPrediction, byte[] framedPacket, GamePacketT packet,
@@ -123,14 +175,15 @@ public static class BotLauncher
             foreach (Request request in requests)
             {
                 string agentId = $"stardust-sim/{port}/{request.Index}";
-                var start = new ProcessStartInfo("dotnet")
+                var start = new ProcessStartInfo(request.Build.Program)
                 {
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    WorkingDirectory = Path.GetDirectoryName(request.Build.EntryAssembly)!,
+                    WorkingDirectory = request.Build.WorkingDirectory,
                 };
-                start.ArgumentList.Add(request.Build.EntryAssembly);
+                foreach (string argument in request.Build.Arguments)
+                    start.ArgumentList.Add(argument);
                 start.Environment["RLBOT_AGENT_ID"] = agentId;
                 start.Environment["RLBOT_SERVER_PORT"] = port.ToString();
                 // Production builds log telemetry to files by default; keep simulated series quiet
