@@ -128,6 +128,8 @@ namespace RedUtils.Planning
             public bool AllowAerials = true;
             /// <summary>Largest accepted angle between the predicted and aimed ball direction.</summary>
             public float AimTolerance = 0.35f;
+            /// <summary>How much earlier than planned an aerial must be able to reach its contact.</summary>
+            public float AerialLead = AerialMargin;
             /// <summary>Optional diagnostics sink (planner rejections and accepted candidates).</summary>
             public Action<string> Log;
         }
@@ -203,7 +205,7 @@ namespace RedUtils.Planning
         private static StrikePlan PlanAerial(Car car, BallSlice slice, float now, StrikeGoal goal, CarGeometry geometry, Options options)
         {
             float t = slice.Time - now;
-            if (!options.AllowBoost || t < AerialMargin + 0.35f || car.Boost < 5f) return null;
+            if (!options.AllowBoost || t < options.AerialLead + 0.35f || car.Boost < 5f) return null;
             bool grounded = car.IsGrounded;
             if (grounded && car.Up.z < 0.9f) return null;
             FlightState flight = FlightState.From(car);
@@ -231,7 +233,7 @@ namespace RedUtils.Planning
                     Vec3 target = ball - nose * (RL.BallRadius + geometry.FrontReach - AerialOverlap) - lift * geometry.HitboxOffset.z;
                     if (target.z < 60f) continue;
                     bool doubleJump = grounded && target.z - flight.Position.z > 450f;
-                    AerialResult early = AerialGuidance.Simulate(flight, grounded, t - AerialMargin, target, nose, doubleJump);
+                    AerialResult early = AerialGuidance.Simulate(flight, grounded, t - options.AerialLead, target, nose, doubleJump);
                     if (!early.Reached)
                     {
                         options.Log?.Invoke(FormattableString.Invariant($"aerial t={t:F2} ball={ball}: early miss={early.Miss:F0}"));
@@ -255,7 +257,7 @@ namespace RedUtils.Planning
                         continue;
                     }
                     var contact = new ContactSolution(target, nose, 0f, hit.Velocity, aimError);
-                    StrikePlan plan = Score(StrikeKind.Aerial, slice, contact, aim, now, now + t - AerialMargin, f.Velocity.Length(), goal, options);
+                    StrikePlan plan = Score(StrikeKind.Aerial, slice, contact, aim, now, now + t - options.AerialLead, f.Velocity.Length(), goal, options);
                     plan.Score -= AerialRecoveryCost + AerialBoostCost * flown.BoostUsed;
                     plan.DoubleJump = doubleJump;
                     plan.BoostUsed = flown.BoostUsed;

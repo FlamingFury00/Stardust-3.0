@@ -520,11 +520,16 @@ namespace Bot
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
 
         /// <summary>Quality a planned clearance needs to be taken ahead of a block.</summary>
-        private const float ComfortableClearQuality = 0.2f;
+        public static float ComfortableClearQuality = 0.2f;
         /// <summary>Spare time a planned clearance needs to be taken ahead of a block.</summary>
-        private const float ComfortableClearSlack = 0.1f;
+        public static float ComfortableClearSlack = 0.1f;
         /// <summary>Quality below which a planned clearance is worse than the scripted save.</summary>
-        private const float LastResortClearQuality = -0.5f;
+        public static float LastResortClearQuality = -0.5f;
+        /// <summary>
+        /// Lead (s) a last-line aerial save must reach its contact by; zero disables it. A save needs
+        /// only a touch that turns the ball off target, not the aimed, early contact of a clearance.
+        /// </summary>
+        public static float SaveAerialLead = 0f;
 
         /// <summary>
         /// Physics-planned save for a ball that will otherwise go in: a comfortable ground or aerial
@@ -559,6 +564,15 @@ namespace Bot
                 return Guard(block, "defend / block");
             if (clear != null && clear.Quality > LastResortClearQuality)
                 return Strike(clear, "defend / planned clear");
+            if (SaveAerialLead > 0f)
+            {
+                // Last line: any aerial touch that turns the ball off target, reached with a short lead.
+                clearOptions.AimTolerance = MathF.PI;
+                clearOptions.AerialLead = SaveAerialLead;
+                StrikePlan save = StrikePlanner.Plan(Me, path, Game.Time, StrikeGoal.ClearFrom(Team, LivingOpponents), clearOptions);
+                if (save != null && save.Kind == StrikeKind.Aerial && save.Quality > LastResortClearQuality)
+                    return Strike(save, "defend / save aerial");
+            }
             return block != null && Guard(block, "defend / desperate block");
         }
 
