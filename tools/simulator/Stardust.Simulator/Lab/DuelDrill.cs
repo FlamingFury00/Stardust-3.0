@@ -354,16 +354,24 @@ public sealed class SaveDrill : Drill
     private float closestGap;
     private RsbVec closestLocal, hitboxHalf;
     private bool airborneAtClosest;
+    private float touchGoalward;
 
     protected override void Start(MatchSession session, EpisodeSetup setup)
     {
         Subject.Director = null;
         closestGap = float.PositiveInfinity;
+        touchGoalward = float.NaN;
     }
 
     protected override void Measure(MatchSession session, EpisodeTrace trace)
     {
-        if (!float.IsNaN(trace.FirstTouchTime)) return;
+        if (!float.IsNaN(trace.FirstTouchTime))
+        {
+            // The car's speed toward our goal (-y) as it first meets the ball: a block that
+            // meets the ball while racing goalward pushes it on.
+            if (float.IsNaN(touchGoalward)) touchGoalward = -session.Cars[0].Physics.Velocity.Y;
+            return;
+        }
         Participant p = session.Participants[0];
         RsbCarState car = session.Cars[0];
         RsbVec local = Local(car.Physics, session.Ball.Physics.Position) - p.HitboxOffset;
@@ -387,6 +395,11 @@ public sealed class SaveDrill : Drill
         trace.Notes.Insert(0, start);
         trace.Metrics[$"{start}-saved"] = saved ? 1 : 0;
         trace.Metrics["touched"] = float.IsNaN(trace.FirstTouchTime) ? 0 : 1;
+        if (!float.IsNaN(touchGoalward))
+        {
+            trace.Metrics["touch-goalward-speed"] = touchGoalward;
+            trace.Notes.Insert(1, string.Create(CultureInfo.InvariantCulture, $"touched goalward {touchGoalward:F0}"));
+        }
         if (!saved && float.IsNaN(trace.FirstTouchTime) && float.IsFinite(closestGap))
         {
             // Which way the ball got past: the largest excess over the hitbox half extents.
