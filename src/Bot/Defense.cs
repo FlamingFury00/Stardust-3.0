@@ -118,6 +118,9 @@ namespace Bot
             return ball;
         }
 
+        /// <summary>Distance (uu) a support car keeps goal-side of the ball away from our goal; it closes by 290 uu near it.</summary>
+        public static float SupportGap = 1050f;
+
         /// <summary>
         /// Continuous ball-to-goal defensive positioning. Every role is constrained to remain goal-side
         /// of the reference ball. The solo shadow compresses under imminent contact instead of parking.
@@ -155,7 +158,7 @@ namespace Bot
                     lateralBias = 520f;
                     break;
                 case DefensiveRole.Support:
-                    desiredGap = Lerp(1050f, 760f, danger);
+                    desiredGap = Lerp(SupportGap, SupportGap - 290f, danger);
                     minimumProgress = 500f;
                     lateralBias = 650f;
                     break;
