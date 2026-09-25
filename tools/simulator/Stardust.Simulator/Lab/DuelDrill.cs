@@ -282,3 +282,82 @@ public sealed class DefenseDrill : Drill
         return !conceded;
     }
 }
+
+/// <summary>
+/// Kickoff and the ten seconds after it, full bot, against an opponent build (--opponent). Judged on
+/// first touch and on goals either way before the play settles: the minutes after a won kickoff
+/// are where a strong opponent turns the ball around.
+/// </summary>
+public sealed class KickoffFollowDrill : Drill
+{
+    private static readonly (float X, float Y, float Yaw)[] Spawns =
+    {
+        (-2048, -2560, MathF.PI / 4), (2048, -2560, 3 * MathF.PI / 4),
+        (-256, -3840, MathF.PI / 2), (256, -3840, MathF.PI / 2), (0, -4608, MathF.PI / 2),
+    };
+    private int spawn;
+
+    public override string Name => "kickoff-follow";
+    public override string Description => "Kickoff plus the next ten seconds against the opponent build.";
+    public override int SeatCount => 2;
+    public override IReadOnlyList<Criterion> Criteria => new[] { Criterion.Mean("conceded", 0.1, atLeast: false) };
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        spawn = r.Next(Spawns.Length);
+        var (x, y, yaw) = Spawns[spawn];
+        return new EpisodeSetup(V(0, 0, 93.15f), V(0, 0, 0), new[]
+        {
+            new CarSetup(V(x, y, 17), yaw, V(0, 0, 0), 33.3f),
+            new CarSetup(V(-x, -y, 17), yaw + MathF.PI, V(0, 0, 0), 33.3f),
+        }, 10f, Kickoff: true);
+    }
+
+    protected override void Start(MatchSession session, EpisodeSetup setup) => Subject.Director = null;
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        trace.Notes.Insert(0, $"spawn{spawn}");
+        trace.Metrics["first-touch"] = trace.FirstToucher == 0 ? 1 : 0;
+        trace.Metrics["conceded"] = trace.GoalTeam == 1 ? 1 : 0;
+        trace.Metrics["scored"] = trace.GoalTeam == 0 ? 1 : 0;
+        trace.Metrics["goal-s"] = trace.GoalTeam >= 0 ? trace.GoalTime : double.NaN;
+        return trace.GoalTeam != 1;
+    }
+}
+
+/// <summary>
+/// Shots at our goal, full bot, no opponent: the scenario suite's save fixture played in-process.
+/// Shots of 1500-3200 uu/s from up to 5000 uu out, the defender in net, at a post, or rotating
+/// back. Saved means no goal before the ball leaves our half.
+/// </summary>
+public sealed class SaveDrill : Drill
+{
+    private readonly SaveScenario shots = new();
+    private string start = "";
+
+    public override string Name => "save";
+    public override string Description => "Stop shots at our goal from varied angles, heights and speeds.";
+    public override IReadOnlyList<Criterion> Criteria => new[] { Criterion.Rate(0.7) };
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        EpisodeSetup setup = shots.Generate(r);
+        RsbVec car = setup.Cars[0].Position;
+        start = MathF.Abs(car.Y) > 4900 ? "in-net" : MathF.Abs(car.Y) > 4600 ? "post" : "rotating";
+        return setup;
+    }
+
+    protected override void Start(MatchSession session, EpisodeSetup setup) => Subject.Director = null;
+
+    public override bool ShouldStop(MatchSession session, EpisodeTrace trace) => shots.ShouldStop(session, trace);
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        bool saved = trace.GoalTeam != 1;
+        trace.Notes.Insert(0, start);
+        trace.Metrics[$"{start}-saved"] = saved ? 1 : 0;
+        trace.Metrics["touched"] = float.IsNaN(trace.FirstTouchTime) ? 0 : 1;
+        return saved;
+    }
+}
