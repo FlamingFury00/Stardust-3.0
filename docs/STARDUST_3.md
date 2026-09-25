@@ -69,6 +69,10 @@ Jump strikes line up on the contact line, run up at constant speed and take off 
 time before contact. Flip strikes add the dodge. `DrivenStrike` re-solves the contact every 1/30 s
 against the live prediction and stands down as soon as the touch is out of reach.
 
+`BlockPlanner` finds the earliest point under the path of a ball heading into the net that the car
+can reach in time. It meets the ball there with its body: on the wheels, or with a single or double
+jump that puts the roof in the ball's path.
+
 In play, `Tactics.SelectShot` first finds the scripted shot. The planner then searches the same
 window, and its strike replaces the scripted shot only when it touches no later. A later touch is
 never taken: in a contested game the earlier ball is the one that matters. Allowing up to 0.3 s
@@ -112,9 +116,10 @@ All figures are 1v1, 180-second games, goals per game from the candidate's point
 | Decision layer + kickoff fix | previous release | 36 | **+0.81** |
 | Physics-first "Brain" decision layer (removed) | previous release | 36 | −0.67 to −0.75 |
 | Kickoff fix + planner strikes replacing scripted shots up to 0.3 s later | previous release | 36 | −1.1 before flips, −0.19 with flips |
-| Kickoff fix + planner strikes when no later than the scripted shot (shipped) | kickoff fix | 72 + 72 + 144 | +0.40, +0.11, +0.03 (pooled +0.14 ± 0.19) |
+| Kickoff fix + planner strikes when no later than the scripted shot | kickoff fix | 72 + 72 + 144 | +0.40, +0.11, +0.03 (pooled +0.14 ± 0.19) |
+| **Kickoff fix + planner strikes + planned saves (shipped)** | kickoff fix | 72 + 144 | +0.61, +0.22 (pooled **+0.35 ± 0.22**) |
 | Kickoff fix + planned aerials only | kickoff fix | 72 | +0.14 |
-| Kickoff fix + planned saves (clear / block before the goal-line save) | kickoff fix | 72 | −0.06 |
+| Kickoff fix + planned saves only, before the flip-execution fixes | kickoff fix | 72 | −0.06 |
 
 What these showed:
 
@@ -128,8 +133,15 @@ What these showed:
 - **Planned strikes are a small gain, not a large one.** Taking the planner's strike only when it
   touches no later than the scripted shot is positive in every series but not decisively so; it is
   shipped because it never hurt and it brings the validated flip finishes and hit-model aiming.
-- **Fixture wins do not always carry into matches.** Planned saves stopped 35 % of fixture shots
-  against 22 % for the goal-line save, yet were neutral in play and are not enabled.
+- **Saves need good execution to pay off.** Planned saves stopped 35 % of fixture shots against
+  22 % for the goal-line save, yet were neutral in matches while their clearances still ran the
+  unreviewed flip timing. With the reviewed strike execution and planned strikes, they add about
+  0.2 goals per game and are enabled. A save comes from, in order:
+  1. a comfortable ground or aerial clearance;
+  2. a planned block in the ball's path;
+  3. any clearance;
+  4. a best-effort block;
+  5. the scripted intercept and goal-line save.
 
 ## Build and regressions
 
