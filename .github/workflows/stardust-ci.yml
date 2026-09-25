@@ -44,3 +44,22 @@ jobs:
         run: dotnet run --project tests/Stardust.BoostGoal/Stardust.BoostGoal.csproj --configuration Release
       - name: Run possession mechanics physics regressions
         run: dotnet run --project tests/Stardust.MechanicsPhysics/Stardust.MechanicsPhysics.csproj --configuration Release
+  physics-models:
+    # The bot plans with analytic physics models (src/RedUtils/Physics, src/RedUtils/Planning).
+    # Each is checked against RocketSim ground truth; the arena is generated from published
+    # dimensions, so no game assets are needed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Make schema generator executable
+        run: chmod +x src/generate-flatbuffers.sh src/flatbuffers-schema/binaries/flatc
+      - name: Build RocketSim bridge and simulator
+        run: tools/simulator/build.sh
+      - name: Check physics models against RocketSim
+        run: dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll physics-check --model all
