@@ -153,4 +153,60 @@ namespace RedUtils.Physics
             return (-x * scale, y * scale);
         }
     }
+
+    /// <summary>
+    /// The flip shot: a jump, then a forward dodge a few ticks before contact. Fitted to RocketSim:
+    /// the dodge adds 500 uu/s along the nose at once (capped with the rest of the velocity at the
+    /// car's top speed), the nose then pitches down at a steady rate after about a tick, and for
+    /// the first 0.15 s the car's height stays ballistic. Dodging this late turns almost all of the
+    /// impulse into ball speed while the car is still nearly level, so the touch stays predictable.
+    /// </summary>
+    public static class FlipModel
+    {
+        /// <summary>Dodge press before contact.</summary>
+        public const float Lead = 5f / RL.TickRate;
+        /// <summary>Rate at which the nose pitches down once the dodge has taken hold (orientation).</summary>
+        public const float PitchRate = 7.33f;
+        /// <summary>Delay between the dodge press and the start of the pitch-down, counted in physics steps from the press.</summary>
+        public const float PitchLag = 0.020f;
+        /// <summary>Earliest dodge press after takeoff: the minimum jump plus one released tick.</summary>
+        public const float EarliestDodge = JumpModel.MinimumTime + 2f / RL.TickRate;
+        /// <summary>Shortest takeoff-to-contact time of a planned flip.</summary>
+        public const float MinimumJumpTime = EarliestDodge + Lead;
+
+        /// <summary>Nose-down pitch <paramref name="sinceDodge"/> seconds after the dodge press.</summary>
+        public static float Pitch(float sinceDodge) => MathF.Max(0f, PitchRate * (sinceDodge - PitchLag));
+
+        /// <summary>Jump hold for a flip taking off <paramref name="jumpTime"/> before contact: released a tick before the dodge.</summary>
+        public static float Hold(float jumpTime) =>
+            System.Math.Clamp(jumpTime - Lead - 1f / RL.TickRate, JumpModel.MinimumTime, JumpModel.MaximumHold);
+
+        /// <summary>Height and vertical speed at contact for a flip taking off <paramref name="jumpTime"/> before it.</summary>
+        public static (float Height, float Speed) AtContact(float jumpTime) => JumpModel.Single(jumpTime, Hold(jumpTime));
+
+        /// <summary>Flat speed after the dodge for a car moving at <paramref name="groundSpeed"/> and climbing at <paramref name="verticalSpeed"/>.</summary>
+        public static float SpeedAfter(float groundSpeed, float verticalSpeed) =>
+            MathF.Min(groundSpeed + RL.DodgeImpulse, MathF.Sqrt(MathF.Max(0f, RL.CarMaxSpeed * RL.CarMaxSpeed - verticalSpeed * verticalSpeed)));
+
+        /// <summary>
+        /// Shortest takeoff-to-contact time whose flip meets the ball with the car origin at
+        /// <paramref name="height"/> while still rising, or NaN when a single jump cannot get there.
+        /// Height at contact grows with the takeoff time until the apex, so it is bisected.
+        /// </summary>
+        public static float TimeToHeight(float height)
+        {
+            float lo = MinimumJumpTime;
+            if (AtContact(lo).Height >= height) return lo;
+            // Past this the full-hold jump has stopped rising.
+            float hi = JumpModel.MaximumHold + Lead + 1f / RL.TickRate +
+                JumpModel.Single(JumpModel.MaximumHold).Speed / -RL.Gravity;
+            if (AtContact(hi).Height < height) return float.NaN;
+            for (int i = 0; i < 20; i++)
+            {
+                float mid = 0.5f * (lo + hi);
+                if (AtContact(mid).Height < height) lo = mid; else hi = mid;
+            }
+            return hi;
+        }
+    }
 }

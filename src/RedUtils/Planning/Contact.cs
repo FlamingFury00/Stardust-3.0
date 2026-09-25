@@ -53,17 +53,19 @@ namespace RedUtils.Planning
         /// <summary>
         /// Car origin at first contact for a car at height <paramref name="carZ"/> with flat heading
         /// <paramref name="heading"/>, offset sideways by <paramref name="lateral"/>, closing on the ball.
+        /// A flipping car meets the ball with its nose pitched down by <paramref name="pitch"/> radians.
         /// </summary>
         public static bool FirstTouch(Vec3 ball, Vec3 heading, float lateral, float carZ, CarGeometry geometry,
-            out Vec3 carPosition)
+            out Vec3 carPosition, float pitch = 0f)
         {
             heading = new Vec3(heading.x, heading.y, 0).Normalize();
             Vec3 right = new(-heading.y, heading.x, 0);
             Vec3 baseline = new Vec3(ball.x, ball.y, carZ) + right * lateral;
+            (Vec3 forward, Vec3 up) = Pitched(heading, pitch);
 
             float Gap(float s)
             {
-                var pose = new CarPose(baseline - heading * s, heading, right, Vec3.Up, Vec3.Zero, Vec3.Zero,
+                var pose = new CarPose(baseline - heading * s, forward, right, up, Vec3.Zero, Vec3.Zero,
                     geometry.HitboxSize, geometry.HitboxOffset);
                 return (pose.ClosestPoint(ball) - ball).Length() - RL.BallRadius;
             }
@@ -85,25 +87,36 @@ namespace RedUtils.Planning
             return true;
         }
 
+        /// <summary>Forward and roof axes of a car with flat heading <paramref name="heading"/> pitched nose-down by <paramref name="pitch"/>.</summary>
+        public static (Vec3 Forward, Vec3 Up) Pitched(Vec3 heading, float pitch)
+        {
+            if (pitch == 0f) return (heading, Vec3.Up);
+            float c = MathF.Cos(pitch), s = MathF.Sin(pitch);
+            return (heading * c - Vec3.Up * s, heading * s + Vec3.Up * c);
+        }
+
         /// <summary>
         /// Solves the lateral offset for a touch at car height <paramref name="carZ"/> with velocity
-        /// <paramref name="carVelocity"/> that sends the ball toward <paramref name="aim"/>.
+        /// <paramref name="carVelocity"/> that sends the ball toward <paramref name="aim"/>. A flipping
+        /// car is pitched nose-down by <paramref name="pitch"/> and rotates at <paramref name="pitchRate"/>
+        /// (rad/s, nose-down), which speeds up its front and so the touch.
         /// </summary>
         public static ContactSolution Aim(Vec3 ball, Vec3 ballVelocity, Vec3 heading, Vec3 carVelocity, float carZ,
-            Vec3 aim, CarGeometry geometry, Vec3? angularVelocity = null, Vec3? up = null)
+            Vec3 aim, CarGeometry geometry, float pitch = 0f, float pitchRate = 0f)
         {
             heading = new Vec3(heading.x, heading.y, 0).Normalize();
             Vec3 desired = new Vec3(aim.x - ball.x, aim.y - ball.y, 0).Normalize();
             float reach = geometry.HalfWidth + RL.BallRadius * 0.65f;
-            Vec3 w = angularVelocity ?? Vec3.Zero;
-            Vec3 roof = up ?? Vec3.Up;
+            Vec3 right = new(-heading.y, heading.x, 0);
+            (Vec3 forward, Vec3 roof) = Pitched(heading, pitch);
+            // Pitching the nose down is a rotation about the right axis (right = up x forward).
+            Vec3 w = right * pitchRate;
 
             ContactSolution Evaluate(float lateral)
             {
-                if (!FirstTouch(ball, heading, lateral, carZ, geometry, out Vec3 position))
+                if (!FirstTouch(ball, heading, lateral, carZ, geometry, out Vec3 position, pitch))
                     return default;
-                Vec3 right = roof.Cross(heading).Normalize();
-                var pose = new CarPose(position, heading, right, roof, carVelocity, w, geometry.HitboxSize, geometry.HitboxOffset);
+                var pose = new CarPose(position, forward, right, roof, carVelocity, w, geometry.HitboxSize, geometry.HitboxOffset);
                 HitModel.Result hit = HitModel.Collide(pose, ball, ballVelocity, Vec3.Zero, 4f);
                 if (!hit.Contact) return default;
                 Vec3 flat = new(hit.Velocity.x, hit.Velocity.y, 0);

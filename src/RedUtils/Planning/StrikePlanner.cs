@@ -40,17 +40,29 @@ namespace RedUtils.Planning
         public bool DoubleJump;
         /// <summary>Aerials: boost the simulated flight spends.</summary>
         public float BoostUsed;
-        /// <summary>Jump strikes: length of the straight run-up along the contact line.</summary>
+        /// <summary>Jump strikes: length of the straight run-up along the contact line, flight included.</summary>
         public float RunUp;
+        /// <summary>Jump strikes: seconds from the line-up point to contact.</summary>
+        public float RunUpTime;
         /// <summary>Jump strikes: constant speed along the run-up, carried through the flight to contact.</summary>
         public float LineSpeed;
+        /// <summary>Jump strikes: how long jump is held after takeoff.</summary>
+        public float Hold = JumpModel.MaximumHold;
+        /// <summary>Jump strikes: dodge forward into the ball <see cref="FlipModel.Lead"/> before contact.</summary>
+        public bool Flip;
+        /// <summary>Flips: extra distance the dodge's impulse carries the car before contact.</summary>
+        public float DodgeGain;
+        /// <summary>The request this plan answers, so the same play can be re-planned as it develops.</summary>
+        public StrikeGoal Goal;
+        public StrikePlanner.Options Options;
+        public float PlannedAt;
 
         /// <summary>Jump strikes: where the run-up starts, on the contact line behind the contact.</summary>
         public Vec3 LineUpPoint => Contact.CarPosition.Flatten() - Contact.Heading * RunUp;
 
         public float Slack => ContactTime - EarliestArrival;
         public override string ToString() => FormattableString.Invariant(
-            $"{Kind}(t={ContactTime:F2} slack={Slack:F2} q={Quality:F2} p={ScoreChance:F2} line={LineSpeed:F0} score={Score:F2} ball={Slice.Location} aim={Aim} v_out={Contact.BallVelocity} aimErr={Contact.AimError:F2} onTarget={Crossing.OnTarget} margin={Crossing.FrameMargin:F0} lateral={Contact.Lateral:F0} heading={Contact.Heading})");
+            $"{Kind}{(Flip ? "+flip" : "")}(t={ContactTime:F2} slack={Slack:F2} q={Quality:F2} p={ScoreChance:F2} line={LineSpeed:F0} score={Score:F2} ball={Slice.Location} aim={Aim} v_out={Contact.BallVelocity} aimErr={Contact.AimError:F2} onTarget={Crossing.OnTarget} margin={Crossing.FrameMargin:F0} lateral={Contact.Lateral:F0} heading={Contact.Heading})");
     }
 
     /// <summary>What the planner should aim for.</summary>
@@ -80,15 +92,18 @@ namespace RedUtils.Planning
     public static class StrikePlanner
     {
         public const float GroundMaxBallHeight = 150f;
+        /// <summary>Roof agreement with world up a car needs to start a driven strike: on the floor, not a wall or ramp.</summary>
+        public const float FloorUp = 0.9f;
         /// <summary>Standard deviation of a shot's lateral error at the goal: base plus per unit of travel.</summary>
         public const float ShotSpreadBase = 40f;
         public const float ShotSpreadPerUnit = 0.06f;
         /// <summary>Outgoing ball speed assumed when leading the heading against the ball's motion.</summary>
         public const float TypicalShotSpeed = 2000f;
         /// <summary>Run-up speeds tried for jump strikes, fastest first (a brisk run-up hits harder).</summary>
-        private static readonly float[] LineSpeeds = { 1400f, 800f };
+        private static readonly float[] LineSpeeds = { 1400f, 1150f, 800f };
+        /// <summary>Without boost the throttle alone must reach the run-up speed, so keep headroom below 1410 uu/s.</summary>
         private static readonly float[] UnboostedLineSpeeds = { 1150f, 700f };
-        /// <summary>Boost needed to plan the fast run-up (catching up and in-flight correction).</summary>
+        /// <summary>Boost needed at the line-up point for the fast run-up (catching up and in-flight correction).</summary>
         public const float RunUpBoostReserve = 20f;
         /// <summary>Time on the run-up before takeoff, for the speed to settle.</summary>
         public const float LineSettleTime = 0.35f;
@@ -103,7 +118,9 @@ namespace RedUtils.Planning
         public const float SkipShare = 0.7f;
         private const int HeadingSlots = 5;
         private const int MaxContactHeights = 2;
-        private const int SkipTableSize = 4 * MaxContactHeights * HeadingSlots;
+        /// <summary>Finishes per kind: none/jump, and the flip.</summary>
+        private const int Finishes = 2;
+        private const int SkipTableSize = 4 * Finishes * MaxContactHeights * HeadingSlots;
 
         public sealed class Options
         {
@@ -117,6 +134,8 @@ namespace RedUtils.Planning
             public float AimTolerance = 0.35f;
             /// <summary>Optional diagnostics sink (planner rejections and accepted candidates).</summary>
             public Action<string> Log;
+
+            public Options Copy() => (Options)MemberwiseClone();
         }
 
         public static StrikePlan Plan(Car car, BallPath path, float now, StrikeGoal goal, Options options = null)
@@ -125,6 +144,8 @@ namespace RedUtils.Planning
             if (path == null || path.Count == 0 || car == null) return null;
             var geometry = CarGeometry.Of(car);
             GroundState start = Navigator.StartState(car);
+            // Driven strikes are planned from the floor; a car on a wall comes down first.
+            bool onWall = car.IsGrounded && car.Up.z < FloorUp;
             float firstFeasible = float.NaN;
             StrikePlan best = null;
             float nextSample = now + 0.05f;
@@ -151,7 +172,7 @@ namespace RedUtils.Planning
                         if (best == null || aerial.Score > best.Score) best = aerial;
                     }
                 }
-                if (slice.Location.z > DoubleJumpMaxBallHeight) continue;
+                if (slice.Location.z > DoubleJumpMaxBallHeight || onWall) continue;
 
                 // Lower bound: straight-line flat-out travel from the post-landing state.
                 float distance = MathF.Max(0f, (slice.Location - start.Position).Flatten().Length() - geometry.FrontReach - RL.BallRadius);
@@ -167,7 +188,26 @@ namespace RedUtils.Planning
                     if (best == null || plan.Score > best.Score) best = plan;
                 }
             }
+            if (best != null)
+            {
+                best.Goal = goal;
+                best.Options = options;
+                best.PlannedAt = now;
+            }
             return best;
+        }
+
+        /// <summary>
+        /// Plans the same request as <paramref name="plan"/> again from the current state, within
+        /// its original deadline: the play as it stands now may offer an earlier or better touch.
+        /// </summary>
+        public static StrikePlan Replan(StrikePlan plan, Car car, BallPath path, float now)
+        {
+            if (plan?.Options == null || plan.Goal == null) return null;
+            Options options = plan.Options.Copy();
+            options.MaxTime = plan.PlannedAt + plan.Options.MaxTime - now;
+            if (options.MaxTime <= 0.05f) return null;
+            return Plan(car, path, now, plan.Goal, options);
         }
 
         public const float AerialMinBallHeight = 300f;
@@ -234,15 +274,19 @@ namespace RedUtils.Planning
             return best;
         }
 
+        /// <summary>Lowest ball for a jump without a dodge: below it the car would jump over a rolling ball.</summary>
         public const float JumpMinBallHeight = 120f;
         public const float JumpMaxBallHeight = 300f;
+        /// <summary>Score cost of a flip's recovery (the car spins and lands instead of driving on).</summary>
+        private const float FlipRecoveryCost = 0.03f;
         public const float DoubleJumpMinBallHeight = 250f;
         public const float DoubleJumpMaxBallHeight = 560f;
 
         private static IEnumerable<StrikeKind> DrivenKinds(float ballZ)
         {
             if (ballZ <= GroundMaxBallHeight) yield return StrikeKind.Ground;
-            if (ballZ >= JumpMinBallHeight && ballZ <= JumpMaxBallHeight) yield return StrikeKind.Jump;
+            // Jump strikes include flips, which meet even a rolling ball.
+            if (ballZ <= JumpMaxBallHeight) yield return StrikeKind.Jump;
             if (ballZ >= DoubleJumpMinBallHeight && ballZ <= DoubleJumpMaxBallHeight) yield return StrikeKind.DoubleJump;
         }
 
@@ -300,51 +344,89 @@ namespace RedUtils.Planning
 
             // How fast the contact point can run away from an approach, for skipping ahead.
             float closing = 1f + slice.Velocity.Flatten().Length() / RL.CarMaxSpeed;
-            int heightIndex = -1;
-            foreach (float height in ContactHeights(kind, ball.z))
+            for (int finish = 0; finish < (kind == StrikeKind.Jump ? Finishes : 1); finish++)
             {
-                heightIndex++;
-                bool doubleJump = kind == StrikeKind.DoubleJump;
-                float jumpTime = kind == StrikeKind.Ground ? 0f : JumpModel.TimeToHeight(height, doubleJump);
-                if (!float.IsFinite(jumpTime) || t - jumpTime < start.Time + 0.05f) continue;
-                float verticalSpeed = kind == StrikeKind.Ground ? 0f
-                    : doubleJump ? JumpModel.Double(jumpTime).Speed : JumpModel.Single(jumpTime).Speed;
-
-                foreach ((int slot, Vec3 heading) in Headings(primary, natural))
+                bool flip = finish == 1;
+                // A plain jump would sail over a low ball; a flip dips its nose into it.
+                if (kind == StrikeKind.Jump && !flip && ball.z < JumpMinBallHeight) continue;
+                float pitch = flip ? FlipModel.Pitch(FlipModel.Lead) : 0f;
+                float pitchRate = flip ? RL.CarMaxAngularSpeed : 0f;
+                int heightIndex = -1;
+                foreach (float height in ContactHeights(kind, ball.z))
                 {
-                    int key = ((int)kind * MaxContactHeights + heightIndex) * HeadingSlots + slot;
-                    if (t < skip[key]) continue;
-                    if (!Contact.FirstTouch(ball, heading, 0f, height, geometry, out Vec3 nominal))
-                        continue;
-                    if (kind == StrikeKind.Ground)
-                    {
-                        var target = new DriveTarget(nominal, heading, float.NaN, options.AllowBoost);
-                        if (!Approach(start, target, t, t, key, skip, closing, options, out RolloutResult rollout))
-                            continue;
-                        float groundSpeed = MathF.Max(300f, rollout.ArrivalSpeed);
-                        best = Choose(best, kind, slice, now, goal, geometry, options, heading, height, 0f, groundSpeed,
-                            rollout.Time, 0f, 0f, 0f, start, t);
-                        continue;
-                    }
+                    heightIndex++;
+                    bool doubleJump = kind == StrikeKind.DoubleJump;
+                    float jumpTime = kind == StrikeKind.Ground ? 0f
+                        : flip ? FlipModel.TimeToHeight(height) : JumpModel.TimeToHeight(height, doubleJump);
+                    if (!float.IsFinite(jumpTime) || t - jumpTime < start.Time + 0.05f) continue;
+                    // The quickest flip already rises past the lowest contact heights.
+                    float contactHeight = flip ? FlipModel.AtContact(jumpTime).Height : height;
+                    if (flip && heightIndex > 0 && contactHeight > height + 1f) continue;
+                    float hold = flip ? FlipModel.Hold(jumpTime) : JumpModel.MaximumHold;
+                    float verticalSpeed = kind == StrikeKind.Ground ? 0f
+                        : flip ? FlipModel.AtContact(jumpTime).Speed
+                        : doubleJump ? JumpModel.Double(jumpTime).Speed : JumpModel.Single(jumpTime).Speed;
 
-                    // Jump strikes: reach a line-up point on the contact line early, then run up
-                    // along the line at constant speed, taking off the jump time before contact.
-                    // Without boost the run-up tops out near 1410 uu/s, so keep headroom to catch up.
-                    bool boosted = options.AllowBoost && start.Boost >= RunUpBoostReserve;
-                    foreach (float lineSpeed in boosted ? LineSpeeds : UnboostedLineSpeeds)
+                    foreach ((int slot, Vec3 heading) in Headings(primary, natural))
                     {
-                        float runUp = lineSpeed * (jumpTime + LineSettleTime);
-                        var target = new DriveTarget(nominal.Flatten() - heading * runUp, heading, float.NaN, options.AllowBoost);
-                        float lineUpBy = t - runUp / lineSpeed;
-                        if (!Approach(start, target, lineUpBy, t, key, skip, closing, options, out RolloutResult rollout))
+                        int key = (((int)kind * Finishes + finish) * MaxContactHeights + heightIndex) * HeadingSlots + slot;
+                        if (t < skip[key]) continue;
+                        if (!Contact.FirstTouch(ball, heading, 0f, contactHeight, geometry, out Vec3 nominal, pitch))
                             continue;
-                        best = Choose(best, kind, slice, now, goal, geometry, options, heading, height, verticalSpeed, lineSpeed,
-                            rollout.Time, jumpTime, runUp, lineSpeed, start, lineUpBy);
-                        break;
+                        var finishing = new Finish(heading, contactHeight, verticalSpeed, jumpTime, hold, flip, pitch, pitchRate);
+                        if (kind == StrikeKind.Ground)
+                        {
+                            var target = new DriveTarget(nominal, heading, float.NaN, options.AllowBoost);
+                            if (!Approach(start, target, t, t, key, skip, closing, options, out RolloutResult rollout))
+                                continue;
+                            float groundSpeed = MathF.Max(300f, rollout.ArrivalSpeed);
+                            best = Choose(best, kind, slice, now, goal, geometry, options, finishing, groundSpeed, rollout.Time, start, t);
+                            continue;
+                        }
+
+                        // Jump strikes: reach a line-up point on the contact line early, then run up
+                        // along the line at constant speed, taking off the jump time before contact.
+                        // Without boost the run-up tops out near 1410 uu/s, so keep headroom to catch up.
+                        bool boosted = options.AllowBoost && start.Boost >= RunUpBoostReserve;
+                        foreach (float lineSpeed in boosted ? LineSpeeds : UnboostedLineSpeeds)
+                        {
+                            float runUpTime = LineSettleTime + jumpTime;
+                            float runUp = lineSpeed * runUpTime + finishing.DodgeGain(lineSpeed);
+                            var target = new DriveTarget(nominal.Flatten() - heading * runUp, heading, float.NaN, options.AllowBoost);
+                            float lineUpBy = t - runUpTime;
+                            if (!Approach(start, target, lineUpBy, t, key, skip, closing, options, out RolloutResult rollout))
+                                continue;
+                            // The drive to the line-up may burn the boost the fast run-up relies on.
+                            if (lineSpeed > UnboostedLineSpeeds[0] && rollout.Final.Boost < RunUpBoostReserve)
+                                continue;
+                            best = Choose(best, kind, slice, now, goal, geometry, options, finishing, lineSpeed, rollout.Time,
+                                start, lineUpBy, runUp, runUpTime);
+                            break;
+                        }
                     }
                 }
             }
             return best;
+        }
+
+        /// <summary>How a driven strike meets the ball: car height, vertical motion, and the flip's pose.</summary>
+        private readonly struct Finish
+        {
+            public readonly Vec3 Heading;
+            public readonly float Height, VerticalSpeed, JumpTime, Hold, Pitch, PitchRate;
+            public readonly bool Flip;
+
+            public Finish(Vec3 heading, float height, float verticalSpeed, float jumpTime, float hold, bool flip, float pitch, float pitchRate)
+            {
+                Heading = heading; Height = height; VerticalSpeed = verticalSpeed; JumpTime = jumpTime; Hold = hold;
+                Flip = flip; Pitch = pitch; PitchRate = pitchRate;
+            }
+
+            /// <summary>Flat speed at contact for a car arriving (or running up) at <paramref name="groundSpeed"/>.</summary>
+            public float ContactSpeed(float groundSpeed) => Flip ? FlipModel.SpeedAfter(groundSpeed, VerticalSpeed) : groundSpeed;
+
+            /// <summary>Extra distance the dodge covers before contact for a run-up at <paramref name="lineSpeed"/>.</summary>
+            public float DodgeGain(float lineSpeed) => Flip ? (ContactSpeed(lineSpeed) - lineSpeed) * FlipModel.Lead : 0f;
         }
 
         /// <summary>
@@ -379,21 +461,28 @@ namespace RedUtils.Planning
         /// the exact drive the strike will execute (the aimed contact sits off the nominal line).
         /// </summary>
         private static StrikePlan Choose(StrikePlan best, StrikeKind kind, BallSlice slice, float now, StrikeGoal goal,
-            CarGeometry geometry, Options options, Vec3 heading, float height, float verticalSpeed, float groundSpeed,
-            float arrival, float jumpTime, float runUp, float lineSpeed, GroundState start, float deadline)
+            CarGeometry geometry, Options options, in Finish finish, float groundSpeed, float arrival, GroundState start,
+            float deadline, float runUp = 0f, float runUpTime = 0f)
         {
             Vec3 ball = slice.Location;
-            Vec3 carVelocity = heading * groundSpeed + new Vec3(0f, 0f, verticalSpeed);
+            float contactSpeed = finish.ContactSpeed(groundSpeed);
+            Vec3 carVelocity = finish.Heading * contactSpeed + new Vec3(0f, 0f, finish.VerticalSpeed);
             var candidates = new List<StrikePlan>(3);
             foreach (Vec3 aim in AimPoints(ball, goal))
             {
-                ContactSolution contact = Contact.Aim(ball, slice.Velocity, heading, carVelocity, height, aim, geometry);
+                ContactSolution contact = Contact.Aim(ball, slice.Velocity, finish.Heading, carVelocity, finish.Height, aim, geometry,
+                    finish.Pitch, finish.PitchRate);
                 if (!contact.Valid || MathF.Abs(contact.AimError) > options.AimTolerance) continue;
-                StrikePlan plan = Score(kind, slice, contact, aim, now, now + arrival, groundSpeed, goal, options);
+                StrikePlan plan = Score(kind, slice, contact, aim, now, now + arrival, contactSpeed, goal, options);
                 plan.UsesBoost = options.AllowBoost;
-                plan.JumpTime = jumpTime;
+                plan.JumpTime = finish.JumpTime;
+                plan.Hold = finish.Hold;
+                plan.Flip = finish.Flip;
                 plan.RunUp = runUp;
-                plan.LineSpeed = lineSpeed;
+                plan.RunUpTime = runUpTime;
+                plan.LineSpeed = kind == StrikeKind.Ground ? 0f : groundSpeed;
+                plan.DodgeGain = finish.DodgeGain(groundSpeed);
+                if (finish.Flip) plan.Score -= FlipRecoveryCost;
                 candidates.Add(plan);
             }
             candidates.Sort((a, b) => b.Score.CompareTo(a.Score));
@@ -406,7 +495,7 @@ namespace RedUtils.Planning
                     options.Log?.Invoke(FormattableString.Invariant($"  aimed contact late (eta={exact.Time:F2}) {plan}"));
                     continue;
                 }
-                plan.EarliestArrival = now + exact.Time + (plan.Kind == StrikeKind.Ground ? 0f : plan.RunUp / plan.LineSpeed);
+                plan.EarliestArrival = now + exact.Time + plan.RunUpTime;
                 options.Log?.Invoke("  candidate " + plan);
                 return plan;
             }

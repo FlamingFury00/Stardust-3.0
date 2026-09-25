@@ -61,7 +61,12 @@ namespace RedUtils.Physics
     {
         public const float ArrivalRadius = 55f;
         /// <summary>Early-arrival margin tolerated before a timed approach starts shedding speed.</summary>
-        public const float TimingSlack = 0.04f;
+        public const float TimingSlack = 0.07f;
+        /// <summary>
+        /// Largest angle to the steering point at which an early car sheds speed: slowing in a hard
+        /// turn leaves it slow and mid-turn, where arrival times are least predictable.
+        /// </summary>
+        public const float SheddingAngle = 0.5f;
         /// <summary>Speed floor while turning hard (turn radius about 200 uu).</summary>
         public const float MinimumTurnSpeed = 450f;
         /// <summary>Heading agreement (cosine) a directed arrival needs to count as arrived.</summary>
@@ -102,7 +107,10 @@ namespace RedUtils.Physics
 
             public float Length => TangentLength + ArcLength + FinalLength;
 
-            /// <summary>Point at arc length <paramref name="s"/> along the path from the car.</summary>
+            /// <summary>
+            /// Point at arc length <paramref name="s"/> along the path from the car. The final line runs
+            /// on past the destination, so a lookahead near the end stays on the arrival line.
+            /// </summary>
             public Vec3 PointAt(Vec3 start, Vec3 destination, float s)
             {
                 if (s <= TangentLength)
@@ -116,7 +124,7 @@ namespace RedUtils.Physics
                 }
                 s -= ArcLength;
                 Vec3 finalDirection = FinalLength > 1e-3f ? (destination - Entry) / FinalLength : Vec3.Zero;
-                return Entry + finalDirection * MathF.Min(s, FinalLength);
+                return Entry + finalDirection * s;
             }
         }
 
@@ -184,13 +192,21 @@ namespace RedUtils.Physics
         public static float RunIn(in DriveTarget target, float distance) =>
             MathF.Min(target.MaxLead, MathF.Max(120f, distance * 0.25f));
 
-        /// <summary>Point the car steers at: the destination, or a pure-pursuit point on the approach path.</summary>
+        /// <summary>
+        /// Point the car steers at: the destination, or a pure-pursuit point on the approach path.
+        /// A directed approach steers along its arrival line right through the destination (the line
+        /// extended past it), so the aim never collapses onto the point in the final metres: a car
+        /// a few degrees off the line converges smoothly instead of braking for an impossible turn.
+        /// </summary>
         public static Vec3 SteeringPoint(Vec3 position, Vec3 forward, float speed, in DriveTarget target)
         {
             Vec3 toTarget = new(target.Point.x - position.x, target.Point.y - position.y, 0);
             float distance = toTarget.Length();
-            if (!target.HasDirection || distance < 60f)
+            if (!target.HasDirection)
                 return target.Point;
+            float lookahead = System.Math.Clamp(MathF.Abs(speed) * 0.22f, 160f, 480f);
+            if (distance < 60f)
+                return target.Point + target.Direction * lookahead;
 
             float radius = GroundModel.TurnRadius(System.Math.Clamp(MathF.Abs(speed), 700f, RL.CarMaxSpeed));
             float straight = RunIn(target, distance);
@@ -201,7 +217,6 @@ namespace RedUtils.Physics
                 if (!path.Valid)
                     return target.Point - target.Direction * MathF.Min(target.MaxLead, distance * 0.5f);
             }
-            float lookahead = System.Math.Clamp(MathF.Abs(speed) * 0.22f, 160f, 480f);
             return path.PointAt(new Vec3(position.x, position.y, 0), target.Point, lookahead);
         }
 
@@ -238,7 +253,7 @@ namespace RedUtils.Physics
                 var state = new GroundState(position, forward, speed, target.AllowBoost ? boost : 0f, 0f, yawRate);
                 RolloutResult flatOut = Rollout(state, asap, remaining + 1.0f, dt: 1f / 30f);
                 float slack = remaining - flatOut.Time;
-                if (slack > TimingSlack)
+                if (slack > TimingSlack && MathF.Abs(angle) < SheddingAngle)
                     desired = MathF.Max(0f, speed - (slack > 0.35f ? 600f : 150f));
             }
             if (float.IsFinite(target.ArrivalSpeed))

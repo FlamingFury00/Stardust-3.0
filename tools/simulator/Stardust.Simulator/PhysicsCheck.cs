@@ -29,6 +29,8 @@ public static class PhysicsCheck
         if (which == "kickoff-probe") KickoffProbe();
         if (which == "jump-probe") JumpProbe();
         if (which == "flight-probe") FlightProbe();
+        if (which == "flip-probe") FlipProbe();
+        if (which == "dodge-probe") DodgeProbe();
         if (all || which == "drive") failures += DriveOpenLoop(trials, seed);
         if (all || which == "navigate") failures += NavigateClosedLoop(trials, seed);
         if (all || which == "timed") failures += NavigateTimed(trials, seed);
@@ -227,16 +229,26 @@ public static class PhysicsCheck
 
     /// <summary>
     /// Timed arrival: the target time is the model's earliest arrival plus a random slack. The
-    /// controller must arrive on time (not early) with the requested heading.
+    /// controller must arrive on time (not early) with the requested heading. A second, tight
+    /// regime gives strikes' slack (under 0.12 s), where arriving late means missing the touch.
     /// </summary>
     private static int NavigateTimed(int trials, int seed)
+    {
+        var loose = TimedRegime(trials, seed, 0.1f, 1.5f, "timed");
+        var tight = TimedRegime(trials, seed + 1, 0f, 0.12f, "timed-tight");
+        bool ok = loose.MedianError < 0.08 && loose.ArrivedShare > 0.9;
+        Console.WriteLine(ok ? "timed: PASS" : "timed: FAIL");
+        return ok ? 0 : 1;
+    }
+
+    private static (double MedianError, double ArrivedShare) TimedRegime(int trials, int seed, float minSlack, float maxSlack, string name)
     {
         var random = new Random(seed + 2);
         using var arena = new SimArena();
         uint car = arena.AddCar(0);
         arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
         var timing = new List<double>();
-        var early = 0;
+        int early = 0, late = 0;
         int arrived = 0, feasible = 0, aligned = 0;
         for (int trial = 0; trial < trials; trial++)
         {
@@ -252,12 +264,11 @@ public static class PhysicsCheck
             RolloutResult asap = Navigator.Rollout(start, new DriveTarget(goal, direction), 6f);
             if (!asap.Arrived) continue;
             feasible++;
-            float arrival = asap.Time + R(0.1f, 1.5f);
+            float arrival = asap.Time + R(minSlack, maxSlack);
             var target = new DriveTarget(goal, direction, arrival);
 
             float elapsed = 0, previous = float.PositiveInfinity;
-            bool done = false;
-            for (int tick = 0; tick < 960 && !done; tick++)
+            for (int tick = 0; tick < 960; tick++)
             {
                 var c = arena.GetCar(car);
                 Vec3 pos = ToVec(c.Physics.Position), fwd = ToVec(c.Physics.Forward);
@@ -265,11 +276,11 @@ public static class PhysicsCheck
                 float distance = to.Length();
                 if (distance < Navigator.ArrivalRadius || (distance < 160 && distance > previous && to.Dot(fwd) < 0))
                 {
-                    done = true;
                     arrived++;
                     elapsed += Navigator.ArrivalRemainder(to, fwd.Flatten().Normalize(), c.Physics.Velocity.Dot(c.Physics.Forward));
                     timing.Add(elapsed - arrival);
                     if (elapsed < arrival - 0.1f) early++;
+                    if (elapsed > arrival + 0.1f) late++;
                     if (MathF.Abs(GroundModel.SignedAngle(fwd.Flatten().Normalize(), direction)) < 0.35f) aligned++;
                     break;
                 }
@@ -284,11 +295,9 @@ public static class PhysicsCheck
         var inv = CultureInfo.InvariantCulture;
         var absolute = timing.Select(Math.Abs).ToList();
         Console.WriteLine(string.Create(inv,
-            $"timed: arrived {arrived}/{feasible}; aligned {aligned}; timing error |p50| {Percentile(absolute, 0.5):F3} s |p90| {Percentile(absolute, 0.9):F3} s; " +
-            $"bias {(timing.Count > 0 ? timing.Average() : 0):+0.000;-0.000} s; early by >0.1 s: {early}"));
-        bool ok = Percentile(absolute, 0.5) < 0.08 && arrived > feasible * 0.9;
-        Console.WriteLine(ok ? "timed: PASS" : "timed: FAIL");
-        return ok ? 0 : 1;
+            $"{name}: arrived {arrived}/{feasible}; aligned {aligned}; timing error |p50| {Percentile(absolute, 0.5):F3} s |p90| {Percentile(absolute, 0.9):F3} s; " +
+            $"bias {(timing.Count > 0 ? timing.Average() : 0):+0.000;-0.000} s; early by >0.1 s: {early}; late by >0.1 s: {late}"));
+        return (Percentile(absolute, 0.5), feasible > 0 ? (double)arrived / feasible : 0);
     }
 
     /// <summary>Random hold times and double-jump timings: JumpModel against RocketSim heights.</summary>
@@ -554,6 +563,111 @@ public static class PhysicsCheck
         }
     }
 
+    /// <summary>
+    /// Flip shots: a car driving straight at a ball (resting, or at the top of a bounce) either
+    /// drives through it, jumps into it, or jumps and dodges forward into it. Every jump tick,
+    /// hold and dodge delay is tried; the best finishes show how much a dodge adds and when.
+    /// </summary>
+    private static void FlipProbe()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        const float approach = 0.9f;
+        foreach (float height in new[] { 93f, 130f, 170f, 210f, 250f })
+        foreach (float speed in new[] { 900f, 1300f, 1700f, 2100f })
+        {
+            float ballY = -3000f + speed * approach + 150f;
+            // Returns (contact tick, ball velocity after the touch) for one finish, or tick -1 on a miss.
+            (int Tick, Vec3 Velocity) Shot(int jumpTick, int holdTicks, int dodgeTick)
+            {
+                GroundCar(arena, car, speed);
+                arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(3000, 0, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+                ulong hitBefore = arena.GetCar(car).LastHitTick;
+                int total = (int)(approach * 120) + 60;
+                for (int tick = 0; tick < total; tick++)
+                {
+                    // The ball appears 0.3 s before the planned touch and peaks at the touch.
+                    int appear = (int)((approach - 0.3f) * 120);
+                    if (tick == appear)
+                    {
+                        float rise = 0.3f;
+                        float z0 = height > 93f ? MathF.Max(93f, height + 0.5f * RL.Gravity * rise * rise) : 93f;
+                        float vz = height > 93f ? -RL.Gravity * rise : 0f;
+                        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(0, ballY, z0), Velocity = new RsbVec(0, 0, vz), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+                    }
+                    var controls = new RsbControls { Throttle = speed < 1410f ? 0.02f : 1f };
+                    if (jumpTick >= 0 && tick >= jumpTick && tick < jumpTick + holdTicks) controls.Jump = 1;
+                    if (dodgeTick >= 0 && tick == dodgeTick) { controls.Jump = 1; controls.Pitch = -1f; }
+                    arena.SetControls(car, controls);
+                    arena.Step();
+                    if (arena.GetCar(car).LastHitTick != hitBefore)
+                    {
+                        for (int after = 0; after < 3; after++) { arena.SetControls(car, new RsbControls()); arena.Step(); }
+                        return (tick, ToVec(arena.Ball.Physics.Velocity));
+                    }
+                }
+                return (-1, Vec3.Zero);
+            }
+
+            var drive = Shot(-1, 0, -1);
+            (int Tick, Vec3 Velocity, int Jump, int Hold, int Dodge) bestJump = (-1, Vec3.Zero, 0, 0, 0), bestFlip = bestJump, shortFlip = bestJump;
+            int planned = (int)(approach * 120);
+            for (int jump = planned - 70; jump <= planned + 6; jump += 1)
+            foreach (int hold in new[] { 3, 6, 9, 12, 16, 20, 24 })
+            {
+                var plain = Shot(jump, hold, -1);
+                if (plain.Tick >= 0 && plain.Velocity.y > bestJump.Velocity.y) bestJump = (plain.Tick, plain.Velocity, jump, hold, -1);
+                for (int delay = hold + 1; delay <= 40; delay += 2)
+                {
+                    var flip = Shot(jump, hold, jump + delay);
+                    if (flip.Tick >= 0 && flip.Tick >= jump + delay && flip.Velocity.y > bestFlip.Velocity.y)
+                        bestFlip = (flip.Tick, flip.Velocity, jump, hold, jump + delay);
+                    // The canonical finish: dodge 4 to 8 ticks before the touch.
+                    if (flip.Tick >= 0 && flip.Tick - (jump + delay) is >= 4 and <= 8 && flip.Velocity.y > shortFlip.Velocity.y)
+                        shortFlip = (flip.Tick, flip.Velocity, jump, hold, jump + delay);
+                }
+            }
+            string Describe(Vec3 v) => string.Create(inv, $"fwd {v.y,5:F0} up {v.z,5:F0} speed {v.Length(),5:F0}");
+            Console.WriteLine(string.Create(inv,
+                $"ball z {height,3:F0} car {speed,4:F0} | drive {(drive.Tick >= 0 ? Describe(drive.Velocity) : "miss",-32)} | " +
+                $"jump {Describe(bestJump.Velocity)} lead {(bestJump.Tick - bestJump.Jump) / 120f:F3} hold {bestJump.Hold,2} | " +
+                $"flip {Describe(bestFlip.Velocity)} jump lead {(bestFlip.Tick - bestFlip.Jump) / 120f:F3} hold {bestFlip.Hold,2} dodge lead {(bestFlip.Tick - bestFlip.Dodge) / 120f:F3} | " +
+                $"short {Describe(shortFlip.Velocity)} jump lead {(shortFlip.Tick - shortFlip.Jump) / 120f:F3} hold {shortFlip.Hold,2} dodge lead {(shortFlip.Tick - shortFlip.Dodge) / 120f:F3}"));
+        }
+    }
+
+    /// <summary>Forward dodge after a jump: pitch, pitch rate, height and speeds tick by tick.</summary>
+    private static void DodgeProbe()
+    {
+        var inv = CultureInfo.InvariantCulture;
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(3000, 4500, 93), Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+        foreach (float speed in new[] { 1000f, 2000f })
+        foreach ((int hold, int dodgeAt) in new[] { (1, 3), (6, 8), (12, 14), (24, 26), (24, 40) })
+        {
+            GroundCar(arena, car, speed);
+            var row = new List<string>();
+            for (int tick = 1; tick <= dodgeAt + 40; tick++)
+            {
+                var controls = new RsbControls { Throttle = 1f, Jump = tick <= hold ? 1 : 0 };
+                if (tick == dodgeAt) { controls.Jump = 1; controls.Pitch = -1f; }
+                arena.SetControls(car, controls);
+                arena.Step();
+                var c = arena.GetCar(car);
+                int since = tick - dodgeAt;
+                if (since >= 0 && since % 3 == 0 && since <= 36)
+                {
+                    float pitch = MathF.Asin(Math.Clamp(c.Physics.Forward.Z, -1f, 1f));
+                    float pitchRate = c.Physics.AngularVelocity.Dot(c.Physics.Right);
+                    row.Add(string.Create(inv, $"{since}:{pitch:F2}/{pitchRate:F1} z{c.Physics.Position.Z:F0} vz{c.Physics.Velocity.Z:F0} vy{c.Physics.Velocity.Y:F0}"));
+                }
+            }
+            Console.WriteLine(string.Create(inv, $"v{speed:F0} hold {hold,2} dodge@{dodgeAt,2} | {string.Join(" ", row)}"));
+        }
+    }
+
     /// <summary>Prints the model rollout of a navigation case for policy debugging.</summary>
     /// <summary>
     /// Side-by-side closed-loop trace of the navigation policy in RocketSim and in the model from
@@ -791,6 +905,20 @@ public static class PhysicsCheck
         double seconds = watch.Elapsed.TotalSeconds;
         Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"rollout: {seconds * 1e6 / trials:F0} us per rollout, {seconds * 1e9 / (simulated * 60):F0} ns per 1/60 s step ({simulated / trials:F2} s simulated on average)"));
+
+        // Step-size sensitivity: arrival times at 1/30 s and 1/120 s against the 1/60 s planning step.
+        foreach (float dt in new[] { 1f / 30f, 1f / 120f })
+        {
+            var differences = new List<double>();
+            foreach (var c in cases)
+            {
+                RolloutResult reference = Navigator.Rollout(c.Start, c.Target, 6f);
+                RolloutResult other = Navigator.Rollout(c.Start, c.Target, 6f, dt: dt);
+                if (reference.Arrived && other.Arrived) differences.Add(other.Time - reference.Time);
+            }
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"rollout dt 1/{1f / dt:F0} vs 1/60: arrival difference p10 {Percentile(differences, 0.1):+0.000;-0.000} p50 {Percentile(differences, 0.5):+0.000;-0.000} p90 {Percentile(differences, 0.9):+0.000;-0.000} mean {differences.Average():+0.000;-0.000} s (n={differences.Count})"));
+        }
     }
 
     /// <summary>Steady-state longitudinal drag while holding a steer value, for throttle and coast.</summary>
