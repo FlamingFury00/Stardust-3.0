@@ -550,7 +550,13 @@ namespace Bot
                 return Strike(clear, "defend / planned clear");
 
             BlockPlan block = BlockPlanner.Plan(Me, path, Game.Time, threat + 0.1f);
-            if (block != null && block.Feasible)
+            if (Options.Trace)
+                Console.WriteLine(FormattableString.Invariant(
+                    $"stardust t={Game.Time:F3} car={Index} save threat={threat:F2} clear={clear?.ToString() ?? "none"} block={block?.ToString() ?? "none"}"));
+            // A double-jump block is open loop from takeoff; an aerial is steered to the contact.
+            bool steered = clear != null && clear.Kind == StrikeKind.Aerial && clear.Slack > ComfortableClearSlack &&
+                clear.Quality > LastResortClearQuality;
+            if (block != null && block.Feasible && !(steered && block.DoubleJump))
                 return Guard(block, "defend / block");
             if (clear != null && clear.Quality > LastResortClearQuality)
                 return Strike(clear, "defend / planned clear");

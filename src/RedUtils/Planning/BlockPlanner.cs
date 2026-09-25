@@ -40,17 +40,24 @@ namespace RedUtils.Planning
         /// <summary>Car origin below the ball centre at contact: the roof (40 uu above the origin) meets the ball with a margin.</summary>
         private const float ContactDrop = 110f;
         /// <summary>
-        /// The car stands this far from the ball's ground track, on its own side: its body still
-        /// covers the ball (half-width 42 plus the ball's 91 radius) and it has less to travel.
+        /// A car blocking on its wheels stands this far from the ball's ground track, on its own
+        /// side: its body still covers the ball (half-width 42 plus the ball's 91 radius) and it
+        /// has less to travel.
         /// </summary>
         public const float BlockOffset = 80f;
+        /// <summary>
+        /// A jump block is flown open loop for up to a second, so the car centres on the track
+        /// and keeps the whole of its body's reach either side for the error of the flight.
+        /// </summary>
+        public const float JumpBlockOffset = 0f;
 
         /// <summary>Ground point for a block of a ball at <paramref name="ball"/> by a car coming from <paramref name="from"/>.</summary>
-        public static Vec3 BlockPoint(Vec3 ball, Vec3 from)
+        public static Vec3 BlockPoint(Vec3 ball, Vec3 from, bool jumping)
         {
             Vec3 toCar = (from - ball).Flatten();
             float distance = toCar.Length();
-            return ball.Flatten() + (distance > 1f ? toCar / distance * MathF.Min(BlockOffset, distance) : Vec3.Zero);
+            float offset = jumping ? JumpBlockOffset : BlockOffset;
+            return ball.Flatten() + (distance > 1f ? toCar / distance * MathF.Min(offset, distance) : Vec3.Zero);
         }
         /// <summary>Deepest ball position (|y|) at which a block still keeps the ball out.</summary>
         public const float GoalLineLimit = 5180f;
@@ -102,7 +109,7 @@ namespace RedUtils.Planning
                 float available = t - SettleTime - (jumpTime > 0f ? MinimumRunIn : 0f);
                 if (available <= start.Time) continue;
 
-                Vec3 point = BlockPoint(ball, start.Position);
+                Vec3 point = BlockPoint(ball, start.Position, jumpTime > 0f);
                 float distance = (point - start.Position).Flatten().Length();
                 float bound = start.Time + DrivePhysics.TravelTime(MathF.Max(0f, distance - Navigator.ArrivalRadius),
                     MathF.Max(0f, start.Speed), start.Boost);

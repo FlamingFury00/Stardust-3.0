@@ -1,3 +1,4 @@
+using System.Globalization;
 using RLBot.Flat;
 using Stardust.Simulator.Match;
 using Stardust.Simulator.Physics;
@@ -348,7 +349,35 @@ public sealed class SaveDrill : Drill
         return setup;
     }
 
-    protected override void Start(MatchSession session, EpisodeSetup setup) => Subject.Director = null;
+    // Closest pass of the ball by the car's hitbox before the first touch: the gap and where the
+    // ball was relative to the car (car frame), so a miss reads as under, over, short or wide.
+    private float closestGap;
+    private RsbVec closestLocal, hitboxHalf;
+    private bool airborneAtClosest;
+
+    protected override void Start(MatchSession session, EpisodeSetup setup)
+    {
+        Subject.Director = null;
+        closestGap = float.PositiveInfinity;
+    }
+
+    protected override void Measure(MatchSession session, EpisodeTrace trace)
+    {
+        if (!float.IsNaN(trace.FirstTouchTime)) return;
+        Participant p = session.Participants[0];
+        RsbCarState car = session.Cars[0];
+        RsbVec local = Local(car.Physics, session.Ball.Physics.Position) - p.HitboxOffset;
+        RsbVec half = hitboxHalf = p.HitboxSize * 0.5f;
+        RsbVec outside = new(MathF.Max(0f, MathF.Abs(local.X) - half.X), MathF.Max(0f, MathF.Abs(local.Y) - half.Y),
+            MathF.Max(0f, MathF.Abs(local.Z) - half.Z));
+        float gap = outside.Length - SimArena.BallRadius;
+        if (gap < closestGap)
+        {
+            closestGap = gap;
+            closestLocal = local;
+            airborneAtClosest = car.IsOnGround == 0;
+        }
+    }
 
     public override bool ShouldStop(MatchSession session, EpisodeTrace trace) => shots.ShouldStop(session, trace);
 
@@ -358,6 +387,17 @@ public sealed class SaveDrill : Drill
         trace.Notes.Insert(0, start);
         trace.Metrics[$"{start}-saved"] = saved ? 1 : 0;
         trace.Metrics["touched"] = float.IsNaN(trace.FirstTouchTime) ? 0 : 1;
+        if (!saved && float.IsNaN(trace.FirstTouchTime) && float.IsFinite(closestGap))
+        {
+            // Which way the ball got past: the largest excess over the hitbox half extents.
+            RsbVec half = hitboxHalf;
+            float over = MathF.Abs(closestLocal.Z) - half.Z, along = MathF.Abs(closestLocal.X) - half.X, wide = MathF.Abs(closestLocal.Y) - half.Y;
+            string side = over >= along && over >= wide ? (closestLocal.Z > 0 ? "over" : "under")
+                : along >= wide ? (closestLocal.X > 0 ? "ahead" : "behind") : "beside";
+            trace.Notes.Insert(1, string.Create(CultureInfo.InvariantCulture,
+                $"missed {side} by {closestGap:F0} ({(airborneAtClosest ? "air" : "ground")})"));
+            trace.Metrics["miss-gap"] = closestGap;
+        }
         return saved;
     }
 }

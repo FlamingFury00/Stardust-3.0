@@ -213,7 +213,11 @@ namespace RedUtils.Planning
             float jumpSpeed = grounded ? 2f * RL.JumpImpulse + RL.JumpHoldAccel * JumpModel.MaximumHold : 0f;
             Vec3 coast = flight.Position + flight.Velocity * t + new Vec3(0f, 0f, 0.5f * RL.Gravity * t * t + jumpSpeed * t);
             float need = 2f * (ball - coast).Length() / (t * t);
-            if (need > RL.BoostAccelAir || need / RL.BoostAccelAir * t * RL.BoostPerSecond > car.Boost + 10f) return null;
+            if (need > RL.BoostAccelAir || need / RL.BoostAccelAir * t * RL.BoostPerSecond > car.Boost + 10f)
+            {
+                options.Log?.Invoke(FormattableString.Invariant($"aerial t={t:F2} ball={ball}: bound need={need:F0}"));
+                return null;
+            }
 
             Vec3 approach = (ball - flight.Position).Normalize();
             StrikePlan best = null;
@@ -227,16 +231,29 @@ namespace RedUtils.Planning
                     Vec3 target = ball - nose * (RL.BallRadius + geometry.FrontReach - AerialOverlap) - lift * geometry.HitboxOffset.z;
                     if (target.z < 60f) continue;
                     bool doubleJump = grounded && target.z - flight.Position.z > 450f;
-                    if (!AerialGuidance.Simulate(flight, grounded, t - AerialMargin, target, nose, doubleJump).Reached) continue;
+                    AerialResult early = AerialGuidance.Simulate(flight, grounded, t - AerialMargin, target, nose, doubleJump);
+                    if (!early.Reached)
+                    {
+                        options.Log?.Invoke(FormattableString.Invariant($"aerial t={t:F2} ball={ball}: early miss={early.Miss:F0}"));
+                        continue;
+                    }
                     AerialResult flown = AerialGuidance.Simulate(flight, grounded, t, target, nose, doubleJump);
                     FlightState f = flown.Final;
                     var pose = new CarPose(f.Position, f.Forward, f.Right, f.Up, f.Velocity, f.AngularVelocity,
                         geometry.HitboxSize, geometry.HitboxOffset);
                     HitModel.Result hit = HitModel.Collide(pose, ball, slice.Velocity, slice.AngularVelocity, 12f);
-                    if (!hit.Contact) continue;
+                    if (!hit.Contact)
+                    {
+                        options.Log?.Invoke(FormattableString.Invariant($"aerial t={t:F2} ball={ball}: no contact miss={flown.Miss:F0}"));
+                        continue;
+                    }
                     Vec3 flat = hit.Velocity.Flatten();
                     float aimError = flat.Length() > 1f ? GroundModel.SignedAngle(desired.Flatten().Normalize(), flat) : MathF.PI;
-                    if (MathF.Abs(aimError) > options.AimTolerance) continue;
+                    if (MathF.Abs(aimError) > options.AimTolerance)
+                    {
+                        options.Log?.Invoke(FormattableString.Invariant($"aerial t={t:F2} ball={ball}: aim error {aimError:F2}"));
+                        continue;
+                    }
                     var contact = new ContactSolution(target, nose, 0f, hit.Velocity, aimError);
                     StrikePlan plan = Score(StrikeKind.Aerial, slice, contact, aim, now, now + t - AerialMargin, f.Velocity.Length(), goal, options);
                     plan.Score -= AerialRecoveryCost + AerialBoostCost * flown.BoostUsed;

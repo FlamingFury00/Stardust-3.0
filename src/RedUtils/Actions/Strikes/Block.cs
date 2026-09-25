@@ -15,8 +15,12 @@ namespace RedUtils
         private const float ResolveInterval = 1f / 30f;
         private const float MaxDeviation = 250f;
         private const float SettledRadius = 80f;
-        /// <summary>Spare time beyond which the car stops on the point instead of running through it.</summary>
-        private const float ParkSlack = 0.35f;
+        /// <summary>Ball ground speed below which the car faces the ball instead of turning across its path.</summary>
+        private const float MinimumPathSpeed = 300f;
+        /// <summary>Time a parked car should stand still on the point before its takeoff.</summary>
+        private const float ParkSettle = 0.15f;
+        /// <summary>Ground speed below which a car on the point counts as parked.</summary>
+        private const float ParkedSpeed = 150f;
         /// <summary>How close the car's projected position at contact must be to the point to take off.</summary>
         private const float TakeoffReach = 130f;
 
@@ -62,10 +66,10 @@ namespace RedUtils
                     Finish("prediction moved");
                     return;
                 }
-                Point = BlockPlanner.BlockPoint(live.Location, car.Location);
+                Point = BlockPlanner.BlockPoint(live.Location, car.Location, Plan.JumpTime > 0f);
             }
 
-            Vec3 face = (Ball.Location - car.Location).Flatten();
+            Vec3 face = Broadside(car, Ball.Location, Ball.Velocity);
             Diagnostics?.Invoke(FormattableString.Invariant(
                 $"block tick t={now:F3} remaining={remaining:F3} status={Status} car={car.Location} v={car.Velocity} point={Point} ball={Ball.Location} jump={Plan.JumpTime:F2}"));
             if (float.IsFinite(jumpStarted))
@@ -100,28 +104,40 @@ namespace RedUtils
             }
 
             float distance = (Point - car.Location).Flatten().Length();
-            var drive = new DriveTarget(Point, Vec3.Zero);
-            float eta = distance > SettledRadius
-                ? Navigator.Rollout(Navigator.StartState(car), drive, remaining + 0.3f).Time
-                : 0f;
-            if (remaining - eta > ParkSlack)
+            float takeoffIn = remaining - Plan.JumpTime;
+            var park = new DriveTarget(Point, Vec3.Zero) { ArrivalSpeed = 0f };
+            bool parked = distance <= SettledRadius && MathF.Abs(speed) < ParkedSpeed;
+            if (parked || (distance > SettledRadius && ParkEta(car, park, takeoffIn) + ParkSettle <= takeoffIn))
             {
-                // Well early: settle on the point and wait for the ball.
+                // Early enough to stop on the point: settle there and wait for the ball.
                 if (distance > SettledRadius)
-                {
-                    drive.ArrivalSpeed = 0f;
-                    Apply(bot, Navigator.Control(car.Location, car.Forward, speed, car.Boost, car.AngularVelocity.z, drive, now));
-                }
+                    Apply(bot, Navigator.Control(car.Location, car.Forward, speed, car.Boost, car.AngularVelocity.z, park, now));
                 else
                     bot.Controller.Throttle = MathF.Abs(speed) < 40f ? 0f : System.Math.Clamp(-speed / 300f, -1f, 1f);
                 Status = "set";
+                return;
             }
-            else
-            {
-                // Tight: run through the point flat out.
-                Apply(bot, Navigator.Control(car.Location, car.Forward, speed, car.Boost, car.AngularVelocity.z, drive, now));
-                Status = "moving";
-            }
+
+            // Drive through the point: the car keeps its ground speed in the air, so a steady pace
+            // of path over time crosses the point at contact whenever the jump happens. The steering
+            // law's own speed (it slows for turns) caps the pace.
+            var through = new DriveTarget(Point, Vec3.Zero);
+            DriveCommand steer = Navigator.Control(car.Location, car.Forward, speed, car.Boost, car.AngularVelocity.z, through, now);
+            float path = Navigator.EstimatePathLength(car.Location, car.Forward, speed, through);
+            DriveCommand pace = Navigator.HoldSpeed(MathF.Min(path / MathF.Max(remaining, 1f / RL.TickRate), RL.CarMaxSpeed),
+                speed, car.Boost);
+            bot.Controller.Steer = steer.Steer;
+            bot.Controller.Throttle = MathF.Min(steer.Throttle, pace.Throttle);
+            bot.Controller.Boost = steer.Boost && pace.Boost;
+            Status = "moving";
+        }
+
+        /// <summary>Time for a stopping approach to the point, or infinity when it would not settle before <paramref name="within"/>.</summary>
+        private static float ParkEta(Car car, in DriveTarget park, float within)
+        {
+            if (within <= 0f) return float.PositiveInfinity;
+            RolloutResult rollout = Navigator.Rollout(Navigator.StartState(car), park, within + 0.1f);
+            return rollout.Arrived ? rollout.Time : float.PositiveInfinity;
         }
 
         private static void Apply(RUBot bot, DriveCommand command)
@@ -152,6 +168,19 @@ namespace RedUtils
         {
             Status = reason;
             Finished = true;
+        }
+
+        /// <summary>
+        /// Heading that turns the car's length across the ball's path, the widest body it can put
+        /// in the way (118 uu instead of 84 nose-on), whichever way across is nearer its heading.
+        /// A slow ball has no path to cross, so the car faces it.
+        /// </summary>
+        private static Vec3 Broadside(Car car, Vec3 ball, Vec3 ballVelocity)
+        {
+            Vec3 path = ballVelocity.Flatten();
+            if (path.Length() < MinimumPathSpeed) return (ball - car.Location).Flatten();
+            Vec3 across = new Vec3(-path.y, path.x, 0f).Normalize();
+            return across.Dot(car.Forward) >= 0f ? across : -across;
         }
 
         private static Vec3 LocalAngular(Car car) =>

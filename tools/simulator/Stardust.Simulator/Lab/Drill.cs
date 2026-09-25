@@ -49,6 +49,10 @@ public abstract class Drill : Scenario
     {
         episode++;
         lastAction = null;
+        // The traced episode also prints the strike executors' own per-tick diagnostics.
+        Action<string>? sink = episode == TraceEpisode ? Console.WriteLine : null;
+        RedUtils.AerialStrike.Diagnostics = sink;
+        RedUtils.Block.Diagnostics = sink;
         Start(session, setup);
     }
 
@@ -73,7 +77,8 @@ public abstract class Drill : Scenario
                 $"thr={c.Throttle,5:F2} steer={c.Steer,5:F2} boost={(c.Boost ? 1 : 0)} jump={(c.Jump ? 1 : 0)} p/y/r=({c.Pitch:F1},{c.Yaw:F1},{c.Roll:F1}) " +
                 $"fuel={car.Boost:F0} action={Subject.Action?.GetType().Name ?? "-"} decision={Subject.Decision} " +
                 $"world car={car.Physics.Position} ball={session.Ball.Physics.Position}") +
-                (session.Cars.Length > 1 ? $" other={session.Cars[1].Physics.Position} v={session.Cars[1].Physics.Velocity.Length:F0}" : ""));
+                (session.Cars.Length > 1 ? $" other={session.Cars[1].Physics.Position} v={session.Cars[1].Physics.Velocity.Length:F0}" : "") +
+                (Subject.Action is RedUtils.Block block ? $" block={block.Status} {block.Plan} point={block.Point}" : ""));
         }
         Measure(session, trace);
     }
