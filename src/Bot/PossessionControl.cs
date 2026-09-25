@@ -85,6 +85,9 @@ namespace Bot
             return closeControl && frame.FreeTime >= -0.16f;
         }
 
+        /// <summary>Ball depth (uu into our half) beyond which no new ground catch or carry is started.</summary>
+        public static float OwnHalfCatchDepth = float.PositiveInfinity;
+
         public static bool CanAcquireGround(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
         {
             if (frame == null || car == null || ball == null || frame.TeamRank != 0 ||
@@ -96,6 +99,9 @@ namespace Bot
 
             float side = ownGoal.y < 0 ? -1f : 1f;
             float ownDepth = ball.location.y * side;
+            // Deep in our own half a catch keeps the ball where a lost touch is a chance on our goal.
+            if (ownDepth > OwnHalfCatchDepth)
+                return false;
             float requiredProgress = ownDepth > 3800f ? 35f : -40f;
             bool safeGeometry = Defense.IsGoalSide(
                 car.Location, ball.location, ownGoal, requiredProgress);
