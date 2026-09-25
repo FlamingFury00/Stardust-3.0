@@ -7,6 +7,7 @@ namespace Bot
     public sealed class GroundDribble : IPossessionAction
     {
         private readonly float started = Game.Time;
+        private readonly HoodCarry carry = new();
         private float stableSince = float.NaN;
         public bool Finished { get; private set; }
         public bool Interruptible => true;
@@ -54,7 +55,8 @@ namespace Bot
 
             // Stay on the ball under pressure. The pressure response is the flick above, not abandoning
             // possession and driving back into a shadow lane.
-            bot.Controller = PossessionControl.GroundCarry(car, Ball.MainBall, lane);
+            carry.SteerToward(car, Ball.MainBall, lane);
+            bot.Controller = carry.Step(car, Ball.MainBall, bot.DeltaTime, allowBoost: true);
         }
     }
 

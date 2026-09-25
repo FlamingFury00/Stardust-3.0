@@ -145,8 +145,7 @@ namespace Bot
             if (Game.Time < nextPlan)
                 return;
 
-            Situation = Tactics.Evaluate(this);
-            Situation.PressureTime = pressureTime;
+            Assess(pressureTime);
             nextPlan = Game.Time + (underPressure || emergency || counterDanger ? 0.05f : 0.12f);
 
             RawCanChallenge = Defense.CanChallenge(
@@ -640,6 +639,13 @@ namespace Bot
                 Console.WriteLine(FormattableString.Invariant(
                     $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2} last_back={Situation.LastBack} cover={Situation.HasCover} goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
             }
+        }
+
+        /// <summary>Refreshes <see cref="Situation"/> (arrival times, ranks, pressure) from the current world.</summary>
+        protected void Assess(float pressureTime)
+        {
+            Situation = Tactics.Evaluate(this);
+            Situation.PressureTime = pressureTime;
         }
 
         protected override void OnOutputReady() => telemetry.Sample(this);

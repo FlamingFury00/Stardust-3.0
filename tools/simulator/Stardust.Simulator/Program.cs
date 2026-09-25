@@ -89,6 +89,10 @@ switch (command)
             arguments.Get("goal", "shoot"));
     case "physics-check":
         return PhysicsCheck.Run(arguments.Get("model", "all"), arguments.GetInt("trials", 300), arguments.GetInt("seed", 3));
+    case "mechanics-lab":
+        if (arguments.Has("set")) Stardust.Simulator.Lab.MechanicsLab.Override(arguments.Require("set"));
+        return Stardust.Simulator.Lab.MechanicsLab.Run(arguments.Get("drill", "all"), arguments.GetInt("episodes", 60),
+            arguments.GetInt("seed", 11), arguments.Get("out", "sim-mechanics"), arguments.GetInt("trace", -1));
     default:
         Console.WriteLine("""
             Stardust match simulator (RocketSim + RLBot v5 protocol)
@@ -109,6 +113,14 @@ switch (command)
                     [--suite all|kickoff|open-net|vs-keeper|aerial|save|recovery] [--episodes 40]
                     [--seed 7] [--parallel N] [--out sim-scenarios]
                     Opponent seats (kickoffs) use --opponent, or mirror the bot under test.
+
+              mechanics-lab [--drill all|carry|flick|catch|pickup|dribble-duel] [--episodes 60] [--seed 11]
+                    [--out sim-mechanics] [--trace <episode>] [--set Type.Field=value,...]
+                    Runs the Stardust bot in-process on mechanics drills and checks each drill's pass
+                    criteria; exits non-zero if any fails.
+
+              physics-check [--model all|...] [--trials 300] [--seed 3]
+                    Validates the physics models against RocketSim.
             """);
         return command == "help" ? 0 : 1;
 }

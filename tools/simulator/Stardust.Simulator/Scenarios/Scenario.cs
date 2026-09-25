@@ -51,6 +51,12 @@ public abstract class Scenario
 
     public abstract EpisodeSetup Generate(Random random);
 
+    /// <summary>Called once the episode's state is applied, before its first tick.</summary>
+    public virtual void Begin(MatchSession session, EpisodeSetup setup) { }
+
+    /// <summary>Called after every tick, before <see cref="ShouldStop"/>, to accumulate per-tick measurements.</summary>
+    public virtual void Observe(MatchSession session, EpisodeTrace trace) { }
+
     /// <summary>Called every tick; return true to stop the episode early.</summary>
     public virtual bool ShouldStop(MatchSession session, EpisodeTrace trace) => trace.GoalTeam >= 0;
 

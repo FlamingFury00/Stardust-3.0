@@ -110,7 +110,9 @@ namespace RedUtils
                 lastTouchTime = touch;
                 if (ControlRuntime.CancelBeforeRun(Action, changedTouch, OwnTouchThisTick, Me.IsDemolished, ClockReset)) Action = null;
 
-                base.Renderer.Begin($"BOT_{Index}");
+                // Nothing is drawn unless rendering is on; an empty group every tick is wasted traffic.
+                bool rendering = base.Renderer.CanRender;
+                if (rendering) base.Renderer.Begin($"BOT_{Index}");
                 try
                 {
                     Run();
@@ -126,7 +128,7 @@ namespace RedUtils
                     OnOutputReady();
                     return Controller;
                 }
-                finally { base.Renderer.End(); }
+                finally { if (rendering) base.Renderer.End(); }
             }
         }
 
@@ -138,6 +140,8 @@ namespace RedUtils
         protected bool HasTeammateEarlierShot(float mySliceTime, float grace = 0.04f) => claims.EarlierThan(Index, mySliceTime, Game.Time, grace);
         private void UpdateShotClaimState()
         {
+            // Claims coordinate teammates; without any there is nobody to tell.
+            if (Teammates.Count == 0) return;
             float slice = Action is Shot shot && shot.Slice != null ? shot.Slice.Time :
                 Action is IPossessionAction possession ? possession.ClaimTime : float.NaN;
             if (float.IsFinite(slice))

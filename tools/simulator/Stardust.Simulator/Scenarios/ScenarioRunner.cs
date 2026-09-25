@@ -24,23 +24,34 @@ public static class ScenarioRunner
     public static ScenarioOutcome Run(Scenario scenario, BotBuild bot, BotBuild? opponent, int episodes, int seed,
         string? logDirectory, ReplayRecorder? replay = null)
     {
-        var seats = new List<Seat>();
-        for (int seat = 0; seat < scenario.SeatCount; seat++)
+        using var session = new MatchSession(Seats(scenario, new Seat(scenario.TeamOf(0), bot.Label, bot), opponent),
+            new MatchOptions { Seed = seed, LogDirectory = logDirectory, Replay = replay });
+        return Run(scenario, session, bot.Label, episodes, seed, logDirectory);
+    }
+
+    /// <summary>Seat 0 is the bot under test; further seats get the scenario's scripted agent, the opponent build, or idle.</summary>
+    public static List<Seat> Seats(Scenario scenario, Seat underTest, BotBuild? opponent)
+    {
+        var seats = new List<Seat> { underTest };
+        for (int seat = 1; seat < scenario.SeatCount; seat++)
         {
             int team = scenario.TeamOf(seat);
-            if (seat == 0)
-                seats.Add(new Seat(team, bot.Label, bot));
-            else if (scenario.ScriptedOpponent(seat) is IAgent scripted)
+            if (scenario.ScriptedOpponent(seat) is IAgent scripted)
                 seats.Add(new Seat(team, scripted.Description + seat, Agent: scripted));
             else if (opponent != null)
                 seats.Add(new Seat(team, opponent.Label + seat, opponent));
             else
                 seats.Add(new Seat(team, "idle" + seat, Agent: new IdleAgent()));
         }
+        return seats;
+    }
 
-        var outcome = new ScenarioOutcome { Scenario = scenario.Name, Bot = bot.Label };
+    /// <summary>Plays the scenario's episodes in an existing session whose seat 0 is the bot under test.</summary>
+    public static ScenarioOutcome Run(Scenario scenario, MatchSession session, string label, int episodes, int seed,
+        string? logDirectory)
+    {
+        var outcome = new ScenarioOutcome { Scenario = scenario.Name, Bot = label };
         var random = new Random(seed);
-        using var session = new MatchSession(seats, new MatchOptions { Seed = seed, LogDirectory = logDirectory, Replay = replay });
         session.StatsEnabled = false;
         var episodeLog = logDirectory != null ? new List<string>() : null;
 
@@ -109,6 +120,7 @@ public static class ScenarioRunner
             arena.SetPad(pad, true, 0);
         arena.PollEvents();
         session.ResetTouchState();
+        scenario.Begin(session, setup);
 
         if (setup.Kickoff)
             for (float t = 0; t < 0.5f; t += SimArena.TickTime)
@@ -156,6 +168,7 @@ public static class ScenarioRunner
                 trace.GoalTeam = events.GoalTeam;
                 trace.GoalTime = trace.Elapsed;
             }
+            scenario.Observe(session, trace);
             if (scenario.ShouldStop(session, trace))
                 break;
         }
