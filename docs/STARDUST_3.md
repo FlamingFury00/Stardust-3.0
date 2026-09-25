@@ -261,6 +261,11 @@ Nexto. None survived:
 | Plan saves on a carried-ball path that speeds up with the carrier's boost | defense drill, 2 × 100 | 76 vs 73 per 200: level |
 | Shadow boosts to catch up when 350 uu/s short of its target speed | self-play, 18 games | −1.78 ± 0.53 |
 | 2v2: support car refills below 60 boost, big pads below 50, behind any ball in their half | 2v2 self-play, 40 games | −0.60 ± 0.45 |
+| Last-line aerial save, any direction, reached 0.05 s early | save drill, 200 shots; self-play, 48 games | 127 vs 125 saved; −0.17 ± 0.41 (left off) |
+| The same aerial accepting any simulated touch, without the early reach | save drill, 200 shots | 124 vs 125 |
+| Block car turned nose-up after its last jump when contact is above 350 / 450 uu | save drill, 200 shots | 126 / 122 vs 125: height gained, width lost |
+| Solo shadow aimed at the front post (half / full blend) | defense drill, 100 each | 27 / 37 vs 31 conceded |
+| Solo challenges up to 0.3–0.6 s late | vs Nexto, 12 games on one seed | −13.50 ± 0.85 against −12.92 ± 0.56 |
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
