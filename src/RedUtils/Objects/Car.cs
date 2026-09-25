@@ -75,6 +75,11 @@ namespace RedUtils
 		public bool HasJumped;
 		/// <summary>If the car has executed it's second jump</summary>
 		public bool HasDoubleJumped;
+		/// <summary>
+		/// The game's own jumped flag: set on the tick a jump starts, even while the wheels still
+		/// touch, and cleared after landing. <see cref="HasJumped"/> only reads the air state.
+		/// </summary>
+		public bool JumpStarted;
 		/// <summary>If the car has been demolished, and hasn't respawned yet</summary>
 		public bool IsDemolished;
 		/// <summary>If the car is currently supersonic, and therefore can demolish a car</summary>
@@ -120,6 +125,7 @@ namespace RedUtils
 			IsGrounded = false;
 			HasJumped = false;
 			HasDoubleJumped = false;
+			JumpStarted = false;
 			IsDemolished = false;
 			IsSupersonic = false;
 			LastInput = new ControllerStateT();
@@ -159,6 +165,7 @@ namespace RedUtils
 			IsGrounded = originalCar.IsGrounded;
 			HasJumped = originalCar.HasJumped;
 			HasDoubleJumped = originalCar.HasDoubleJumped;
+			JumpStarted = originalCar.JumpStarted;
 			IsDemolished = originalCar.IsDemolished;
 			IsSupersonic = originalCar.IsSupersonic;
 			LastInput = CloneInput(originalCar.LastInput);
@@ -195,6 +202,7 @@ namespace RedUtils
             IsGrounded = playerInfo.AirState == AirState.OnGround;
             HasJumped = playerInfo.AirState == AirState.Jumping;
             HasDoubleJumped = playerInfo.AirState == AirState.DoubleJumping || playerInfo.AirState == AirState.Dodging;
+            JumpStarted = playerInfo.HasJumped;
             IsDemolished = playerInfo.DemolishedTimeout > 0;
             IsSupersonic = playerInfo.IsSupersonic;
             LastInput = CloneInput(playerInfo.LastInput);
@@ -229,6 +237,7 @@ namespace RedUtils
             IsGrounded = playerInfo.AirState == AirState.OnGround;
             HasJumped = playerInfo.AirState == AirState.Jumping;
             HasDoubleJumped = playerInfo.AirState == AirState.DoubleJumping || playerInfo.AirState == AirState.Dodging;
+            JumpStarted = playerInfo.HasJumped;
             IsDemolished = playerInfo.DemolishedTimeout > 0;
             IsSupersonic = playerInfo.IsSupersonic;
             LastInput = CloneInput(playerInfo.LastInput);

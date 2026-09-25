@@ -59,6 +59,15 @@ namespace RedUtils
                 (changedTouch && action.Interruptible && !(ownTouch && action is IPossessionAction));
         }
         public static float Axis(float value) => float.IsFinite(value) ? System.Math.Clamp(value, -1f, 1f) : 0f;
+        /// <summary>
+        /// The jump output for a tick. The game jumps only on a press, so a jump held since the
+        /// last tick that started nothing (the car on its wheels, no jump under way) is released
+        /// for this tick; otherwise an action taking over from one that held jump would have its
+        /// takeoff swallowed. The press lands on the next tick.
+        /// </summary>
+        public static bool JumpOutput(bool wanted, bool heldLastTick, bool grounded, bool jumpStarted) =>
+            wanted && !(heldLastTick && grounded && !jumpStarted);
+
         public static ControllerStateT Sanitize(ControllerStateT input, bool demolished, float boost)
         {
             if (demolished || input == null) return new ControllerStateT();

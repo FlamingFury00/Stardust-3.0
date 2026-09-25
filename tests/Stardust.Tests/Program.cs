@@ -411,6 +411,27 @@ Test("aerial: circular turn displacement scales both components by radius", () =
     Near(displacement.x, 500, 0.001f);
     Near(displacement.y, 500, 0.001f);
 });
+Test("controls: a jump held over from the last tick that started nothing is released for a tick", () =>
+{
+    // Previous action held jump on the ground and no jump began: this tick must release, the next presses.
+    Check(!ControlRuntime.JumpOutput(true, heldLastTick: true, grounded: true, jumpStarted: false), "stale hold was not released");
+    Check(ControlRuntime.JumpOutput(true, heldLastTick: false, grounded: true, jumpStarted: false), "fresh press was blocked");
+    // A jump under way (wheels still touching on the first ticks, or airborne) keeps its hold.
+    Check(ControlRuntime.JumpOutput(true, heldLastTick: true, grounded: true, jumpStarted: true), "takeoff hold was cut");
+    Check(ControlRuntime.JumpOutput(true, heldLastTick: true, grounded: false, jumpStarted: true), "air hold was cut");
+    Check(ControlRuntime.JumpOutput(true, heldLastTick: true, grounded: false, jumpStarted: false), "air press was blocked");
+    Check(!ControlRuntime.JumpOutput(false, heldLastTick: true, grounded: true, jumpStarted: false), "release was turned into a press");
+});
+
+Test("block: a jump block centres on the ball's track, a ground block stands off toward the car", () =>
+{
+    Vec3 ball = new(100, -4500, 450), car = new(900, -4900, 17);
+    Vec3 jump = RedUtils.Planning.BlockPlanner.BlockPoint(ball, car, jumping: true);
+    Vec3 ground = RedUtils.Planning.BlockPlanner.BlockPoint(ball, car, jumping: false);
+    Near((jump - ball.Flatten()).Length(), 0, 0.01f);
+    Near((ground - ball.Flatten()).Length(), RedUtils.Planning.BlockPlanner.BlockOffset, 0.01f);
+    Check((ground - ball.Flatten()).Dot(car - ball) > 0, "ground block point is not on the car's side");
+});
 
 Console.WriteLine($"RESULT {passed} passed, {failed} failed; no in-game performance claim.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
