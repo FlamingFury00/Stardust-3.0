@@ -100,8 +100,8 @@ $SIM physics-check --model all
 # Round robin between bot builds and RLBot v5 bot configs (label = path per roster line)
 $SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out tournament
 
-# Loose balls in our third (clear), Nexto's attacks (defense), kickoffs (kickoff-follow) and a
-# time profile (profile) are extra drills, run by name.
+# Loose balls in our third (clear), slow balls rolling into our goal (roller), Nexto's attacks
+# (defense), kickoffs (kickoff-follow) and a time profile (profile) are extra drills, run by name.
 # Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
 # --set Type.Field=value (any command) overrides a tuning field (as STARDUST_TUNE does in a match)
 $SIM mechanics-lab --drill all --episodes 60
@@ -195,29 +195,32 @@ What these showed:
 
 ## Tournament against the RLBot v5 bot pack
 
-The round robin plays paired, side-swapped series (6 games of 180 s per pair) between Stardust, its
-pre-rework build and twelve bots from the [RLBot v5 bot pack](https://github.com/RLBot/botpack),
-under the upstream v5 schema. The learned bots (Nexto, Necto, Element, TensorBot, Wisp, Willo) run
-their own networks in-process, pinned to one thread each. Stardust's series:
+Stardust plays paired, side-swapped series (6 games of 180 s each) against eleven bots from the
+[RLBot v5 bot pack](https://github.com/RLBot/botpack), under the upstream v5 schema, on the fixed
+arena (see [Evaluation harness](#evaluation-harness)). The learned bots (Nexto, Necto, Element,
+TensorBot, Wisp, Willo) run their own networks in-process, pinned to one thread each. Nexto has
+its own, longer series (see [Against Nexto](#against-nexto-where-the-goals-come-from)).
 
 | Opponent | Kind | W-L-D | Goals per game |
 |---|---|---|---|
-| Necto | RLGym | 0-6-0 | −9.67 |
-| Element | RLGym | 0-6-0 | −8.67 |
-| Wisp | RLGym + GGL | 0-6-0 | −8.67 |
-| Nexto | RLGym | 0-5-1 | −8.33 |
-| Stardust (pre-rework build) | scripted | 2-4-0 | −2.33 |
-| Willo | RLGym + GGL | 2-4-0 | −0.50 |
-| Party Cannon | scripted, C# | 3-2-1 | +0.50 |
-| Noob Black | scripted, Python | 5-0-1 | +2.33 |
-| TensorBot | learned | 6-0-0 | +4.00 |
-| Beast | scripted, Python | 6-0-0 | +4.50 |
-| Phoenix | scripted, C# | 6-0-0 | +5.00 |
-| Mirror | scripted, Python | 5-0-1 | +6.83 |
-| Bowie Knife | scripted, Python | 6-0-0 | +61.67 (does not function in the simulator) |
+| Nexto | RLGym | 0-12-0 | −12.92 (12 games) |
+| Wisp | RLGym + GGL | 0-4-0 | −10.50 (two games failed to start: the bot timed out loading) |
+| Element | RLGym | 0-6-0 | −9.33 |
+| Necto | RLGym | 0-6-0 | −8.83 |
+| Party Cannon | scripted, C# | 3-3-0 | −0.17 |
+| Willo | RLGym + GGL | 5-1-0 | +1.17 |
+| Phoenix | scripted, C# | 5-1-0 | +4.67 |
+| Noob Black | scripted, Python | 6-0-0 | +4.83 |
+| TensorBot | learned | 6-0-0 | +5.17 |
+| Beast | scripted, Python | 6-0-0 | +5.83 |
+| Mirror | scripted, Python | 6-0-0 | +16.33 (touches the ball 7.7 times per 5 min: it barely plays) |
 
-Stardust beats the scripted bots and TensorBot, and loses heavily to the strong learned bots. The
-match statistics show where:
+Bowie Knife does not function in the simulator and is left out. Party Cannon, a scripted C# bot on
+RedUtils like Stardust, is level with it: it takes 14.9 shots per 5 minutes to Stardust's 6.2, and
+0.99 of Stardust's goals against per 5 minutes are its own touches.
+
+The first round, on the arena before its fix, gave the same picture: Stardust beat the scripted
+bots and TensorBot and lost heavily to the strong learned bots. Its match statistics show where:
 
 - **Speed and boost.** Stardust averages 1063 uu/s against Nexto's 1186 and Wisp's 1515. It collects
   211 boost per minute against 379–519, and sits at zero boost 39 % of the time.
