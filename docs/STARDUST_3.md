@@ -277,6 +277,7 @@ Nexto. None survived:
 | Aerial climb turning the nose by the quickest swing, roof left free | save drill, 200; aerial planner on the missed saves | 124 vs 125; best simulated miss 142 vs 152 uu: the flights are short, not slow to turn |
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 | Shadow matches the attacker's full speed, up to 1800 uu/s (instead of 0.8 of it, up to 1350) | self-play, 85 games | +0.07 ± 0.29 |
+| Planning rollouts keep driving a directed approach past a misaligned pass, as the controller does | roller, save and clear drills | 130 / 125 / 63 vs 130 / 125 / 66: in an emergency the clear planner finds a clear on under 3 % of planning ticks either way, because against an incoming ball no approach arrives at the contact with the right heading in time |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
 goal-side with 20–100 boost. The gap to Nexto is not one misjudged threshold: each rule above fixes

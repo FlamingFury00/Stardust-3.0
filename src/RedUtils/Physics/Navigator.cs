@@ -60,8 +60,6 @@ namespace RedUtils.Physics
     public static class Navigator
     {
         public const float ArrivalRadius = 55f;
-        /// <summary>Keep simulating a directed approach past a misaligned pass (switch for A/B).</summary>
-        public static bool LoopBack = false;
         /// <summary>Early-arrival margin tolerated before a timed approach starts shedding speed.</summary>
         public const float TimingSlack = 0.07f;
         /// <summary>
@@ -344,9 +342,7 @@ namespace RedUtils.Physics
                 float distance = to.Length();
                 bool aligned = !target.HasDirection || s.Forward.Dot(target.Direction) > alignment;
                 bool passing = distance < ArrivalRadius || (distance < 160f && distance > previousDistance && to.Dot(s.Forward) < 0f);
-                // A directed approach that passes its point pointing the wrong way comes round again,
-                // as the controller executing it does: only an aligned or undirected pass ends it.
-                if (passing && !(LoopBack && target.HasDirection && !aligned))
+                if (passing)
                 {
                     result.Arrived = aligned && distance < 120f;
                     // Report when the car reaches the point itself, not the edge of the radius.
