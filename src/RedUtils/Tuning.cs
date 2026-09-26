@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -9,11 +10,13 @@ namespace RedUtils
 	/// <summary>
 	/// Overrides tunable static fields by name, "Type.Field=value,...", so parameter variants of one
 	/// build can be compared in matches and drills without rebuilding. Types are found by simple name
-	/// in the given assemblies; only mutable static fields can be set.
+	/// in the given assemblies; only mutable static fields can be set. Needs the reflection metadata a
+	/// JIT build keeps and a trimmed or native build may not.
 	/// </summary>
 	public static class Tuning
 	{
 		/// <summary>Applies the assignments and returns a "Type.Field = value" line for each.</summary>
+		[RequiresUnreferencedCode("Finds types and fields by name, which trimming can remove.")]
 		public static IReadOnlyList<string> Apply(string assignments, params Assembly[] assemblies)
 		{
 			var applied = new List<string>();

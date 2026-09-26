@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RedUtils;
@@ -16,17 +17,15 @@ namespace Bot
     {
         public const string Prefix = "STARDUST_JSON ";
         private const long MaxFileBytes = 64L * 1024L * 1024L;
+        // The packaged bot records every match, so older files are deleted to keep the directory
+        // within this budget.
+        private const long MaxDirectoryBytes = 256L * 1024L * 1024L;
 
         private readonly bool enabled;
         private readonly bool console;
         private readonly float interval;
         private readonly string requestedPath;
         private readonly string defaultPath;
-        private readonly JsonSerializerOptions json = new()
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            WriteIndented = false
-        };
 
         private StreamWriter file;
         private string activePath;
@@ -88,7 +87,7 @@ namespace Bot
             try
             {
                 var data = Build(bot, kind, previousDecision);
-                line = JsonSerializer.Serialize(data, json);
+                line = JsonSerializer.Serialize(data, TelemetryJson.Default.DictionaryStringObject);
             }
             catch (Exception error)
             {
@@ -151,6 +150,7 @@ namespace Bot
                     AutoFlush = true
                 };
                 activePath = full;
+                Prune(directory);
                 return true;
             }
             catch
@@ -158,6 +158,32 @@ namespace Bot
                 file = null;
                 activePath = null;
                 return false;
+            }
+        }
+
+        private void Prune(string directory)
+        {
+            if (string.IsNullOrEmpty(directory))
+                return;
+            try
+            {
+                long kept = 0;
+                IEnumerable<FileInfo> older = new DirectoryInfo(directory)
+                    .GetFiles("stardust-telemetry-*.jsonl")
+                    .Where(f => f.FullName != activePath)
+                    .OrderByDescending(f => f.LastWriteTimeUtc);
+                foreach (FileInfo old in older)
+                {
+                    kept += old.Length;
+                    if (kept > MaxDirectoryBytes)
+                        old.Delete();
+                }
+            }
+            catch (Exception error)
+            {
+                // Another process may hold a file open; the next start prunes again.
+                Console.Error.WriteLine(
+                    $"STARDUST_TELEMETRY_ERROR prune {error.GetType().Name}: {error.Message}");
             }
         }
 
@@ -457,5 +483,23 @@ namespace Bot
             Num(value.y, 1),
             Num(value.z, 1)
         };
+    }
+
+    /// <summary>
+    /// Source-generated serialization for the telemetry records, so it also works in the native
+    /// (AOT) build, where reflection-based serialization is unavailable. Lists every type a record
+    /// value can have at runtime.
+    /// </summary>
+    [JsonSerializable(typeof(Dictionary<string, object>))]
+    [JsonSerializable(typeof(string))]
+    [JsonSerializable(typeof(bool))]
+    [JsonSerializable(typeof(int))]
+    [JsonSerializable(typeof(uint))]
+    [JsonSerializable(typeof(long))]
+    [JsonSerializable(typeof(float))]
+    [JsonSerializable(typeof(float?[]))]
+    [JsonSerializable(typeof(uint[]))]
+    internal sealed partial class TelemetryJson : JsonSerializerContext
+    {
     }
 }

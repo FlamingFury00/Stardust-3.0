@@ -1,11 +1,10 @@
 [[config]]
-# name of the bot
-project_name = "Stardust-2.0"
-# points to the bot toml file
+project_name = "Stardust-3.0"
 bot_configs = ["./Stardust.bot.toml"]
 
 [config.builder_config]
+# The dockerfile publishes a native Linux binary and a self-contained Windows executable; bob finds
+# them by file type and writes them into the bot config as its run commands.
 builder_type = "custom"
 dockerfile = "./dockerfile"
-# check the name of the .exe file that is created when you build your bot, put them here
 values = { windows_binary = "Bot.exe", linux_binary = "Bot" }

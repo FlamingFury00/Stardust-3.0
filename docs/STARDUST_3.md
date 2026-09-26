@@ -291,6 +291,13 @@ dotnet run --project tests/Stardust.Tests/Stardust.Tests.csproj --configuration 
 CI builds the bot, runs the ten regression programs in `tests/`, and runs the RocketSim
 physics-model checks.
 
+`Stardust.bot.toml` runs that local build: RLBot starts `Bot.exe` on Windows and `Bot` on Linux.
+For the bot pack, `bob.toml` builds the `dockerfile`, which publishes a native (AOT) Linux binary and
+a self-contained single-file Windows executable; bob writes both into the packaged bot config.
+The native build plays identically to the JIT build (the same matches, frame for frame, in the
+simulator). To check the packaging without Docker, run the dockerfile's two `dotnet publish`
+commands from `src/Bot`.
+
 ## Runtime switches
 
 Set environment variables **before starting the bot process**:
@@ -303,14 +310,18 @@ Set environment variables **before starting the bot process**:
 | `STARDUST_AIR_DRIBBLES` | disabled | Set `1` to pop a controlled hood carry into an air dribble (lab: 60/60 set up, 1.8 s carried; no match gain, see Results) |
 | `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
 | `STARDUST_TRACE_SAVES` | disabled | Set `1` to also log the clearance and block weighed on every emergency planning tick |
-| `STARDUST_TUNE` | unset | `Type.Field=value,...` overrides tuning fields (e.g. `Kickoff.DodgeJump=0.1`), so one build plays as several variants; a bot config whose run command sets it is a variant the `match` command can play |
-| `STARDUST_TELEMETRY` | disabled | Set `1` to emit structured `STARDUST_JSON` frame/decision telemetry |
+| `STARDUST_TUNE` | unset | `Type.Field=value,...` overrides tuning fields (e.g. `Kickoff.DodgeJump=0.1`), so one build plays as several variants; a bot config whose run command sets it is a variant the `match` command can play. JIT builds only: the native build ignores it |
+| `STARDUST_TELEMETRY` | enabled | Structured `STARDUST_JSON` frame/decision telemetry, written to `logs/` next to the executable; set `0` to disable. Test and probe instances stay quiet unless it is set; the simulator sets `0` for bots it starts unless it is set in its own environment |
 | `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
+| `STARDUST_TELEMETRY_FILE` | `logs/stardust-telemetry-<time>-pid<pid>.jsonl` | Telemetry file; if it cannot be opened the bot falls back to the system temp directory, then to the console |
+| `STARDUST_TELEMETRY_CONSOLE` | disabled | Set `1` to also print every telemetry line |
 
 Structured telemetry is designed for real-match debugging without per-tick console spam. Each
-sampled line starts with `STARDUST_JSON ` followed by one JSON object. Decision changes emit
+line is one JSON object (prefixed with `STARDUST_JSON ` on the console). Decision changes emit
 immediately; frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. Frames are recorded after
 the action runs and after controller sanitization, so `controller` is the command actually returned.
+A file rotates at 64 MB, and on opening one the bot deletes the oldest telemetry files in that
+directory beyond 256 MB, so a bot that plays many matches does not fill the disk.
 
 ## Possession mechanics
 
