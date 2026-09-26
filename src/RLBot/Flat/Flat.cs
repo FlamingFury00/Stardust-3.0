@@ -91,6 +91,33 @@ public enum AirState : byte
   InAir = 4,
 };
 
+/// All the different Rumble items
+public enum RumbleItem : byte
+{
+  /// Kicks an opponent’s car backward
+  Boot = 0,
+  /// Forces an opponent to boost uncontrollably at supersonic speeds
+  Disruptor = 1,
+  /// Halts the ball’s movement temporarily
+  Freezer = 2,
+  /// Punches the ball with significant force
+  Haymaker = 3,
+  /// Attracts the ball toward your car
+  Magnetizer = 4,
+  /// Grabs the ball with a cord and pulls it toward you
+  Plunger = 5,
+  /// Attaches the ball to your car upon impact
+  Spike = 6,
+  /// Swaps your position and momentum with an opponent
+  Swapper = 7,
+  /// Creates a funnel cloud that lifts the ball and nearby cars
+  Tornado = 8,
+  /// Pulls your car toward the ball
+  GrapplingHook = 9,
+  /// Allows you to demolish opponents on contact and hit the ball harder
+  PowerHitter = 10,
+};
+
 /// Possible phases of the match.
 public enum MatchPhase : byte
 {
@@ -111,6 +138,19 @@ public enum MatchPhase : byte
   Paused = 6,
   /// The match has ended.
   Ended = 7,
+};
+
+/// The possible damage levels of a dropshot tile.
+public enum TileDamageLevel : byte
+{
+  /// The tile has no damage and the ball cannot fall through.
+  Start = 0,
+  /// The tile has some damage,
+  /// but the ball still cannot fall through.
+  Damaged = 1,
+  /// The tile has been broken,
+  /// and the ball can now fall through.
+  Broken = 2,
 };
 
 /// Various skill levels of Psyonix bots.
@@ -223,6 +263,7 @@ public enum MaxScoreMutator : byte
   EightyGoals = 12,
   NinetyGoals = 13,
   HundredGoals = 14,
+  OneHundredFiftyOneGoals = 15,
 };
 
 /// Multi ball mutator options.
@@ -286,6 +327,8 @@ public enum BallTypeMutator : byte
   ScoreAbsorb = 12,
   Shoe = 13,
   PizzaPuck = 14,
+  Strike = 15,
+  SpookyBalloon = 16,
 };
 
 /// Ball weight mutator options.
@@ -299,6 +342,7 @@ public enum BallWeightMutator : byte
   BeachBallCurve = 5,
   MagnusFutBall = 6,
   MagnusFutballLess = 7,
+  Balloon = 8,
 };
 
 /// Ball size mutator options.
@@ -407,7 +451,21 @@ public enum RespawnTimeMutator : byte
 public enum MaxTimeMutator : byte
 {
   Unlimited = 0,
-  ElevenMinutes = 1,
+  OneMinute = 1,
+  TwoMinutes = 2,
+  ThreeMinutes = 3,
+  FourMinutes = 4,
+  FiveMinutes = 5,
+  SixMinutes = 6,
+  SevenMinutes = 7,
+  EightMinutes = 8,
+  NineMinutes = 9,
+  TenMinutes = 10,
+  ElevenMinutes = 11,
+  TwelveMinutes = 12,
+  ThirteenMinutes = 13,
+  FourteenMinutes = 14,
+  FifteenMinutes = 15,
 };
 
 /// Game event mutator options.
@@ -512,6 +570,43 @@ public enum ScoringRuleMutator : byte
   Disabled = 1,
 };
 
+public enum TriTipModeMutator : byte
+{
+  Off = 0,
+  Tritip = 1,
+};
+
+public enum LockedDamagePhaseMutator : byte
+{
+  Default = 0,
+  High = 1,
+};
+
+public enum SpawnDemoballMutator : byte
+{
+  Off = 0,
+  On = 1,
+};
+
+public enum BoostRestritionMutator : byte
+{
+  Default = 0,
+  AerialOnly = 1,
+};
+
+public enum KeepUpRulesMutator : byte
+{
+  Off = 0,
+  EnabledIncrement = 1,
+  Enabled = 2,
+};
+
+public enum MatchAdminMutator : byte
+{
+  Off = 0,
+  On = 1,
+};
+
 public enum DebugRendering : byte
 {
   /// Renders are ignored unless explicitly enabled per-agent
@@ -544,6 +639,14 @@ public enum Launcher : byte
   /// The game path is specified in the MatchConfiguration.
   Custom = 2,
   NoLaunch = 3,
+};
+
+/// Controls when the in-game performance monitor is shown.
+public enum PerformanceMonitor : byte
+{
+  ShowWhenSuboptimal = 0,
+  AlwaysShow = 1,
+  NeverShow = 2,
 };
 
 /// Horizontal text alignment.
@@ -719,6 +822,10 @@ public enum CoreMessage : byte
   ControllableTeamInfo = 7,
   /// An agent had its ability to render changed
   RenderingStatus = 8,
+  /// Requests for client to send a PingResponse asap for measuring latency
+  PingRequest = 9,
+  /// Response to PingRequest for measuring latency
+  PingResponse = 10,
 };
 
 public class CoreMessageUnion {
@@ -747,6 +854,10 @@ public class CoreMessageUnion {
   public static CoreMessageUnion FromControllableTeamInfo(RLBot.Flat.ControllableTeamInfoT _controllableteaminfo) { return new CoreMessageUnion{ Type = CoreMessage.ControllableTeamInfo, Value = _controllableteaminfo }; }
   public RLBot.Flat.RenderingStatusT AsRenderingStatus() { return this.As<RLBot.Flat.RenderingStatusT>(); }
   public static CoreMessageUnion FromRenderingStatus(RLBot.Flat.RenderingStatusT _renderingstatus) { return new CoreMessageUnion{ Type = CoreMessage.RenderingStatus, Value = _renderingstatus }; }
+  public RLBot.Flat.PingRequestT AsPingRequest() { return this.As<RLBot.Flat.PingRequestT>(); }
+  public static CoreMessageUnion FromPingRequest(RLBot.Flat.PingRequestT _pingrequest) { return new CoreMessageUnion{ Type = CoreMessage.PingRequest, Value = _pingrequest }; }
+  public RLBot.Flat.PingResponseT AsPingResponse() { return this.As<RLBot.Flat.PingResponseT>(); }
+  public static CoreMessageUnion FromPingResponse(RLBot.Flat.PingResponseT _pingresponse) { return new CoreMessageUnion{ Type = CoreMessage.PingResponse, Value = _pingresponse }; }
 
   public static int Pack(Google.FlatBuffers.FlatBufferBuilder builder, CoreMessageUnion _o) {
     switch (_o.Type) {
@@ -759,6 +870,8 @@ public class CoreMessageUnion {
       case CoreMessage.BallPrediction: return RLBot.Flat.BallPrediction.Pack(builder, _o.AsBallPrediction()).Value;
       case CoreMessage.ControllableTeamInfo: return RLBot.Flat.ControllableTeamInfo.Pack(builder, _o.AsControllableTeamInfo()).Value;
       case CoreMessage.RenderingStatus: return RLBot.Flat.RenderingStatus.Pack(builder, _o.AsRenderingStatus()).Value;
+      case CoreMessage.PingRequest: return RLBot.Flat.PingRequest.Pack(builder, _o.AsPingRequest()).Value;
+      case CoreMessage.PingResponse: return RLBot.Flat.PingResponse.Pack(builder, _o.AsPingResponse()).Value;
     }
   }
 }
@@ -795,6 +908,12 @@ static public class CoreMessageVerify
         break;
       case CoreMessage.RenderingStatus:
         result = RLBot.Flat.RenderingStatusVerify.Verify(verifier, tablePos);
+        break;
+      case CoreMessage.PingRequest:
+        result = RLBot.Flat.PingRequestVerify.Verify(verifier, tablePos);
+        break;
+      case CoreMessage.PingResponse:
+        result = RLBot.Flat.PingResponseVerify.Verify(verifier, tablePos);
         break;
       default: result = true;
         break;
@@ -842,6 +961,15 @@ public enum InterfaceMessage : byte
   /// This changed will then be broadcasted to all current connections.
   /// Does nothing if rendering has been completely disabled.
   RenderingStatus = 13,
+  /// Requests for server to send a PingResponse asap for measuring latency
+  PingRequest = 14,
+  /// Response to PingRequest for measuring latency
+  PingResponse = 15,
+  /// Sent by sessions to control when the in-game performance monitor will display
+  UpdatePerformanceMonitor = 16,
+  /// Run an Rocket League or Unreal console command.
+  /// See https://wiki.rlbot.org/framework/console-commands/ for a list of known commands.
+  ConsoleCommand = 17,
 };
 
 public class InterfaceMessageUnion {
@@ -880,6 +1008,14 @@ public class InterfaceMessageUnion {
   public static InterfaceMessageUnion FromInitComplete(RLBot.Flat.InitCompleteT _initcomplete) { return new InterfaceMessageUnion{ Type = InterfaceMessage.InitComplete, Value = _initcomplete }; }
   public RLBot.Flat.RenderingStatusT AsRenderingStatus() { return this.As<RLBot.Flat.RenderingStatusT>(); }
   public static InterfaceMessageUnion FromRenderingStatus(RLBot.Flat.RenderingStatusT _renderingstatus) { return new InterfaceMessageUnion{ Type = InterfaceMessage.RenderingStatus, Value = _renderingstatus }; }
+  public RLBot.Flat.PingRequestT AsPingRequest() { return this.As<RLBot.Flat.PingRequestT>(); }
+  public static InterfaceMessageUnion FromPingRequest(RLBot.Flat.PingRequestT _pingrequest) { return new InterfaceMessageUnion{ Type = InterfaceMessage.PingRequest, Value = _pingrequest }; }
+  public RLBot.Flat.PingResponseT AsPingResponse() { return this.As<RLBot.Flat.PingResponseT>(); }
+  public static InterfaceMessageUnion FromPingResponse(RLBot.Flat.PingResponseT _pingresponse) { return new InterfaceMessageUnion{ Type = InterfaceMessage.PingResponse, Value = _pingresponse }; }
+  public RLBot.Flat.UpdatePerformanceMonitorT AsUpdatePerformanceMonitor() { return this.As<RLBot.Flat.UpdatePerformanceMonitorT>(); }
+  public static InterfaceMessageUnion FromUpdatePerformanceMonitor(RLBot.Flat.UpdatePerformanceMonitorT _updateperformancemonitor) { return new InterfaceMessageUnion{ Type = InterfaceMessage.UpdatePerformanceMonitor, Value = _updateperformancemonitor }; }
+  public RLBot.Flat.ConsoleCommandT AsConsoleCommand() { return this.As<RLBot.Flat.ConsoleCommandT>(); }
+  public static InterfaceMessageUnion FromConsoleCommand(RLBot.Flat.ConsoleCommandT _consolecommand) { return new InterfaceMessageUnion{ Type = InterfaceMessage.ConsoleCommand, Value = _consolecommand }; }
 
   public static int Pack(Google.FlatBuffers.FlatBufferBuilder builder, InterfaceMessageUnion _o) {
     switch (_o.Type) {
@@ -897,6 +1033,10 @@ public class InterfaceMessageUnion {
       case InterfaceMessage.SetLoadout: return RLBot.Flat.SetLoadout.Pack(builder, _o.AsSetLoadout()).Value;
       case InterfaceMessage.InitComplete: return RLBot.Flat.InitComplete.Pack(builder, _o.AsInitComplete()).Value;
       case InterfaceMessage.RenderingStatus: return RLBot.Flat.RenderingStatus.Pack(builder, _o.AsRenderingStatus()).Value;
+      case InterfaceMessage.PingRequest: return RLBot.Flat.PingRequest.Pack(builder, _o.AsPingRequest()).Value;
+      case InterfaceMessage.PingResponse: return RLBot.Flat.PingResponse.Pack(builder, _o.AsPingResponse()).Value;
+      case InterfaceMessage.UpdatePerformanceMonitor: return RLBot.Flat.UpdatePerformanceMonitor.Pack(builder, _o.AsUpdatePerformanceMonitor()).Value;
+      case InterfaceMessage.ConsoleCommand: return RLBot.Flat.ConsoleCommand.Pack(builder, _o.AsConsoleCommand()).Value;
     }
   }
 }
@@ -948,6 +1088,18 @@ static public class InterfaceMessageVerify
         break;
       case InterfaceMessage.RenderingStatus:
         result = RLBot.Flat.RenderingStatusVerify.Verify(verifier, tablePos);
+        break;
+      case InterfaceMessage.PingRequest:
+        result = RLBot.Flat.PingRequestVerify.Verify(verifier, tablePos);
+        break;
+      case InterfaceMessage.PingResponse:
+        result = RLBot.Flat.PingResponseVerify.Verify(verifier, tablePos);
+        break;
+      case InterfaceMessage.UpdatePerformanceMonitor:
+        result = RLBot.Flat.UpdatePerformanceMonitorVerify.Verify(verifier, tablePos);
+        break;
+      case InterfaceMessage.ConsoleCommand:
+        result = RLBot.Flat.ConsoleCommandVerify.Verify(verifier, tablePos);
         break;
       default: result = true;
         break;
@@ -1927,6 +2079,9 @@ public struct PlayerInfo : IFlatbufferObject
   /// The value is -1 while on ground or when airborne for too long after jumping.
   /// A dodge/double jump is possible for 1.25 seconds after the first jump plus
   /// up to an additional 0.2 seconds depending how long the jump button was pressed for the first jump.
+  /// Note that falling off a surface instead of jumping, does not activate the dodge timeout, and making a dodge/double jump possible indefinitely.
+  /// This is commonly known as a flip reset.
+  /// The car is holding a flip reset if `air_state == InAir and !has_jumped and !has_double_jumped and !has_dodged`.
   public float DodgeTimeout { get { int o = __p.__offset(16); return o != 0 ? __p.bb.GetFloat(o + __p.bb_pos) : (float)0.0f; } }
   /// How long until the player is not demolished anymore.
   /// The value is -1 if while not demolished.
@@ -1968,11 +2123,15 @@ public struct PlayerInfo : IFlatbufferObject
   public int AccoladesLength { get { int o = __p.__offset(32); return o != 0 ? __p.__vector_len(o) : 0; } }
   /// The last controller input from this player.
   public RLBot.Flat.ControllerState? LastInput { get { int o = __p.__offset(34); return o != 0 ? (RLBot.Flat.ControllerState?)(new RLBot.Flat.ControllerState()).__assign(o + __p.bb_pos, __p.bb) : null; } }
-  /// True if the player has jumped. See dodge_timeout to know if a dodge/secondary jump is available.
+  /// True if the player has jumped into the air.
+  /// See dodge_timeout to know if a dodge/double jump is temporarily available.
+  /// Note that falling off a surface instead of jumping, does not activate the dodge timeout, and making a dodge/double jump possible indefinitely.
+  /// This is commonly known as a flip reset.
+  /// The car is holding a flip reset if `air_state == InAir and !has_jumped and !has_double_jumped and !has_dodged`.
   public bool HasJumped { get { int o = __p.__offset(36); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  /// True if the player has doubled jumped.
+  /// True if the player has doubled jumped since it left the ground. False while on the ground.
   public bool HasDoubleJumped { get { int o = __p.__offset(38); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  /// True if the player has dodged.
+  /// True if the player has dodged since it left the ground. False while the ground.
   public bool HasDodged { get { int o = __p.__offset(40); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
   /// The time in seconds since the last dodge was initiated.
   /// Resets to 0 when the player lands on the ground.
@@ -1980,6 +2139,13 @@ public struct PlayerInfo : IFlatbufferObject
   /// The unit direction of the latest dodge.
   /// The value will be (0,0) if it was a stall.
   public RLBot.Flat.Vector2? DodgeDir { get { int o = __p.__offset(44); return o != 0 ? (RLBot.Flat.Vector2?)(new RLBot.Flat.Vector2()).__assign(o + __p.bb_pos, __p.bb) : null; } }
+  /// Which item the player has, if any
+  public RLBot.Flat.RumbleItem? RumbleItem { get { int o = __p.__offset(46); return o != 0 ? (RLBot.Flat.RumbleItem)__p.bb.Get(o + __p.bb_pos) : (RLBot.Flat.RumbleItem?)null; } }
+  /// If `rumble_item` is null, this is a countdown until the next item is recieved.
+  /// Otherwise, this field equals 0.
+  public float TimeUntilNextItem { get { int o = __p.__offset(48); return o != 0 ? __p.bb.GetFloat(o + __p.bb_pos) : (float)0.0f; } }
+  /// The initial value of `time_until_next_item`.
+  public float MaxTimeUntilNextItem { get { int o = __p.__offset(50); return o != 0 ? __p.bb.GetFloat(o + __p.bb_pos) : (float)0.0f; } }
 
   public static Offset<RLBot.Flat.PlayerInfo> CreatePlayerInfo(FlatBufferBuilder builder,
       RLBot.Flat.PhysicsT physics = null,
@@ -2002,8 +2168,13 @@ public struct PlayerInfo : IFlatbufferObject
       bool has_double_jumped = false,
       bool has_dodged = false,
       float dodge_elapsed = 0.0f,
-      RLBot.Flat.Vector2T dodge_dir = null) {
-    builder.StartTable(21);
+      RLBot.Flat.Vector2T dodge_dir = null,
+      RLBot.Flat.RumbleItem? rumble_item = null,
+      float time_until_next_item = 0.0f,
+      float max_time_until_next_item = 0.0f) {
+    builder.StartTable(24);
+    PlayerInfo.AddMaxTimeUntilNextItem(builder, max_time_until_next_item);
+    PlayerInfo.AddTimeUntilNextItem(builder, time_until_next_item);
     PlayerInfo.AddDodgeDir(builder, RLBot.Flat.Vector2.Pack(builder, dodge_dir));
     PlayerInfo.AddDodgeElapsed(builder, dodge_elapsed);
     PlayerInfo.AddLastInput(builder, RLBot.Flat.ControllerState.Pack(builder, last_input));
@@ -2019,6 +2190,7 @@ public struct PlayerInfo : IFlatbufferObject
     PlayerInfo.AddHitbox(builder, hitboxOffset);
     PlayerInfo.AddScoreInfo(builder, RLBot.Flat.ScoreInfo.Pack(builder, score_info));
     PlayerInfo.AddPhysics(builder, RLBot.Flat.Physics.Pack(builder, physics));
+    PlayerInfo.AddRumbleItem(builder, rumble_item);
     PlayerInfo.AddHasDodged(builder, has_dodged);
     PlayerInfo.AddHasDoubleJumped(builder, has_double_jumped);
     PlayerInfo.AddHasJumped(builder, has_jumped);
@@ -2028,7 +2200,7 @@ public struct PlayerInfo : IFlatbufferObject
     return PlayerInfo.EndPlayerInfo(builder);
   }
 
-  public static void StartPlayerInfo(FlatBufferBuilder builder) { builder.StartTable(21); }
+  public static void StartPlayerInfo(FlatBufferBuilder builder) { builder.StartTable(24); }
   public static void AddPhysics(FlatBufferBuilder builder, Offset<RLBot.Flat.Physics> physicsOffset) { builder.AddStruct(0, physicsOffset.Value, 0); }
   public static void AddScoreInfo(FlatBufferBuilder builder, Offset<RLBot.Flat.ScoreInfo> scoreInfoOffset) { builder.AddStruct(1, scoreInfoOffset.Value, 0); }
   public static void AddHitbox(FlatBufferBuilder builder, Offset<RLBot.Flat.BoxShape> hitboxOffset) { builder.AddOffset(2, hitboxOffset.Value, 0); }
@@ -2055,6 +2227,9 @@ public struct PlayerInfo : IFlatbufferObject
   public static void AddHasDodged(FlatBufferBuilder builder, bool hasDodged) { builder.AddBool(18, hasDodged, false); }
   public static void AddDodgeElapsed(FlatBufferBuilder builder, float dodgeElapsed) { builder.AddFloat(19, dodgeElapsed, 0.0f); }
   public static void AddDodgeDir(FlatBufferBuilder builder, Offset<RLBot.Flat.Vector2> dodgeDirOffset) { builder.AddStruct(20, dodgeDirOffset.Value, 0); }
+  public static void AddRumbleItem(FlatBufferBuilder builder, RLBot.Flat.RumbleItem? rumbleItem) { builder.AddByte(21, (byte?)rumbleItem); }
+  public static void AddTimeUntilNextItem(FlatBufferBuilder builder, float timeUntilNextItem) { builder.AddFloat(22, timeUntilNextItem, 0.0f); }
+  public static void AddMaxTimeUntilNextItem(FlatBufferBuilder builder, float maxTimeUntilNextItem) { builder.AddFloat(23, maxTimeUntilNextItem, 0.0f); }
   public static Offset<RLBot.Flat.PlayerInfo> EndPlayerInfo(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 4);  // physics
@@ -2095,6 +2270,9 @@ public struct PlayerInfo : IFlatbufferObject
     _o.HasDodged = this.HasDodged;
     _o.DodgeElapsed = this.DodgeElapsed;
     _o.DodgeDir = this.DodgeDir.HasValue ? this.DodgeDir.Value.UnPack() : null;
+    _o.RumbleItem = this.RumbleItem;
+    _o.TimeUntilNextItem = this.TimeUntilNextItem;
+    _o.MaxTimeUntilNextItem = this.MaxTimeUntilNextItem;
   }
   public static Offset<RLBot.Flat.PlayerInfo> Pack(FlatBufferBuilder builder, PlayerInfoT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.PlayerInfo>);
@@ -2129,7 +2307,10 @@ public struct PlayerInfo : IFlatbufferObject
       _o.HasDoubleJumped,
       _o.HasDodged,
       _o.DodgeElapsed,
-      _o.DodgeDir);
+      _o.DodgeDir,
+      _o.RumbleItem,
+      _o.TimeUntilNextItem,
+      _o.MaxTimeUntilNextItem);
   }
 }
 
@@ -2156,6 +2337,9 @@ public class PlayerInfoT
   public bool HasDodged { get; set; }
   public float DodgeElapsed { get; set; }
   public RLBot.Flat.Vector2T DodgeDir { get; set; }
+  public RLBot.Flat.RumbleItem? RumbleItem { get; set; }
+  public float TimeUntilNextItem { get; set; }
+  public float MaxTimeUntilNextItem { get; set; }
 
   public PlayerInfoT() {
     this.Physics = new RLBot.Flat.PhysicsT();
@@ -2179,6 +2363,9 @@ public class PlayerInfoT
     this.HasDodged = false;
     this.DodgeElapsed = 0.0f;
     this.DodgeDir = new RLBot.Flat.Vector2T();
+    this.RumbleItem = null;
+    this.TimeUntilNextItem = 0.0f;
+    this.MaxTimeUntilNextItem = 0.0f;
   }
 }
 
@@ -2209,6 +2396,9 @@ static public class PlayerInfoVerify
       && verifier.VerifyField(tablePos, 40 /*HasDodged*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 42 /*DodgeElapsed*/, 4 /*float*/, 4, false)
       && verifier.VerifyField(tablePos, 44 /*DodgeDir*/, 8 /*RLBot.Flat.Vector2*/, 4, true)
+      && verifier.VerifyField(tablePos, 46 /*RumbleItem*/, 1 /*RLBot.Flat.RumbleItem*/, 1, false)
+      && verifier.VerifyField(tablePos, 48 /*TimeUntilNextItem*/, 4 /*float*/, 4, false)
+      && verifier.VerifyField(tablePos, 50 /*MaxTimeUntilNextItem*/, 4 /*float*/, 4, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -2231,22 +2421,37 @@ public struct BallInfo : IFlatbufferObject
   public RLBot.Flat.BoxShape ShapeAsBoxShape() { return Shape<RLBot.Flat.BoxShape>().Value; }
   public RLBot.Flat.SphereShape ShapeAsSphereShape() { return Shape<RLBot.Flat.SphereShape>().Value; }
   public RLBot.Flat.CylinderShape ShapeAsCylinderShape() { return Shape<RLBot.Flat.CylinderShape>().Value; }
+  /// The charge level, if it is a dropshot ball.
+  /// -1 = Not dropshot
+  /// 0 = No charge
+  /// 1 = Charged
+  /// 2 = Supercharged
+  public int ChargeLevel { get { int o = __p.__offset(10); return o != 0 ? __p.bb.GetInt(o + __p.bb_pos) : (int)0; } }
+  /// The target homing speed, if it is a heatseeker ball.
+  /// If it is not a heatseeker ball, this is always 0.
+  public float TargetSpeed { get { int o = __p.__offset(12); return o != 0 ? __p.bb.GetFloat(o + __p.bb_pos) : (float)0.0f; } }
 
   public static Offset<RLBot.Flat.BallInfo> CreateBallInfo(FlatBufferBuilder builder,
       RLBot.Flat.PhysicsT physics = null,
       RLBot.Flat.CollisionShape shape_type = RLBot.Flat.CollisionShape.NONE,
-      int shapeOffset = 0) {
-    builder.StartTable(3);
+      int shapeOffset = 0,
+      int charge_level = 0,
+      float target_speed = 0.0f) {
+    builder.StartTable(5);
+    BallInfo.AddTargetSpeed(builder, target_speed);
+    BallInfo.AddChargeLevel(builder, charge_level);
     BallInfo.AddShape(builder, shapeOffset);
     BallInfo.AddPhysics(builder, RLBot.Flat.Physics.Pack(builder, physics));
     BallInfo.AddShapeType(builder, shape_type);
     return BallInfo.EndBallInfo(builder);
   }
 
-  public static void StartBallInfo(FlatBufferBuilder builder) { builder.StartTable(3); }
+  public static void StartBallInfo(FlatBufferBuilder builder) { builder.StartTable(5); }
   public static void AddPhysics(FlatBufferBuilder builder, Offset<RLBot.Flat.Physics> physicsOffset) { builder.AddStruct(0, physicsOffset.Value, 0); }
   public static void AddShapeType(FlatBufferBuilder builder, RLBot.Flat.CollisionShape shapeType) { builder.AddByte(1, (byte)shapeType, 0); }
   public static void AddShape(FlatBufferBuilder builder, int shapeOffset) { builder.AddOffset(2, shapeOffset, 0); }
+  public static void AddChargeLevel(FlatBufferBuilder builder, int chargeLevel) { builder.AddInt(3, chargeLevel, 0); }
+  public static void AddTargetSpeed(FlatBufferBuilder builder, float targetSpeed) { builder.AddFloat(4, targetSpeed, 0.0f); }
   public static Offset<RLBot.Flat.BallInfo> EndBallInfo(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 4);  // physics
@@ -2274,6 +2479,8 @@ public struct BallInfo : IFlatbufferObject
         _o.Shape.Value = this.Shape<RLBot.Flat.CylinderShape>().HasValue ? this.Shape<RLBot.Flat.CylinderShape>().Value.UnPack() : null;
         break;
     }
+    _o.ChargeLevel = this.ChargeLevel;
+    _o.TargetSpeed = this.TargetSpeed;
   }
   public static Offset<RLBot.Flat.BallInfo> Pack(FlatBufferBuilder builder, BallInfoT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.BallInfo>);
@@ -2283,7 +2490,9 @@ public struct BallInfo : IFlatbufferObject
       builder,
       _o.Physics,
       _shape_type,
-      _shape);
+      _shape,
+      _o.ChargeLevel,
+      _o.TargetSpeed);
   }
 }
 
@@ -2291,10 +2500,14 @@ public class BallInfoT
 {
   public RLBot.Flat.PhysicsT Physics { get; set; }
   public RLBot.Flat.CollisionShapeUnion Shape { get; set; }
+  public int ChargeLevel { get; set; }
+  public float TargetSpeed { get; set; }
 
   public BallInfoT() {
     this.Physics = new RLBot.Flat.PhysicsT();
     this.Shape = null;
+    this.ChargeLevel = 0;
+    this.TargetSpeed = 0.0f;
   }
 }
 
@@ -2307,6 +2520,8 @@ static public class BallInfoVerify
       && verifier.VerifyField(tablePos, 4 /*Physics*/, 48 /*RLBot.Flat.Physics*/, 4, true)
       && verifier.VerifyField(tablePos, 6 /*ShapeType*/, 1 /*RLBot.Flat.CollisionShape*/, 1, false)
       && verifier.VerifyUnion(tablePos, 6, 8 /*Shape*/, RLBot.Flat.CollisionShapeVerify.Verify, true)
+      && verifier.VerifyField(tablePos, 10 /*ChargeLevel*/, 4 /*int*/, 4, false)
+      && verifier.VerifyField(tablePos, 12 /*TargetSpeed*/, 4 /*float*/, 4, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -2588,14 +2803,25 @@ public struct GamePacket : IFlatbufferObject
   /// The current state of teams, i.e. the team scores.
   public RLBot.Flat.TeamInfo? Teams(int j) { int o = __p.__offset(12); return o != 0 ? (RLBot.Flat.TeamInfo?)(new RLBot.Flat.TeamInfo()).__assign(__p.__vector(o) + j * 8, __p.bb) : null; }
   public int TeamsLength { get { int o = __p.__offset(12); return o != 0 ? __p.__vector_len(o) : 0; } }
+  /// The state of the dropshot tiles. The tiles are sorted by y-coordinate and then x-coordinate.
+  public RLBot.Flat.TileDamageLevel Tiles(int j) { int o = __p.__offset(14); return o != 0 ? (RLBot.Flat.TileDamageLevel)__p.bb.Get(__p.__vector(o) + j * 1) : (RLBot.Flat.TileDamageLevel)0; }
+  public int TilesLength { get { int o = __p.__offset(14); return o != 0 ? __p.__vector_len(o) : 0; } }
+#if ENABLE_SPAN_T
+  public Span<RLBot.Flat.TileDamageLevel> GetTilesBytes() { return __p.__vector_as_span<RLBot.Flat.TileDamageLevel>(14, 1); }
+#else
+  public ArraySegment<byte>? GetTilesBytes() { return __p.__vector_as_arraysegment(14); }
+#endif
+  public RLBot.Flat.TileDamageLevel[] GetTilesArray() { int o = __p.__offset(14); if (o == 0) return null; int p = __p.__vector(o); int l = __p.__vector_len(o); RLBot.Flat.TileDamageLevel[] a = new RLBot.Flat.TileDamageLevel[l]; for (int i = 0; i < l; i++) { a[i] = (RLBot.Flat.TileDamageLevel)__p.bb.Get(p + i * 1); } return a; }
 
   public static Offset<RLBot.Flat.GamePacket> CreateGamePacket(FlatBufferBuilder builder,
       VectorOffset playersOffset = default(VectorOffset),
       VectorOffset boost_padsOffset = default(VectorOffset),
       VectorOffset ballsOffset = default(VectorOffset),
       Offset<RLBot.Flat.MatchInfo> match_infoOffset = default(Offset<RLBot.Flat.MatchInfo>),
-      VectorOffset teamsOffset = default(VectorOffset)) {
-    builder.StartTable(5);
+      VectorOffset teamsOffset = default(VectorOffset),
+      VectorOffset tilesOffset = default(VectorOffset)) {
+    builder.StartTable(6);
+    GamePacket.AddTiles(builder, tilesOffset);
     GamePacket.AddTeams(builder, teamsOffset);
     GamePacket.AddMatchInfo(builder, match_infoOffset);
     GamePacket.AddBalls(builder, ballsOffset);
@@ -2604,7 +2830,7 @@ public struct GamePacket : IFlatbufferObject
     return GamePacket.EndGamePacket(builder);
   }
 
-  public static void StartGamePacket(FlatBufferBuilder builder) { builder.StartTable(5); }
+  public static void StartGamePacket(FlatBufferBuilder builder) { builder.StartTable(6); }
   public static void AddPlayers(FlatBufferBuilder builder, VectorOffset playersOffset) { builder.AddOffset(0, playersOffset.Value, 0); }
   public static VectorOffset CreatePlayersVector(FlatBufferBuilder builder, Offset<RLBot.Flat.PlayerInfo>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
   public static VectorOffset CreatePlayersVectorBlock(FlatBufferBuilder builder, Offset<RLBot.Flat.PlayerInfo>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
@@ -2622,6 +2848,12 @@ public struct GamePacket : IFlatbufferObject
   public static void AddMatchInfo(FlatBufferBuilder builder, Offset<RLBot.Flat.MatchInfo> matchInfoOffset) { builder.AddOffset(3, matchInfoOffset.Value, 0); }
   public static void AddTeams(FlatBufferBuilder builder, VectorOffset teamsOffset) { builder.AddOffset(4, teamsOffset.Value, 0); }
   public static void StartTeamsVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(8, numElems, 4); }
+  public static void AddTiles(FlatBufferBuilder builder, VectorOffset tilesOffset) { builder.AddOffset(5, tilesOffset.Value, 0); }
+  public static VectorOffset CreateTilesVector(FlatBufferBuilder builder, RLBot.Flat.TileDamageLevel[] data) { builder.StartVector(1, data.Length, 1); for (int i = data.Length - 1; i >= 0; i--) builder.AddByte((byte)data[i]); return builder.EndVector(); }
+  public static VectorOffset CreateTilesVectorBlock(FlatBufferBuilder builder, RLBot.Flat.TileDamageLevel[] data) { builder.StartVector(1, data.Length, 1); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateTilesVectorBlock(FlatBufferBuilder builder, ArraySegment<RLBot.Flat.TileDamageLevel> data) { builder.StartVector(1, data.Count, 1); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateTilesVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<RLBot.Flat.TileDamageLevel>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartTilesVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(1, numElems, 1); }
   public static Offset<RLBot.Flat.GamePacket> EndGamePacket(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 4);  // players
@@ -2629,6 +2861,7 @@ public struct GamePacket : IFlatbufferObject
     builder.Required(o, 8);  // balls
     builder.Required(o, 10);  // match_info
     builder.Required(o, 12);  // teams
+    builder.Required(o, 14);  // tiles
     return new Offset<RLBot.Flat.GamePacket>(o);
   }
   public GamePacketT UnPack() {
@@ -2646,6 +2879,8 @@ public struct GamePacket : IFlatbufferObject
     _o.MatchInfo = this.MatchInfo.HasValue ? this.MatchInfo.Value.UnPack() : null;
     _o.Teams = new List<RLBot.Flat.TeamInfoT>();
     for (var _j = 0; _j < this.TeamsLength; ++_j) {_o.Teams.Add(this.Teams(_j).HasValue ? this.Teams(_j).Value.UnPack() : null);}
+    _o.Tiles = new List<RLBot.Flat.TileDamageLevel>();
+    for (var _j = 0; _j < this.TilesLength; ++_j) {_o.Tiles.Add(this.Tiles(_j));}
   }
   public static Offset<RLBot.Flat.GamePacket> Pack(FlatBufferBuilder builder, GamePacketT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.GamePacket>);
@@ -2674,13 +2909,19 @@ public struct GamePacket : IFlatbufferObject
       for (var _j = _o.Teams.Count - 1; _j >= 0; --_j) { RLBot.Flat.TeamInfo.Pack(builder, _o.Teams[_j]); }
       _teams = builder.EndVector();
     }
+    var _tiles = default(VectorOffset);
+    if (_o.Tiles != null) {
+      var __tiles = _o.Tiles.ToArray();
+      _tiles = CreateTilesVector(builder, __tiles);
+    }
     return CreateGamePacket(
       builder,
       _players,
       _boost_pads,
       _balls,
       _match_info,
-      _teams);
+      _teams,
+      _tiles);
   }
 }
 
@@ -2691,6 +2932,7 @@ public class GamePacketT
   public List<RLBot.Flat.BallInfoT> Balls { get; set; }
   public RLBot.Flat.MatchInfoT MatchInfo { get; set; }
   public List<RLBot.Flat.TeamInfoT> Teams { get; set; }
+  public List<RLBot.Flat.TileDamageLevel> Tiles { get; set; }
 
   public GamePacketT() {
     this.Players = null;
@@ -2698,6 +2940,7 @@ public class GamePacketT
     this.Balls = null;
     this.MatchInfo = null;
     this.Teams = null;
+    this.Tiles = null;
   }
 }
 
@@ -2712,6 +2955,7 @@ static public class GamePacketVerify
       && verifier.VerifyVectorOfTables(tablePos, 8 /*Balls*/, RLBot.Flat.BallInfoVerify.Verify, true)
       && verifier.VerifyTable(tablePos, 10 /*MatchInfo*/, RLBot.Flat.MatchInfoVerify.Verify, true)
       && verifier.VerifyVectorOfData(tablePos, 12 /*Teams*/, 8 /*RLBot.Flat.TeamInfo*/, true)
+      && verifier.VerifyVectorOfData(tablePos, 14 /*Tiles*/, 1 /*RLBot.Flat.TileDamageLevel*/, true)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -2895,6 +3139,78 @@ static public class BoostPadVerify
       && verifier.VerifyTableEnd(tablePos);
   }
 }
+public struct Tile : IFlatbufferObject
+{
+  private Table __p;
+  public ByteBuffer ByteBuffer { get { return __p.bb; } }
+  public static void ValidateVersion() { FlatBufferConstants.FLATBUFFERS_25_2_10(); }
+  public static Tile GetRootAsTile(ByteBuffer _bb) { return GetRootAsTile(_bb, new Tile()); }
+  public static Tile GetRootAsTile(ByteBuffer _bb, Tile obj) { return (obj.__assign(_bb.GetInt(_bb.Position) + _bb.Position, _bb)); }
+  public void __init(int _i, ByteBuffer _bb) { __p = new Table(_i, _bb); }
+  public Tile __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
+
+  /// The location of the tile.
+  public RLBot.Flat.Vector3? Location { get { int o = __p.__offset(4); return o != 0 ? (RLBot.Flat.Vector3?)(new RLBot.Flat.Vector3()).__assign(o + __p.bb_pos, __p.bb) : null; } }
+  /// The team that owns/defends this tile.
+  public uint Team { get { int o = __p.__offset(6); return o != 0 ? __p.bb.GetUint(o + __p.bb_pos) : (uint)0; } }
+
+  public static Offset<RLBot.Flat.Tile> CreateTile(FlatBufferBuilder builder,
+      RLBot.Flat.Vector3T location = null,
+      uint team = 0) {
+    builder.StartTable(2);
+    Tile.AddTeam(builder, team);
+    Tile.AddLocation(builder, RLBot.Flat.Vector3.Pack(builder, location));
+    return Tile.EndTile(builder);
+  }
+
+  public static void StartTile(FlatBufferBuilder builder) { builder.StartTable(2); }
+  public static void AddLocation(FlatBufferBuilder builder, Offset<RLBot.Flat.Vector3> locationOffset) { builder.AddStruct(0, locationOffset.Value, 0); }
+  public static void AddTeam(FlatBufferBuilder builder, uint team) { builder.AddUint(1, team, 0); }
+  public static Offset<RLBot.Flat.Tile> EndTile(FlatBufferBuilder builder) {
+    int o = builder.EndTable();
+    builder.Required(o, 4);  // location
+    return new Offset<RLBot.Flat.Tile>(o);
+  }
+  public TileT UnPack() {
+    var _o = new TileT();
+    this.UnPackTo(_o);
+    return _o;
+  }
+  public void UnPackTo(TileT _o) {
+    _o.Location = this.Location.HasValue ? this.Location.Value.UnPack() : null;
+    _o.Team = this.Team;
+  }
+  public static Offset<RLBot.Flat.Tile> Pack(FlatBufferBuilder builder, TileT _o) {
+    if (_o == null) return default(Offset<RLBot.Flat.Tile>);
+    return CreateTile(
+      builder,
+      _o.Location,
+      _o.Team);
+  }
+}
+
+public class TileT
+{
+  public RLBot.Flat.Vector3T Location { get; set; }
+  public uint Team { get; set; }
+
+  public TileT() {
+    this.Location = new RLBot.Flat.Vector3T();
+    this.Team = 0;
+  }
+}
+
+
+static public class TileVerify
+{
+  static public bool Verify(Google.FlatBuffers.Verifier verifier, uint tablePos)
+  {
+    return verifier.VerifyTableStart(tablePos)
+      && verifier.VerifyField(tablePos, 4 /*Location*/, 12 /*RLBot.Flat.Vector3*/, 4, true)
+      && verifier.VerifyField(tablePos, 6 /*Team*/, 4 /*uint*/, 4, false)
+      && verifier.VerifyTableEnd(tablePos);
+  }
+}
 /// Static information about the field.
 /// Sent to bots, scripts, etc. upon connecting.
 /// Dynamic information is found in the GamePacket.
@@ -2909,24 +3225,31 @@ public struct FieldInfo : IFlatbufferObject
   public FieldInfo __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   /// Static information about boost pads on the field.
-  /// The dynamic information is found in the GamePacket
+  /// The dynamic information is found in the GamePacket.
   /// The boost pads are ordered by y-coordinate and then x-coordinate.
   public RLBot.Flat.BoostPad? BoostPads(int j) { int o = __p.__offset(4); return o != 0 ? (RLBot.Flat.BoostPad?)(new RLBot.Flat.BoostPad()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
   public int BoostPadsLength { get { int o = __p.__offset(4); return o != 0 ? __p.__vector_len(o) : 0; } }
   /// Information about the goals on the field.
   public RLBot.Flat.GoalInfo? Goals(int j) { int o = __p.__offset(6); return o != 0 ? (RLBot.Flat.GoalInfo?)(new RLBot.Flat.GoalInfo()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
   public int GoalsLength { get { int o = __p.__offset(6); return o != 0 ? __p.__vector_len(o) : 0; } }
+  /// Static information about dropshot tiles on the field.
+  /// The dynamic information is found in the GamePacket.
+  /// The tiles are ordered by y-coordinate and then x-coordinate.
+  public RLBot.Flat.Tile? Tiles(int j) { int o = __p.__offset(8); return o != 0 ? (RLBot.Flat.Tile?)(new RLBot.Flat.Tile()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
+  public int TilesLength { get { int o = __p.__offset(8); return o != 0 ? __p.__vector_len(o) : 0; } }
 
   public static Offset<RLBot.Flat.FieldInfo> CreateFieldInfo(FlatBufferBuilder builder,
       VectorOffset boost_padsOffset = default(VectorOffset),
-      VectorOffset goalsOffset = default(VectorOffset)) {
-    builder.StartTable(2);
+      VectorOffset goalsOffset = default(VectorOffset),
+      VectorOffset tilesOffset = default(VectorOffset)) {
+    builder.StartTable(3);
+    FieldInfo.AddTiles(builder, tilesOffset);
     FieldInfo.AddGoals(builder, goalsOffset);
     FieldInfo.AddBoostPads(builder, boost_padsOffset);
     return FieldInfo.EndFieldInfo(builder);
   }
 
-  public static void StartFieldInfo(FlatBufferBuilder builder) { builder.StartTable(2); }
+  public static void StartFieldInfo(FlatBufferBuilder builder) { builder.StartTable(3); }
   public static void AddBoostPads(FlatBufferBuilder builder, VectorOffset boostPadsOffset) { builder.AddOffset(0, boostPadsOffset.Value, 0); }
   public static VectorOffset CreateBoostPadsVector(FlatBufferBuilder builder, Offset<RLBot.Flat.BoostPad>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
   public static VectorOffset CreateBoostPadsVectorBlock(FlatBufferBuilder builder, Offset<RLBot.Flat.BoostPad>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
@@ -2939,10 +3262,17 @@ public struct FieldInfo : IFlatbufferObject
   public static VectorOffset CreateGoalsVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<RLBot.Flat.GoalInfo>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
   public static VectorOffset CreateGoalsVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<RLBot.Flat.GoalInfo>>(dataPtr, sizeInBytes); return builder.EndVector(); }
   public static void StartGoalsVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
+  public static void AddTiles(FlatBufferBuilder builder, VectorOffset tilesOffset) { builder.AddOffset(2, tilesOffset.Value, 0); }
+  public static VectorOffset CreateTilesVector(FlatBufferBuilder builder, Offset<RLBot.Flat.Tile>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
+  public static VectorOffset CreateTilesVectorBlock(FlatBufferBuilder builder, Offset<RLBot.Flat.Tile>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateTilesVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<RLBot.Flat.Tile>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateTilesVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<RLBot.Flat.Tile>>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartTilesVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static Offset<RLBot.Flat.FieldInfo> EndFieldInfo(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 4);  // boost_pads
     builder.Required(o, 6);  // goals
+    builder.Required(o, 8);  // tiles
     return new Offset<RLBot.Flat.FieldInfo>(o);
   }
   public FieldInfoT UnPack() {
@@ -2955,6 +3285,8 @@ public struct FieldInfo : IFlatbufferObject
     for (var _j = 0; _j < this.BoostPadsLength; ++_j) {_o.BoostPads.Add(this.BoostPads(_j).HasValue ? this.BoostPads(_j).Value.UnPack() : null);}
     _o.Goals = new List<RLBot.Flat.GoalInfoT>();
     for (var _j = 0; _j < this.GoalsLength; ++_j) {_o.Goals.Add(this.Goals(_j).HasValue ? this.Goals(_j).Value.UnPack() : null);}
+    _o.Tiles = new List<RLBot.Flat.TileT>();
+    for (var _j = 0; _j < this.TilesLength; ++_j) {_o.Tiles.Add(this.Tiles(_j).HasValue ? this.Tiles(_j).Value.UnPack() : null);}
   }
   public static Offset<RLBot.Flat.FieldInfo> Pack(FlatBufferBuilder builder, FieldInfoT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.FieldInfo>);
@@ -2970,10 +3302,17 @@ public struct FieldInfo : IFlatbufferObject
       for (var _j = 0; _j < __goals.Length; ++_j) { __goals[_j] = RLBot.Flat.GoalInfo.Pack(builder, _o.Goals[_j]); }
       _goals = CreateGoalsVector(builder, __goals);
     }
+    var _tiles = default(VectorOffset);
+    if (_o.Tiles != null) {
+      var __tiles = new Offset<RLBot.Flat.Tile>[_o.Tiles.Count];
+      for (var _j = 0; _j < __tiles.Length; ++_j) { __tiles[_j] = RLBot.Flat.Tile.Pack(builder, _o.Tiles[_j]); }
+      _tiles = CreateTilesVector(builder, __tiles);
+    }
     return CreateFieldInfo(
       builder,
       _boost_pads,
-      _goals);
+      _goals,
+      _tiles);
   }
 }
 
@@ -2981,10 +3320,12 @@ public class FieldInfoT
 {
   public List<RLBot.Flat.BoostPadT> BoostPads { get; set; }
   public List<RLBot.Flat.GoalInfoT> Goals { get; set; }
+  public List<RLBot.Flat.TileT> Tiles { get; set; }
 
   public FieldInfoT() {
     this.BoostPads = null;
     this.Goals = null;
+    this.Tiles = null;
   }
 }
 
@@ -2996,6 +3337,7 @@ static public class FieldInfoVerify
     return verifier.VerifyTableStart(tablePos)
       && verifier.VerifyVectorOfTables(tablePos, 4 /*BoostPads*/, RLBot.Flat.BoostPadVerify.Verify, true)
       && verifier.VerifyVectorOfTables(tablePos, 6 /*Goals*/, RLBot.Flat.GoalInfoVerify.Verify, true)
+      && verifier.VerifyVectorOfTables(tablePos, 8 /*Tiles*/, RLBot.Flat.TileVerify.Verify, true)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -3731,18 +4073,12 @@ public struct DesiredGameState : IFlatbufferObject
   public int CarStatesLength { get { int o = __p.__offset(6); return o != 0 ? __p.__vector_len(o) : 0; } }
   /// The desired game info.
   public RLBot.Flat.DesiredMatchInfo? MatchInfo { get { int o = __p.__offset(8); return o != 0 ? (RLBot.Flat.DesiredMatchInfo?)(new RLBot.Flat.DesiredMatchInfo()).__assign(__p.__indirect(o + __p.bb_pos), __p.bb) : null; } }
-  /// A list of console commands to execute.
-  /// See https://wiki.rlbot.org/framework/console-commands/ for a list of known commands.
-  public RLBot.Flat.ConsoleCommand? ConsoleCommands(int j) { int o = __p.__offset(10); return o != 0 ? (RLBot.Flat.ConsoleCommand?)(new RLBot.Flat.ConsoleCommand()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
-  public int ConsoleCommandsLength { get { int o = __p.__offset(10); return o != 0 ? __p.__vector_len(o) : 0; } }
 
   public static Offset<RLBot.Flat.DesiredGameState> CreateDesiredGameState(FlatBufferBuilder builder,
       VectorOffset ball_statesOffset = default(VectorOffset),
       VectorOffset car_statesOffset = default(VectorOffset),
-      Offset<RLBot.Flat.DesiredMatchInfo> match_infoOffset = default(Offset<RLBot.Flat.DesiredMatchInfo>),
-      VectorOffset console_commandsOffset = default(VectorOffset)) {
+      Offset<RLBot.Flat.DesiredMatchInfo> match_infoOffset = default(Offset<RLBot.Flat.DesiredMatchInfo>)) {
     builder.StartTable(4);
-    DesiredGameState.AddConsoleCommands(builder, console_commandsOffset);
     DesiredGameState.AddMatchInfo(builder, match_infoOffset);
     DesiredGameState.AddCarStates(builder, car_statesOffset);
     DesiredGameState.AddBallStates(builder, ball_statesOffset);
@@ -3763,17 +4099,10 @@ public struct DesiredGameState : IFlatbufferObject
   public static VectorOffset CreateCarStatesVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<RLBot.Flat.DesiredCarState>>(dataPtr, sizeInBytes); return builder.EndVector(); }
   public static void StartCarStatesVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static void AddMatchInfo(FlatBufferBuilder builder, Offset<RLBot.Flat.DesiredMatchInfo> matchInfoOffset) { builder.AddOffset(2, matchInfoOffset.Value, 0); }
-  public static void AddConsoleCommands(FlatBufferBuilder builder, VectorOffset consoleCommandsOffset) { builder.AddOffset(3, consoleCommandsOffset.Value, 0); }
-  public static VectorOffset CreateConsoleCommandsVector(FlatBufferBuilder builder, Offset<RLBot.Flat.ConsoleCommand>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
-  public static VectorOffset CreateConsoleCommandsVectorBlock(FlatBufferBuilder builder, Offset<RLBot.Flat.ConsoleCommand>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
-  public static VectorOffset CreateConsoleCommandsVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<RLBot.Flat.ConsoleCommand>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
-  public static VectorOffset CreateConsoleCommandsVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<RLBot.Flat.ConsoleCommand>>(dataPtr, sizeInBytes); return builder.EndVector(); }
-  public static void StartConsoleCommandsVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static Offset<RLBot.Flat.DesiredGameState> EndDesiredGameState(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 4);  // ball_states
     builder.Required(o, 6);  // car_states
-    builder.Required(o, 10);  // console_commands
     return new Offset<RLBot.Flat.DesiredGameState>(o);
   }
   public DesiredGameStateT UnPack() {
@@ -3787,8 +4116,6 @@ public struct DesiredGameState : IFlatbufferObject
     _o.CarStates = new List<RLBot.Flat.DesiredCarStateT>();
     for (var _j = 0; _j < this.CarStatesLength; ++_j) {_o.CarStates.Add(this.CarStates(_j).HasValue ? this.CarStates(_j).Value.UnPack() : null);}
     _o.MatchInfo = this.MatchInfo.HasValue ? this.MatchInfo.Value.UnPack() : null;
-    _o.ConsoleCommands = new List<RLBot.Flat.ConsoleCommandT>();
-    for (var _j = 0; _j < this.ConsoleCommandsLength; ++_j) {_o.ConsoleCommands.Add(this.ConsoleCommands(_j).HasValue ? this.ConsoleCommands(_j).Value.UnPack() : null);}
   }
   public static Offset<RLBot.Flat.DesiredGameState> Pack(FlatBufferBuilder builder, DesiredGameStateT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.DesiredGameState>);
@@ -3805,18 +4132,11 @@ public struct DesiredGameState : IFlatbufferObject
       _car_states = CreateCarStatesVector(builder, __car_states);
     }
     var _match_info = _o.MatchInfo == null ? default(Offset<RLBot.Flat.DesiredMatchInfo>) : RLBot.Flat.DesiredMatchInfo.Pack(builder, _o.MatchInfo);
-    var _console_commands = default(VectorOffset);
-    if (_o.ConsoleCommands != null) {
-      var __console_commands = new Offset<RLBot.Flat.ConsoleCommand>[_o.ConsoleCommands.Count];
-      for (var _j = 0; _j < __console_commands.Length; ++_j) { __console_commands[_j] = RLBot.Flat.ConsoleCommand.Pack(builder, _o.ConsoleCommands[_j]); }
-      _console_commands = CreateConsoleCommandsVector(builder, __console_commands);
-    }
     return CreateDesiredGameState(
       builder,
       _ball_states,
       _car_states,
-      _match_info,
-      _console_commands);
+      _match_info);
   }
 }
 
@@ -3825,13 +4145,11 @@ public class DesiredGameStateT
   public List<RLBot.Flat.DesiredBallStateT> BallStates { get; set; }
   public List<RLBot.Flat.DesiredCarStateT> CarStates { get; set; }
   public RLBot.Flat.DesiredMatchInfoT MatchInfo { get; set; }
-  public List<RLBot.Flat.ConsoleCommandT> ConsoleCommands { get; set; }
 
   public DesiredGameStateT() {
     this.BallStates = null;
     this.CarStates = null;
     this.MatchInfo = null;
-    this.ConsoleCommands = null;
   }
 }
 
@@ -3844,7 +4162,6 @@ static public class DesiredGameStateVerify
       && verifier.VerifyVectorOfTables(tablePos, 4 /*BallStates*/, RLBot.Flat.DesiredBallStateVerify.Verify, true)
       && verifier.VerifyVectorOfTables(tablePos, 6 /*CarStates*/, RLBot.Flat.DesiredCarStateVerify.Verify, true)
       && verifier.VerifyTable(tablePos, 8 /*MatchInfo*/, RLBot.Flat.DesiredMatchInfoVerify.Verify, false)
-      && verifier.VerifyVectorOfTables(tablePos, 10 /*ConsoleCommands*/, RLBot.Flat.ConsoleCommandVerify.Verify, true)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -3953,6 +4270,94 @@ static public class HumanVerify
       && verifier.VerifyTableEnd(tablePos);
   }
 }
+/// A user-defined environment variable to pass to an agent process.
+public struct EnvironmentVariable : IFlatbufferObject
+{
+  private Table __p;
+  public ByteBuffer ByteBuffer { get { return __p.bb; } }
+  public static void ValidateVersion() { FlatBufferConstants.FLATBUFFERS_25_2_10(); }
+  public static EnvironmentVariable GetRootAsEnvironmentVariable(ByteBuffer _bb) { return GetRootAsEnvironmentVariable(_bb, new EnvironmentVariable()); }
+  public static EnvironmentVariable GetRootAsEnvironmentVariable(ByteBuffer _bb, EnvironmentVariable obj) { return (obj.__assign(_bb.GetInt(_bb.Position) + _bb.Position, _bb)); }
+  public void __init(int _i, ByteBuffer _bb) { __p = new Table(_i, _bb); }
+  public EnvironmentVariable __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
+
+  /// Environment variable name.
+  public string Name { get { int o = __p.__offset(4); return o != 0 ? __p.__string(o + __p.bb_pos) : null; } }
+#if ENABLE_SPAN_T
+  public Span<byte> GetNameBytes() { return __p.__vector_as_span<byte>(4, 1); }
+#else
+  public ArraySegment<byte>? GetNameBytes() { return __p.__vector_as_arraysegment(4); }
+#endif
+  public byte[] GetNameArray() { return __p.__vector_as_array<byte>(4); }
+  /// Environment variable value.
+  public string Value { get { int o = __p.__offset(6); return o != 0 ? __p.__string(o + __p.bb_pos) : null; } }
+#if ENABLE_SPAN_T
+  public Span<byte> GetValueBytes() { return __p.__vector_as_span<byte>(6, 1); }
+#else
+  public ArraySegment<byte>? GetValueBytes() { return __p.__vector_as_arraysegment(6); }
+#endif
+  public byte[] GetValueArray() { return __p.__vector_as_array<byte>(6); }
+
+  public static Offset<RLBot.Flat.EnvironmentVariable> CreateEnvironmentVariable(FlatBufferBuilder builder,
+      StringOffset nameOffset = default(StringOffset),
+      StringOffset valueOffset = default(StringOffset)) {
+    builder.StartTable(2);
+    EnvironmentVariable.AddValue(builder, valueOffset);
+    EnvironmentVariable.AddName(builder, nameOffset);
+    return EnvironmentVariable.EndEnvironmentVariable(builder);
+  }
+
+  public static void StartEnvironmentVariable(FlatBufferBuilder builder) { builder.StartTable(2); }
+  public static void AddName(FlatBufferBuilder builder, StringOffset nameOffset) { builder.AddOffset(0, nameOffset.Value, 0); }
+  public static void AddValue(FlatBufferBuilder builder, StringOffset valueOffset) { builder.AddOffset(1, valueOffset.Value, 0); }
+  public static Offset<RLBot.Flat.EnvironmentVariable> EndEnvironmentVariable(FlatBufferBuilder builder) {
+    int o = builder.EndTable();
+    builder.Required(o, 4);  // name
+    builder.Required(o, 6);  // value
+    return new Offset<RLBot.Flat.EnvironmentVariable>(o);
+  }
+  public EnvironmentVariableT UnPack() {
+    var _o = new EnvironmentVariableT();
+    this.UnPackTo(_o);
+    return _o;
+  }
+  public void UnPackTo(EnvironmentVariableT _o) {
+    _o.Name = this.Name;
+    _o.Value = this.Value;
+  }
+  public static Offset<RLBot.Flat.EnvironmentVariable> Pack(FlatBufferBuilder builder, EnvironmentVariableT _o) {
+    if (_o == null) return default(Offset<RLBot.Flat.EnvironmentVariable>);
+    var _name = _o.Name == null ? default(StringOffset) : builder.CreateString(_o.Name);
+    var _value = _o.Value == null ? default(StringOffset) : builder.CreateString(_o.Value);
+    return CreateEnvironmentVariable(
+      builder,
+      _name,
+      _value);
+  }
+}
+
+public class EnvironmentVariableT
+{
+  public string Name { get; set; }
+  public string Value { get; set; }
+
+  public EnvironmentVariableT() {
+    this.Name = null;
+    this.Value = null;
+  }
+}
+
+
+static public class EnvironmentVariableVerify
+{
+  static public bool Verify(Google.FlatBuffers.Verifier verifier, uint tablePos)
+  {
+    return verifier.VerifyTableStart(tablePos)
+      && verifier.VerifyString(tablePos, 4 /*Name*/, true)
+      && verifier.VerifyString(tablePos, 6 /*Value*/, true)
+      && verifier.VerifyTableEnd(tablePos);
+  }
+}
 /// A bot controlled by the RLBot framework.
 public struct CustomBot : IFlatbufferObject
 {
@@ -4005,6 +4410,9 @@ public struct CustomBot : IFlatbufferObject
   /// Whether this player is part of a hivemind bot where all players/cars are controlled by the same process.
   /// Players in the hivemind must have the same name, team, run command, and agent id.
   public bool Hivemind { get { int o = __p.__offset(14); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  /// User-defined environment variables to pass to the bot process.
+  public RLBot.Flat.EnvironmentVariable? Environment(int j) { int o = __p.__offset(16); return o != 0 ? (RLBot.Flat.EnvironmentVariable?)(new RLBot.Flat.EnvironmentVariable()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
+  public int EnvironmentLength { get { int o = __p.__offset(16); return o != 0 ? __p.__vector_len(o) : 0; } }
 
   public static Offset<RLBot.Flat.CustomBot> CreateCustomBot(FlatBufferBuilder builder,
       StringOffset nameOffset = default(StringOffset),
@@ -4012,8 +4420,10 @@ public struct CustomBot : IFlatbufferObject
       StringOffset run_commandOffset = default(StringOffset),
       Offset<RLBot.Flat.PlayerLoadout> loadoutOffset = default(Offset<RLBot.Flat.PlayerLoadout>),
       StringOffset agent_idOffset = default(StringOffset),
-      bool hivemind = false) {
-    builder.StartTable(6);
+      bool hivemind = false,
+      VectorOffset environmentOffset = default(VectorOffset)) {
+    builder.StartTable(7);
+    CustomBot.AddEnvironment(builder, environmentOffset);
     CustomBot.AddAgentId(builder, agent_idOffset);
     CustomBot.AddLoadout(builder, loadoutOffset);
     CustomBot.AddRunCommand(builder, run_commandOffset);
@@ -4023,13 +4433,19 @@ public struct CustomBot : IFlatbufferObject
     return CustomBot.EndCustomBot(builder);
   }
 
-  public static void StartCustomBot(FlatBufferBuilder builder) { builder.StartTable(6); }
+  public static void StartCustomBot(FlatBufferBuilder builder) { builder.StartTable(7); }
   public static void AddName(FlatBufferBuilder builder, StringOffset nameOffset) { builder.AddOffset(0, nameOffset.Value, 0); }
   public static void AddRootDir(FlatBufferBuilder builder, StringOffset rootDirOffset) { builder.AddOffset(1, rootDirOffset.Value, 0); }
   public static void AddRunCommand(FlatBufferBuilder builder, StringOffset runCommandOffset) { builder.AddOffset(2, runCommandOffset.Value, 0); }
   public static void AddLoadout(FlatBufferBuilder builder, Offset<RLBot.Flat.PlayerLoadout> loadoutOffset) { builder.AddOffset(3, loadoutOffset.Value, 0); }
   public static void AddAgentId(FlatBufferBuilder builder, StringOffset agentIdOffset) { builder.AddOffset(4, agentIdOffset.Value, 0); }
   public static void AddHivemind(FlatBufferBuilder builder, bool hivemind) { builder.AddBool(5, hivemind, false); }
+  public static void AddEnvironment(FlatBufferBuilder builder, VectorOffset environmentOffset) { builder.AddOffset(6, environmentOffset.Value, 0); }
+  public static VectorOffset CreateEnvironmentVector(FlatBufferBuilder builder, Offset<RLBot.Flat.EnvironmentVariable>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
+  public static VectorOffset CreateEnvironmentVectorBlock(FlatBufferBuilder builder, Offset<RLBot.Flat.EnvironmentVariable>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateEnvironmentVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<RLBot.Flat.EnvironmentVariable>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateEnvironmentVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<RLBot.Flat.EnvironmentVariable>>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartEnvironmentVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static Offset<RLBot.Flat.CustomBot> EndCustomBot(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 4);  // name
@@ -4050,6 +4466,8 @@ public struct CustomBot : IFlatbufferObject
     _o.Loadout = this.Loadout.HasValue ? this.Loadout.Value.UnPack() : null;
     _o.AgentId = this.AgentId;
     _o.Hivemind = this.Hivemind;
+    _o.Environment = new List<RLBot.Flat.EnvironmentVariableT>();
+    for (var _j = 0; _j < this.EnvironmentLength; ++_j) {_o.Environment.Add(this.Environment(_j).HasValue ? this.Environment(_j).Value.UnPack() : null);}
   }
   public static Offset<RLBot.Flat.CustomBot> Pack(FlatBufferBuilder builder, CustomBotT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.CustomBot>);
@@ -4058,6 +4476,12 @@ public struct CustomBot : IFlatbufferObject
     var _run_command = _o.RunCommand == null ? default(StringOffset) : builder.CreateString(_o.RunCommand);
     var _loadout = _o.Loadout == null ? default(Offset<RLBot.Flat.PlayerLoadout>) : RLBot.Flat.PlayerLoadout.Pack(builder, _o.Loadout);
     var _agent_id = _o.AgentId == null ? default(StringOffset) : builder.CreateString(_o.AgentId);
+    var _environment = default(VectorOffset);
+    if (_o.Environment != null) {
+      var __environment = new Offset<RLBot.Flat.EnvironmentVariable>[_o.Environment.Count];
+      for (var _j = 0; _j < __environment.Length; ++_j) { __environment[_j] = RLBot.Flat.EnvironmentVariable.Pack(builder, _o.Environment[_j]); }
+      _environment = CreateEnvironmentVector(builder, __environment);
+    }
     return CreateCustomBot(
       builder,
       _name,
@@ -4065,7 +4489,8 @@ public struct CustomBot : IFlatbufferObject
       _run_command,
       _loadout,
       _agent_id,
-      _o.Hivemind);
+      _o.Hivemind,
+      _environment);
   }
 }
 
@@ -4077,6 +4502,7 @@ public class CustomBotT
   public RLBot.Flat.PlayerLoadoutT Loadout { get; set; }
   public string AgentId { get; set; }
   public bool Hivemind { get; set; }
+  public List<RLBot.Flat.EnvironmentVariableT> Environment { get; set; }
 
   public CustomBotT() {
     this.Name = null;
@@ -4085,6 +4511,7 @@ public class CustomBotT
     this.Loadout = null;
     this.AgentId = null;
     this.Hivemind = false;
+    this.Environment = null;
   }
 }
 
@@ -4100,6 +4527,7 @@ static public class CustomBotVerify
       && verifier.VerifyTable(tablePos, 10 /*Loadout*/, RLBot.Flat.PlayerLoadoutVerify.Verify, false)
       && verifier.VerifyString(tablePos, 12 /*AgentId*/, true)
       && verifier.VerifyField(tablePos, 14 /*Hivemind*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyVectorOfTables(tablePos, 16 /*Environment*/, RLBot.Flat.EnvironmentVariableVerify.Verify, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -4706,6 +5134,18 @@ public struct MutatorSettings : IFlatbufferObject
   public RLBot.Flat.InputRestrictionMutator InputRestriction { get { int o = __p.__offset(64); return o != 0 ? (RLBot.Flat.InputRestrictionMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.InputRestrictionMutator.Default; } }
   /// Additional rules about scoring (ball-goal interaction).
   public RLBot.Flat.ScoringRuleMutator ScoringRule { get { int o = __p.__offset(66); return o != 0 ? (RLBot.Flat.ScoringRuleMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.ScoringRuleMutator.Default; } }
+  /// Tri tip car mode.
+  public RLBot.Flat.TriTipModeMutator TriTipMode { get { int o = __p.__offset(68); return o != 0 ? (RLBot.Flat.TriTipModeMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.TriTipModeMutator.Off; } }
+  /// Locked damage phase mode.
+  public RLBot.Flat.LockedDamagePhaseMutator LockedDamagePhase { get { int o = __p.__offset(70); return o != 0 ? (RLBot.Flat.LockedDamagePhaseMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.LockedDamagePhaseMutator.Default; } }
+  /// Spawn demoball.
+  public RLBot.Flat.SpawnDemoballMutator SpawnDemoball { get { int o = __p.__offset(72); return o != 0 ? (RLBot.Flat.SpawnDemoballMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.SpawnDemoballMutator.Off; } }
+  /// Boost restriction.
+  public RLBot.Flat.BoostRestritionMutator BoostRestriction { get { int o = __p.__offset(74); return o != 0 ? (RLBot.Flat.BoostRestritionMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.BoostRestritionMutator.Default; } }
+  /// Keep up rules.
+  public RLBot.Flat.KeepUpRulesMutator KeepUpRules { get { int o = __p.__offset(76); return o != 0 ? (RLBot.Flat.KeepUpRulesMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.KeepUpRulesMutator.Off; } }
+  /// Match admin.
+  public RLBot.Flat.MatchAdminMutator MatchAdmin { get { int o = __p.__offset(78); return o != 0 ? (RLBot.Flat.MatchAdminMutator)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.MatchAdminMutator.Off; } }
 
   public static Offset<RLBot.Flat.MutatorSettings> CreateMutatorSettings(FlatBufferBuilder builder,
       RLBot.Flat.MatchLengthMutator match_length = RLBot.Flat.MatchLengthMutator.FiveMinutes,
@@ -4739,8 +5179,20 @@ public struct MutatorSettings : IFlatbufferObject
       RLBot.Flat.AerialGoalScoreMutator aerial_goal_score = RLBot.Flat.AerialGoalScoreMutator.One,
       RLBot.Flat.AssistGoalScoreMutator assist_goal_score = RLBot.Flat.AssistGoalScoreMutator.Zero,
       RLBot.Flat.InputRestrictionMutator input_restriction = RLBot.Flat.InputRestrictionMutator.Default,
-      RLBot.Flat.ScoringRuleMutator scoring_rule = RLBot.Flat.ScoringRuleMutator.Default) {
-    builder.StartTable(32);
+      RLBot.Flat.ScoringRuleMutator scoring_rule = RLBot.Flat.ScoringRuleMutator.Default,
+      RLBot.Flat.TriTipModeMutator tri_tip_mode = RLBot.Flat.TriTipModeMutator.Off,
+      RLBot.Flat.LockedDamagePhaseMutator locked_damage_phase = RLBot.Flat.LockedDamagePhaseMutator.Default,
+      RLBot.Flat.SpawnDemoballMutator spawn_demoball = RLBot.Flat.SpawnDemoballMutator.Off,
+      RLBot.Flat.BoostRestritionMutator boost_restriction = RLBot.Flat.BoostRestritionMutator.Default,
+      RLBot.Flat.KeepUpRulesMutator keep_up_rules = RLBot.Flat.KeepUpRulesMutator.Off,
+      RLBot.Flat.MatchAdminMutator match_admin = RLBot.Flat.MatchAdminMutator.Off) {
+    builder.StartTable(38);
+    MutatorSettings.AddMatchAdmin(builder, match_admin);
+    MutatorSettings.AddKeepUpRules(builder, keep_up_rules);
+    MutatorSettings.AddBoostRestriction(builder, boost_restriction);
+    MutatorSettings.AddSpawnDemoball(builder, spawn_demoball);
+    MutatorSettings.AddLockedDamagePhase(builder, locked_damage_phase);
+    MutatorSettings.AddTriTipMode(builder, tri_tip_mode);
     MutatorSettings.AddScoringRule(builder, scoring_rule);
     MutatorSettings.AddInputRestriction(builder, input_restriction);
     MutatorSettings.AddAssistGoalScore(builder, assist_goal_score);
@@ -4776,7 +5228,7 @@ public struct MutatorSettings : IFlatbufferObject
     return MutatorSettings.EndMutatorSettings(builder);
   }
 
-  public static void StartMutatorSettings(FlatBufferBuilder builder) { builder.StartTable(32); }
+  public static void StartMutatorSettings(FlatBufferBuilder builder) { builder.StartTable(38); }
   public static void AddMatchLength(FlatBufferBuilder builder, RLBot.Flat.MatchLengthMutator matchLength) { builder.AddByte(0, (byte)matchLength, 0); }
   public static void AddMaxScore(FlatBufferBuilder builder, RLBot.Flat.MaxScoreMutator maxScore) { builder.AddByte(1, (byte)maxScore, 0); }
   public static void AddMultiBall(FlatBufferBuilder builder, RLBot.Flat.MultiBallMutator multiBall) { builder.AddByte(2, (byte)multiBall, 0); }
@@ -4809,6 +5261,12 @@ public struct MutatorSettings : IFlatbufferObject
   public static void AddAssistGoalScore(FlatBufferBuilder builder, RLBot.Flat.AssistGoalScoreMutator assistGoalScore) { builder.AddByte(29, (byte)assistGoalScore, 0); }
   public static void AddInputRestriction(FlatBufferBuilder builder, RLBot.Flat.InputRestrictionMutator inputRestriction) { builder.AddByte(30, (byte)inputRestriction, 0); }
   public static void AddScoringRule(FlatBufferBuilder builder, RLBot.Flat.ScoringRuleMutator scoringRule) { builder.AddByte(31, (byte)scoringRule, 0); }
+  public static void AddTriTipMode(FlatBufferBuilder builder, RLBot.Flat.TriTipModeMutator triTipMode) { builder.AddByte(32, (byte)triTipMode, 0); }
+  public static void AddLockedDamagePhase(FlatBufferBuilder builder, RLBot.Flat.LockedDamagePhaseMutator lockedDamagePhase) { builder.AddByte(33, (byte)lockedDamagePhase, 0); }
+  public static void AddSpawnDemoball(FlatBufferBuilder builder, RLBot.Flat.SpawnDemoballMutator spawnDemoball) { builder.AddByte(34, (byte)spawnDemoball, 0); }
+  public static void AddBoostRestriction(FlatBufferBuilder builder, RLBot.Flat.BoostRestritionMutator boostRestriction) { builder.AddByte(35, (byte)boostRestriction, 0); }
+  public static void AddKeepUpRules(FlatBufferBuilder builder, RLBot.Flat.KeepUpRulesMutator keepUpRules) { builder.AddByte(36, (byte)keepUpRules, 0); }
+  public static void AddMatchAdmin(FlatBufferBuilder builder, RLBot.Flat.MatchAdminMutator matchAdmin) { builder.AddByte(37, (byte)matchAdmin, 0); }
   public static Offset<RLBot.Flat.MutatorSettings> EndMutatorSettings(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     return new Offset<RLBot.Flat.MutatorSettings>(o);
@@ -4851,6 +5309,12 @@ public struct MutatorSettings : IFlatbufferObject
     _o.AssistGoalScore = this.AssistGoalScore;
     _o.InputRestriction = this.InputRestriction;
     _o.ScoringRule = this.ScoringRule;
+    _o.TriTipMode = this.TriTipMode;
+    _o.LockedDamagePhase = this.LockedDamagePhase;
+    _o.SpawnDemoball = this.SpawnDemoball;
+    _o.BoostRestriction = this.BoostRestriction;
+    _o.KeepUpRules = this.KeepUpRules;
+    _o.MatchAdmin = this.MatchAdmin;
   }
   public static Offset<RLBot.Flat.MutatorSettings> Pack(FlatBufferBuilder builder, MutatorSettingsT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.MutatorSettings>);
@@ -4887,7 +5351,13 @@ public struct MutatorSettings : IFlatbufferObject
       _o.AerialGoalScore,
       _o.AssistGoalScore,
       _o.InputRestriction,
-      _o.ScoringRule);
+      _o.ScoringRule,
+      _o.TriTipMode,
+      _o.LockedDamagePhase,
+      _o.SpawnDemoball,
+      _o.BoostRestriction,
+      _o.KeepUpRules,
+      _o.MatchAdmin);
   }
 }
 
@@ -4925,6 +5395,12 @@ public class MutatorSettingsT
   public RLBot.Flat.AssistGoalScoreMutator AssistGoalScore { get; set; }
   public RLBot.Flat.InputRestrictionMutator InputRestriction { get; set; }
   public RLBot.Flat.ScoringRuleMutator ScoringRule { get; set; }
+  public RLBot.Flat.TriTipModeMutator TriTipMode { get; set; }
+  public RLBot.Flat.LockedDamagePhaseMutator LockedDamagePhase { get; set; }
+  public RLBot.Flat.SpawnDemoballMutator SpawnDemoball { get; set; }
+  public RLBot.Flat.BoostRestritionMutator BoostRestriction { get; set; }
+  public RLBot.Flat.KeepUpRulesMutator KeepUpRules { get; set; }
+  public RLBot.Flat.MatchAdminMutator MatchAdmin { get; set; }
 
   public MutatorSettingsT() {
     this.MatchLength = RLBot.Flat.MatchLengthMutator.FiveMinutes;
@@ -4959,6 +5435,12 @@ public class MutatorSettingsT
     this.AssistGoalScore = RLBot.Flat.AssistGoalScoreMutator.Zero;
     this.InputRestriction = RLBot.Flat.InputRestrictionMutator.Default;
     this.ScoringRule = RLBot.Flat.ScoringRuleMutator.Default;
+    this.TriTipMode = RLBot.Flat.TriTipModeMutator.Off;
+    this.LockedDamagePhase = RLBot.Flat.LockedDamagePhaseMutator.Default;
+    this.SpawnDemoball = RLBot.Flat.SpawnDemoballMutator.Off;
+    this.BoostRestriction = RLBot.Flat.BoostRestritionMutator.Default;
+    this.KeepUpRules = RLBot.Flat.KeepUpRulesMutator.Off;
+    this.MatchAdmin = RLBot.Flat.MatchAdminMutator.Off;
   }
 }
 
@@ -5000,6 +5482,12 @@ static public class MutatorSettingsVerify
       && verifier.VerifyField(tablePos, 62 /*AssistGoalScore*/, 1 /*RLBot.Flat.AssistGoalScoreMutator*/, 1, false)
       && verifier.VerifyField(tablePos, 64 /*InputRestriction*/, 1 /*RLBot.Flat.InputRestrictionMutator*/, 1, false)
       && verifier.VerifyField(tablePos, 66 /*ScoringRule*/, 1 /*RLBot.Flat.ScoringRuleMutator*/, 1, false)
+      && verifier.VerifyField(tablePos, 68 /*TriTipMode*/, 1 /*RLBot.Flat.TriTipModeMutator*/, 1, false)
+      && verifier.VerifyField(tablePos, 70 /*LockedDamagePhase*/, 1 /*RLBot.Flat.LockedDamagePhaseMutator*/, 1, false)
+      && verifier.VerifyField(tablePos, 72 /*SpawnDemoball*/, 1 /*RLBot.Flat.SpawnDemoballMutator*/, 1, false)
+      && verifier.VerifyField(tablePos, 74 /*BoostRestriction*/, 1 /*RLBot.Flat.BoostRestritionMutator*/, 1, false)
+      && verifier.VerifyField(tablePos, 76 /*KeepUpRules*/, 1 /*RLBot.Flat.KeepUpRulesMutator*/, 1, false)
+      && verifier.VerifyField(tablePos, 78 /*MatchAdmin*/, 1 /*RLBot.Flat.MatchAdminMutator*/, 1, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -5052,14 +5540,19 @@ public struct ScriptConfiguration : IFlatbufferObject
   public ArraySegment<byte>? GetAgentIdBytes() { return __p.__vector_as_arraysegment(12); }
 #endif
   public byte[] GetAgentIdArray() { return __p.__vector_as_array<byte>(12); }
+  /// User-defined environment variables to pass to the script process.
+  public RLBot.Flat.EnvironmentVariable? Environment(int j) { int o = __p.__offset(14); return o != 0 ? (RLBot.Flat.EnvironmentVariable?)(new RLBot.Flat.EnvironmentVariable()).__assign(__p.__indirect(__p.__vector(o) + j * 4), __p.bb) : null; }
+  public int EnvironmentLength { get { int o = __p.__offset(14); return o != 0 ? __p.__vector_len(o) : 0; } }
 
   public static Offset<RLBot.Flat.ScriptConfiguration> CreateScriptConfiguration(FlatBufferBuilder builder,
       StringOffset nameOffset = default(StringOffset),
       StringOffset root_dirOffset = default(StringOffset),
       StringOffset run_commandOffset = default(StringOffset),
       int script_id = 0,
-      StringOffset agent_idOffset = default(StringOffset)) {
-    builder.StartTable(5);
+      StringOffset agent_idOffset = default(StringOffset),
+      VectorOffset environmentOffset = default(VectorOffset)) {
+    builder.StartTable(6);
+    ScriptConfiguration.AddEnvironment(builder, environmentOffset);
     ScriptConfiguration.AddAgentId(builder, agent_idOffset);
     ScriptConfiguration.AddScriptId(builder, script_id);
     ScriptConfiguration.AddRunCommand(builder, run_commandOffset);
@@ -5068,12 +5561,18 @@ public struct ScriptConfiguration : IFlatbufferObject
     return ScriptConfiguration.EndScriptConfiguration(builder);
   }
 
-  public static void StartScriptConfiguration(FlatBufferBuilder builder) { builder.StartTable(5); }
+  public static void StartScriptConfiguration(FlatBufferBuilder builder) { builder.StartTable(6); }
   public static void AddName(FlatBufferBuilder builder, StringOffset nameOffset) { builder.AddOffset(0, nameOffset.Value, 0); }
   public static void AddRootDir(FlatBufferBuilder builder, StringOffset rootDirOffset) { builder.AddOffset(1, rootDirOffset.Value, 0); }
   public static void AddRunCommand(FlatBufferBuilder builder, StringOffset runCommandOffset) { builder.AddOffset(2, runCommandOffset.Value, 0); }
   public static void AddScriptId(FlatBufferBuilder builder, int scriptId) { builder.AddInt(3, scriptId, 0); }
   public static void AddAgentId(FlatBufferBuilder builder, StringOffset agentIdOffset) { builder.AddOffset(4, agentIdOffset.Value, 0); }
+  public static void AddEnvironment(FlatBufferBuilder builder, VectorOffset environmentOffset) { builder.AddOffset(5, environmentOffset.Value, 0); }
+  public static VectorOffset CreateEnvironmentVector(FlatBufferBuilder builder, Offset<RLBot.Flat.EnvironmentVariable>[] data) { builder.StartVector(4, data.Length, 4); for (int i = data.Length - 1; i >= 0; i--) builder.AddOffset(data[i].Value); return builder.EndVector(); }
+  public static VectorOffset CreateEnvironmentVectorBlock(FlatBufferBuilder builder, Offset<RLBot.Flat.EnvironmentVariable>[] data) { builder.StartVector(4, data.Length, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateEnvironmentVectorBlock(FlatBufferBuilder builder, ArraySegment<Offset<RLBot.Flat.EnvironmentVariable>> data) { builder.StartVector(4, data.Count, 4); builder.Add(data); return builder.EndVector(); }
+  public static VectorOffset CreateEnvironmentVectorBlock(FlatBufferBuilder builder, IntPtr dataPtr, int sizeInBytes) { builder.StartVector(1, sizeInBytes, 1); builder.Add<Offset<RLBot.Flat.EnvironmentVariable>>(dataPtr, sizeInBytes); return builder.EndVector(); }
+  public static void StartEnvironmentVector(FlatBufferBuilder builder, int numElems) { builder.StartVector(4, numElems, 4); }
   public static Offset<RLBot.Flat.ScriptConfiguration> EndScriptConfiguration(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 4);  // name
@@ -5093,6 +5592,8 @@ public struct ScriptConfiguration : IFlatbufferObject
     _o.RunCommand = this.RunCommand;
     _o.ScriptId = this.ScriptId;
     _o.AgentId = this.AgentId;
+    _o.Environment = new List<RLBot.Flat.EnvironmentVariableT>();
+    for (var _j = 0; _j < this.EnvironmentLength; ++_j) {_o.Environment.Add(this.Environment(_j).HasValue ? this.Environment(_j).Value.UnPack() : null);}
   }
   public static Offset<RLBot.Flat.ScriptConfiguration> Pack(FlatBufferBuilder builder, ScriptConfigurationT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.ScriptConfiguration>);
@@ -5100,13 +5601,20 @@ public struct ScriptConfiguration : IFlatbufferObject
     var _root_dir = _o.RootDir == null ? default(StringOffset) : builder.CreateString(_o.RootDir);
     var _run_command = _o.RunCommand == null ? default(StringOffset) : builder.CreateString(_o.RunCommand);
     var _agent_id = _o.AgentId == null ? default(StringOffset) : builder.CreateString(_o.AgentId);
+    var _environment = default(VectorOffset);
+    if (_o.Environment != null) {
+      var __environment = new Offset<RLBot.Flat.EnvironmentVariable>[_o.Environment.Count];
+      for (var _j = 0; _j < __environment.Length; ++_j) { __environment[_j] = RLBot.Flat.EnvironmentVariable.Pack(builder, _o.Environment[_j]); }
+      _environment = CreateEnvironmentVector(builder, __environment);
+    }
     return CreateScriptConfiguration(
       builder,
       _name,
       _root_dir,
       _run_command,
       _o.ScriptId,
-      _agent_id);
+      _agent_id,
+      _environment);
   }
 }
 
@@ -5117,6 +5625,7 @@ public class ScriptConfigurationT
   public string RunCommand { get; set; }
   public int ScriptId { get; set; }
   public string AgentId { get; set; }
+  public List<RLBot.Flat.EnvironmentVariableT> Environment { get; set; }
 
   public ScriptConfigurationT() {
     this.Name = null;
@@ -5124,6 +5633,7 @@ public class ScriptConfigurationT
     this.RunCommand = null;
     this.ScriptId = 0;
     this.AgentId = null;
+    this.Environment = null;
   }
 }
 
@@ -5138,6 +5648,7 @@ static public class ScriptConfigurationVerify
       && verifier.VerifyString(tablePos, 8 /*RunCommand*/, true)
       && verifier.VerifyField(tablePos, 10 /*ScriptId*/, 4 /*int*/, 4, false)
       && verifier.VerifyString(tablePos, 12 /*AgentId*/, true)
+      && verifier.VerifyVectorOfTables(tablePos, 14 /*Environment*/, RLBot.Flat.EnvironmentVariableVerify.Verify, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -5209,6 +5720,8 @@ public struct MatchConfiguration : IFlatbufferObject
   /// If set to true, a free play match is launched instead of an exhibition match.
   /// This allows the players to use training keybinds, Bakkesmod plugins, and other features that are only allowed in free play.
   public bool Freeplay { get { int o = __p.__offset(34); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
+  /// Controls when the in-game performance monitor will display.
+  public RLBot.Flat.PerformanceMonitor PerformanceMonitor { get { int o = __p.__offset(36); return o != 0 ? (RLBot.Flat.PerformanceMonitor)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.PerformanceMonitor.ShowWhenSuboptimal; } }
 
   public static Offset<RLBot.Flat.MatchConfiguration> CreateMatchConfiguration(FlatBufferBuilder builder,
       RLBot.Flat.Launcher launcher = RLBot.Flat.Launcher.Steam,
@@ -5226,13 +5739,15 @@ public struct MatchConfiguration : IFlatbufferObject
       RLBot.Flat.DebugRendering enable_rendering = RLBot.Flat.DebugRendering.OffByDefault,
       bool enable_state_setting = true,
       bool auto_save_replay = false,
-      bool freeplay = false) {
-    builder.StartTable(16);
+      bool freeplay = false,
+      RLBot.Flat.PerformanceMonitor performance_monitor = RLBot.Flat.PerformanceMonitor.ShowWhenSuboptimal) {
+    builder.StartTable(17);
     MatchConfiguration.AddMutators(builder, mutatorsOffset);
     MatchConfiguration.AddScriptConfigurations(builder, script_configurationsOffset);
     MatchConfiguration.AddPlayerConfigurations(builder, player_configurationsOffset);
     MatchConfiguration.AddGameMapUpk(builder, game_map_upkOffset);
     MatchConfiguration.AddLauncherArg(builder, launcher_argOffset);
+    MatchConfiguration.AddPerformanceMonitor(builder, performance_monitor);
     MatchConfiguration.AddFreeplay(builder, freeplay);
     MatchConfiguration.AddAutoSaveReplay(builder, auto_save_replay);
     MatchConfiguration.AddEnableStateSetting(builder, enable_state_setting);
@@ -5247,7 +5762,7 @@ public struct MatchConfiguration : IFlatbufferObject
     return MatchConfiguration.EndMatchConfiguration(builder);
   }
 
-  public static void StartMatchConfiguration(FlatBufferBuilder builder) { builder.StartTable(16); }
+  public static void StartMatchConfiguration(FlatBufferBuilder builder) { builder.StartTable(17); }
   public static void AddLauncher(FlatBufferBuilder builder, RLBot.Flat.Launcher launcher) { builder.AddByte(0, (byte)launcher, 0); }
   public static void AddLauncherArg(FlatBufferBuilder builder, StringOffset launcherArgOffset) { builder.AddOffset(1, launcherArgOffset.Value, 0); }
   public static void AddAutoStartAgents(FlatBufferBuilder builder, bool autoStartAgents) { builder.AddBool(2, autoStartAgents, true); }
@@ -5274,6 +5789,7 @@ public struct MatchConfiguration : IFlatbufferObject
   public static void AddEnableStateSetting(FlatBufferBuilder builder, bool enableStateSetting) { builder.AddBool(13, enableStateSetting, true); }
   public static void AddAutoSaveReplay(FlatBufferBuilder builder, bool autoSaveReplay) { builder.AddBool(14, autoSaveReplay, false); }
   public static void AddFreeplay(FlatBufferBuilder builder, bool freeplay) { builder.AddBool(15, freeplay, false); }
+  public static void AddPerformanceMonitor(FlatBufferBuilder builder, RLBot.Flat.PerformanceMonitor performanceMonitor) { builder.AddByte(16, (byte)performanceMonitor, 0); }
   public static Offset<RLBot.Flat.MatchConfiguration> EndMatchConfiguration(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     builder.Required(o, 6);  // launcher_arg
@@ -5306,6 +5822,7 @@ public struct MatchConfiguration : IFlatbufferObject
     _o.EnableStateSetting = this.EnableStateSetting;
     _o.AutoSaveReplay = this.AutoSaveReplay;
     _o.Freeplay = this.Freeplay;
+    _o.PerformanceMonitor = this.PerformanceMonitor;
   }
   public static Offset<RLBot.Flat.MatchConfiguration> Pack(FlatBufferBuilder builder, MatchConfigurationT _o) {
     if (_o == null) return default(Offset<RLBot.Flat.MatchConfiguration>);
@@ -5341,7 +5858,8 @@ public struct MatchConfiguration : IFlatbufferObject
       _o.EnableRendering,
       _o.EnableStateSetting,
       _o.AutoSaveReplay,
-      _o.Freeplay);
+      _o.Freeplay,
+      _o.PerformanceMonitor);
   }
 }
 
@@ -5363,6 +5881,7 @@ public class MatchConfigurationT
   public bool EnableStateSetting { get; set; }
   public bool AutoSaveReplay { get; set; }
   public bool Freeplay { get; set; }
+  public RLBot.Flat.PerformanceMonitor PerformanceMonitor { get; set; }
 
   public MatchConfigurationT() {
     this.Launcher = RLBot.Flat.Launcher.Steam;
@@ -5381,6 +5900,7 @@ public class MatchConfigurationT
     this.EnableStateSetting = true;
     this.AutoSaveReplay = false;
     this.Freeplay = false;
+    this.PerformanceMonitor = RLBot.Flat.PerformanceMonitor.ShowWhenSuboptimal;
   }
 }
 
@@ -5406,6 +5926,7 @@ static public class MatchConfigurationVerify
       && verifier.VerifyField(tablePos, 30 /*EnableStateSetting*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 32 /*AutoSaveReplay*/, 1 /*bool*/, 1, false)
       && verifier.VerifyField(tablePos, 34 /*Freeplay*/, 1 /*bool*/, 1, false)
+      && verifier.VerifyField(tablePos, 36 /*PerformanceMonitor*/, 1 /*RLBot.Flat.PerformanceMonitor*/, 1, false)
       && verifier.VerifyTableEnd(tablePos);
   }
 }
@@ -7242,6 +7763,189 @@ static public class RenderingStatusVerify
       && verifier.VerifyTableEnd(tablePos);
   }
 }
+/// Ping request message
+public struct PingRequest : IFlatbufferObject
+{
+  private Table __p;
+  public ByteBuffer ByteBuffer { get { return __p.bb; } }
+  public static void ValidateVersion() { FlatBufferConstants.FLATBUFFERS_25_2_10(); }
+  public static PingRequest GetRootAsPingRequest(ByteBuffer _bb) { return GetRootAsPingRequest(_bb, new PingRequest()); }
+  public static PingRequest GetRootAsPingRequest(ByteBuffer _bb, PingRequest obj) { return (obj.__assign(_bb.GetInt(_bb.Position) + _bb.Position, _bb)); }
+  public void __init(int _i, ByteBuffer _bb) { __p = new Table(_i, _bb); }
+  public PingRequest __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
+
+  public ulong Cookie { get { int o = __p.__offset(4); return o != 0 ? __p.bb.GetUlong(o + __p.bb_pos) : (ulong)0; } }
+
+  public static Offset<RLBot.Flat.PingRequest> CreatePingRequest(FlatBufferBuilder builder,
+      ulong cookie = 0) {
+    builder.StartTable(1);
+    PingRequest.AddCookie(builder, cookie);
+    return PingRequest.EndPingRequest(builder);
+  }
+
+  public static void StartPingRequest(FlatBufferBuilder builder) { builder.StartTable(1); }
+  public static void AddCookie(FlatBufferBuilder builder, ulong cookie) { builder.AddUlong(0, cookie, 0); }
+  public static Offset<RLBot.Flat.PingRequest> EndPingRequest(FlatBufferBuilder builder) {
+    int o = builder.EndTable();
+    return new Offset<RLBot.Flat.PingRequest>(o);
+  }
+  public PingRequestT UnPack() {
+    var _o = new PingRequestT();
+    this.UnPackTo(_o);
+    return _o;
+  }
+  public void UnPackTo(PingRequestT _o) {
+    _o.Cookie = this.Cookie;
+  }
+  public static Offset<RLBot.Flat.PingRequest> Pack(FlatBufferBuilder builder, PingRequestT _o) {
+    if (_o == null) return default(Offset<RLBot.Flat.PingRequest>);
+    return CreatePingRequest(
+      builder,
+      _o.Cookie);
+  }
+}
+
+public class PingRequestT
+{
+  public ulong Cookie { get; set; }
+
+  public PingRequestT() {
+    this.Cookie = 0;
+  }
+}
+
+
+static public class PingRequestVerify
+{
+  static public bool Verify(Google.FlatBuffers.Verifier verifier, uint tablePos)
+  {
+    return verifier.VerifyTableStart(tablePos)
+      && verifier.VerifyField(tablePos, 4 /*Cookie*/, 8 /*ulong*/, 8, false)
+      && verifier.VerifyTableEnd(tablePos);
+  }
+}
+/// Ping response message
+public struct PingResponse : IFlatbufferObject
+{
+  private Table __p;
+  public ByteBuffer ByteBuffer { get { return __p.bb; } }
+  public static void ValidateVersion() { FlatBufferConstants.FLATBUFFERS_25_2_10(); }
+  public static PingResponse GetRootAsPingResponse(ByteBuffer _bb) { return GetRootAsPingResponse(_bb, new PingResponse()); }
+  public static PingResponse GetRootAsPingResponse(ByteBuffer _bb, PingResponse obj) { return (obj.__assign(_bb.GetInt(_bb.Position) + _bb.Position, _bb)); }
+  public void __init(int _i, ByteBuffer _bb) { __p = new Table(_i, _bb); }
+  public PingResponse __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
+
+  public ulong Cookie { get { int o = __p.__offset(4); return o != 0 ? __p.bb.GetUlong(o + __p.bb_pos) : (ulong)0; } }
+
+  public static Offset<RLBot.Flat.PingResponse> CreatePingResponse(FlatBufferBuilder builder,
+      ulong cookie = 0) {
+    builder.StartTable(1);
+    PingResponse.AddCookie(builder, cookie);
+    return PingResponse.EndPingResponse(builder);
+  }
+
+  public static void StartPingResponse(FlatBufferBuilder builder) { builder.StartTable(1); }
+  public static void AddCookie(FlatBufferBuilder builder, ulong cookie) { builder.AddUlong(0, cookie, 0); }
+  public static Offset<RLBot.Flat.PingResponse> EndPingResponse(FlatBufferBuilder builder) {
+    int o = builder.EndTable();
+    return new Offset<RLBot.Flat.PingResponse>(o);
+  }
+  public PingResponseT UnPack() {
+    var _o = new PingResponseT();
+    this.UnPackTo(_o);
+    return _o;
+  }
+  public void UnPackTo(PingResponseT _o) {
+    _o.Cookie = this.Cookie;
+  }
+  public static Offset<RLBot.Flat.PingResponse> Pack(FlatBufferBuilder builder, PingResponseT _o) {
+    if (_o == null) return default(Offset<RLBot.Flat.PingResponse>);
+    return CreatePingResponse(
+      builder,
+      _o.Cookie);
+  }
+}
+
+public class PingResponseT
+{
+  public ulong Cookie { get; set; }
+
+  public PingResponseT() {
+    this.Cookie = 0;
+  }
+}
+
+
+static public class PingResponseVerify
+{
+  static public bool Verify(Google.FlatBuffers.Verifier verifier, uint tablePos)
+  {
+    return verifier.VerifyTableStart(tablePos)
+      && verifier.VerifyField(tablePos, 4 /*Cookie*/, 8 /*ulong*/, 8, false)
+      && verifier.VerifyTableEnd(tablePos);
+  }
+}
+/// Controls when the in-game performance monitor will display.
+public struct UpdatePerformanceMonitor : IFlatbufferObject
+{
+  private Table __p;
+  public ByteBuffer ByteBuffer { get { return __p.bb; } }
+  public static void ValidateVersion() { FlatBufferConstants.FLATBUFFERS_25_2_10(); }
+  public static UpdatePerformanceMonitor GetRootAsUpdatePerformanceMonitor(ByteBuffer _bb) { return GetRootAsUpdatePerformanceMonitor(_bb, new UpdatePerformanceMonitor()); }
+  public static UpdatePerformanceMonitor GetRootAsUpdatePerformanceMonitor(ByteBuffer _bb, UpdatePerformanceMonitor obj) { return (obj.__assign(_bb.GetInt(_bb.Position) + _bb.Position, _bb)); }
+  public void __init(int _i, ByteBuffer _bb) { __p = new Table(_i, _bb); }
+  public UpdatePerformanceMonitor __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
+
+  public RLBot.Flat.PerformanceMonitor Show { get { int o = __p.__offset(4); return o != 0 ? (RLBot.Flat.PerformanceMonitor)__p.bb.Get(o + __p.bb_pos) : RLBot.Flat.PerformanceMonitor.ShowWhenSuboptimal; } }
+
+  public static Offset<RLBot.Flat.UpdatePerformanceMonitor> CreateUpdatePerformanceMonitor(FlatBufferBuilder builder,
+      RLBot.Flat.PerformanceMonitor show = RLBot.Flat.PerformanceMonitor.ShowWhenSuboptimal) {
+    builder.StartTable(1);
+    UpdatePerformanceMonitor.AddShow(builder, show);
+    return UpdatePerformanceMonitor.EndUpdatePerformanceMonitor(builder);
+  }
+
+  public static void StartUpdatePerformanceMonitor(FlatBufferBuilder builder) { builder.StartTable(1); }
+  public static void AddShow(FlatBufferBuilder builder, RLBot.Flat.PerformanceMonitor show) { builder.AddByte(0, (byte)show, 0); }
+  public static Offset<RLBot.Flat.UpdatePerformanceMonitor> EndUpdatePerformanceMonitor(FlatBufferBuilder builder) {
+    int o = builder.EndTable();
+    return new Offset<RLBot.Flat.UpdatePerformanceMonitor>(o);
+  }
+  public UpdatePerformanceMonitorT UnPack() {
+    var _o = new UpdatePerformanceMonitorT();
+    this.UnPackTo(_o);
+    return _o;
+  }
+  public void UnPackTo(UpdatePerformanceMonitorT _o) {
+    _o.Show = this.Show;
+  }
+  public static Offset<RLBot.Flat.UpdatePerformanceMonitor> Pack(FlatBufferBuilder builder, UpdatePerformanceMonitorT _o) {
+    if (_o == null) return default(Offset<RLBot.Flat.UpdatePerformanceMonitor>);
+    return CreateUpdatePerformanceMonitor(
+      builder,
+      _o.Show);
+  }
+}
+
+public class UpdatePerformanceMonitorT
+{
+  public RLBot.Flat.PerformanceMonitor Show { get; set; }
+
+  public UpdatePerformanceMonitorT() {
+    this.Show = RLBot.Flat.PerformanceMonitor.ShowWhenSuboptimal;
+  }
+}
+
+
+static public class UpdatePerformanceMonitorVerify
+{
+  static public bool Verify(Google.FlatBuffers.Verifier verifier, uint tablePos)
+  {
+    return verifier.VerifyTableStart(tablePos)
+      && verifier.VerifyField(tablePos, 4 /*Show*/, 1 /*RLBot.Flat.PerformanceMonitor*/, 1, false)
+      && verifier.VerifyTableEnd(tablePos);
+  }
+}
 /// Packet containing a CoreMessage
 public struct CorePacket : IFlatbufferObject
 {
@@ -7263,6 +7967,8 @@ public struct CorePacket : IFlatbufferObject
   public RLBot.Flat.BallPrediction MessageAsBallPrediction() { return Message<RLBot.Flat.BallPrediction>().Value; }
   public RLBot.Flat.ControllableTeamInfo MessageAsControllableTeamInfo() { return Message<RLBot.Flat.ControllableTeamInfo>().Value; }
   public RLBot.Flat.RenderingStatus MessageAsRenderingStatus() { return Message<RLBot.Flat.RenderingStatus>().Value; }
+  public RLBot.Flat.PingRequest MessageAsPingRequest() { return Message<RLBot.Flat.PingRequest>().Value; }
+  public RLBot.Flat.PingResponse MessageAsPingResponse() { return Message<RLBot.Flat.PingResponse>().Value; }
 
   public static Offset<RLBot.Flat.CorePacket> CreateCorePacket(FlatBufferBuilder builder,
       RLBot.Flat.CoreMessage message_type = RLBot.Flat.CoreMessage.NONE,
@@ -7314,6 +8020,12 @@ public struct CorePacket : IFlatbufferObject
         break;
       case RLBot.Flat.CoreMessage.RenderingStatus:
         _o.Message.Value = this.Message<RLBot.Flat.RenderingStatus>().HasValue ? this.Message<RLBot.Flat.RenderingStatus>().Value.UnPack() : null;
+        break;
+      case RLBot.Flat.CoreMessage.PingRequest:
+        _o.Message.Value = this.Message<RLBot.Flat.PingRequest>().HasValue ? this.Message<RLBot.Flat.PingRequest>().Value.UnPack() : null;
+        break;
+      case RLBot.Flat.CoreMessage.PingResponse:
+        _o.Message.Value = this.Message<RLBot.Flat.PingResponse>().HasValue ? this.Message<RLBot.Flat.PingResponse>().Value.UnPack() : null;
         break;
     }
   }
@@ -7374,6 +8086,10 @@ public struct InterfacePacket : IFlatbufferObject
   public RLBot.Flat.SetLoadout MessageAsSetLoadout() { return Message<RLBot.Flat.SetLoadout>().Value; }
   public RLBot.Flat.InitComplete MessageAsInitComplete() { return Message<RLBot.Flat.InitComplete>().Value; }
   public RLBot.Flat.RenderingStatus MessageAsRenderingStatus() { return Message<RLBot.Flat.RenderingStatus>().Value; }
+  public RLBot.Flat.PingRequest MessageAsPingRequest() { return Message<RLBot.Flat.PingRequest>().Value; }
+  public RLBot.Flat.PingResponse MessageAsPingResponse() { return Message<RLBot.Flat.PingResponse>().Value; }
+  public RLBot.Flat.UpdatePerformanceMonitor MessageAsUpdatePerformanceMonitor() { return Message<RLBot.Flat.UpdatePerformanceMonitor>().Value; }
+  public RLBot.Flat.ConsoleCommand MessageAsConsoleCommand() { return Message<RLBot.Flat.ConsoleCommand>().Value; }
 
   public static Offset<RLBot.Flat.InterfacePacket> CreateInterfacePacket(FlatBufferBuilder builder,
       RLBot.Flat.InterfaceMessage message_type = RLBot.Flat.InterfaceMessage.NONE,
@@ -7440,6 +8156,18 @@ public struct InterfacePacket : IFlatbufferObject
         break;
       case RLBot.Flat.InterfaceMessage.RenderingStatus:
         _o.Message.Value = this.Message<RLBot.Flat.RenderingStatus>().HasValue ? this.Message<RLBot.Flat.RenderingStatus>().Value.UnPack() : null;
+        break;
+      case RLBot.Flat.InterfaceMessage.PingRequest:
+        _o.Message.Value = this.Message<RLBot.Flat.PingRequest>().HasValue ? this.Message<RLBot.Flat.PingRequest>().Value.UnPack() : null;
+        break;
+      case RLBot.Flat.InterfaceMessage.PingResponse:
+        _o.Message.Value = this.Message<RLBot.Flat.PingResponse>().HasValue ? this.Message<RLBot.Flat.PingResponse>().Value.UnPack() : null;
+        break;
+      case RLBot.Flat.InterfaceMessage.UpdatePerformanceMonitor:
+        _o.Message.Value = this.Message<RLBot.Flat.UpdatePerformanceMonitor>().HasValue ? this.Message<RLBot.Flat.UpdatePerformanceMonitor>().Value.UnPack() : null;
+        break;
+      case RLBot.Flat.InterfaceMessage.ConsoleCommand:
+        _o.Message.Value = this.Message<RLBot.Flat.ConsoleCommand>().HasValue ? this.Message<RLBot.Flat.ConsoleCommand>().Value.UnPack() : null;
         break;
     }
   }

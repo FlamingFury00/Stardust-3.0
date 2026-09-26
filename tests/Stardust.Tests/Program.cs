@@ -67,30 +67,28 @@ Test("jump: packet adapter repairs the legacy car flags", () =>
     JumpState.Apply(car, new PlayerInfoT { AirState = AirState.InAir, HasJumped = true, HasDodged = true });
     Check(car.HasJumped && car.HasDoubleJumped);
 });
-Test("reset: spent state plus wheel touch plus restored flags confirms", () =>
+Test("reset: spent flip then restored flags high up confirms, without any touch", () =>
 {
     var evidence = new ResetEvidence();
-    Check(!evidence.Observe(Jump(true, true), false, false, 650, 1));
-    Check(evidence.Observe(Jump(), true, true, 650, 1.1f));
+    Check(!evidence.Observe(Jump(true, true), 650));
+    Check(evidence.Observe(Jump(), 650));
+});
+Test("reset: a single jump whose flip timed out counts as spent", () =>
+{
+    var evidence = new ResetEvidence();
+    Check(!evidence.Observe(Jump(true, timeout: -1), 650));
+    Check(evidence.Observe(Jump(), 700));
 });
 Test("reset: free fall alone is not evidence of acquisition", () =>
 {
     var evidence = new ResetEvidence();
-    Check(!evidence.Observe(Jump(), true, true, 650, 1));
+    Check(!evidence.Observe(Jump(), 650));
 });
-Test("reset: other-player touch and incorrect wheel orientation fail", () =>
+Test("reset: cleared flags near the floor are a landing", () =>
 {
     var evidence = new ResetEvidence();
-    evidence.Observe(Jump(true, true), false, false, 650, 1);
-    Check(!evidence.Observe(Jump(), false, true, 650, 1.1f));
-    Check(!evidence.Observe(Jump(), true, false, 650, 1.2f));
-});
-Test("reset: stale contact and floor contact fail", () =>
-{
-    var evidence = new ResetEvidence();
-    evidence.Observe(Jump(true, true), true, true, 650, 1);
-    Check(!evidence.Observe(Jump(), false, true, 650, 1.4f));
-    Check(!evidence.Observe(Jump(), true, true, 17, 1.5f));
+    evidence.Observe(Jump(true, true), 650);
+    Check(!evidence.Observe(Jump(), 40));
 });
 Test("lifecycle: own carry touch survives, opponent touch cancels", () =>
 {
@@ -342,6 +340,7 @@ Test("reset: entry requires an already spent flip", () =>
 {
     var car = AirCar(); var ball = new Ball(new Vec3(80, 0, 650), car.Velocity);
     Check(FlipReset.CanStart(car, ball, Jump(true, true)));
+    Check(FlipReset.CanStart(car, ball, Jump(true, timeout: -1)), "a timed-out single jump has no flip left");
     Check(!FlipReset.CanStart(car, ball, Jump()));
     car.Boost = 5; Check(!FlipReset.CanStart(car, ball, Jump(true, true)));
 });
@@ -411,6 +410,49 @@ Test("aerial: circular turn displacement scales both components by radius", () =
     Vec3 displacement = AerialShot.TurnDisplacement(Vec3.X, Vec3.Y, 500, MathF.PI / 2);
     Near(displacement.x, 500, 0.001f);
     Near(displacement.y, 500, 0.001f);
+});
+Test("controls: a jump the game applied last tick that started nothing is released for a tick", () =>
+{
+    // The game applied jump on the ground and no jump began: this tick must release, the next presses.
+    Check(!ControlRuntime.JumpOutput(true, appliedLastTick: true, grounded: true, jumpStarted: false), "stale hold was not released");
+    // A press not yet applied (input latency) is a fresh press, not a stale hold.
+    Check(ControlRuntime.JumpOutput(true, appliedLastTick: false, grounded: true, jumpStarted: false), "fresh press was blocked");
+    // A jump under way (wheels still touching on the first ticks, or airborne) keeps its hold.
+    Check(ControlRuntime.JumpOutput(true, appliedLastTick: true, grounded: true, jumpStarted: true), "takeoff hold was cut");
+    Check(ControlRuntime.JumpOutput(true, appliedLastTick: true, grounded: false, jumpStarted: true), "air hold was cut");
+    Check(ControlRuntime.JumpOutput(true, appliedLastTick: true, grounded: false, jumpStarted: false), "air press was blocked");
+    Check(!ControlRuntime.JumpOutput(false, appliedLastTick: true, grounded: true, jumpStarted: false), "release was turned into a press");
+});
+
+Test("block: a jump block centres on the ball's track, a ground block stands off toward the car", () =>
+{
+    Vec3 ball = new(100, -4500, 450), car = new(900, -4900, 17);
+    Vec3 jump = RedUtils.Planning.BlockPlanner.BlockPoint(ball, car, jumping: true);
+    Vec3 ground = RedUtils.Planning.BlockPlanner.BlockPoint(ball, car, jumping: false);
+    Near((jump - ball.Flatten()).Length(), 0, 0.01f);
+    Near((ground - ball.Flatten()).Length(), RedUtils.Planning.BlockPlanner.BlockOffset, 0.01f);
+    Check((ground - ball.Flatten()).Dot(car - ball) > 0, "ground block point is not on the car's side");
+});
+
+Test("tuning: overrides a static field by name and refuses unknown or constant ones", () =>
+{
+    float saved = Kickoff.DodgeJump;
+    try
+    {
+        var applied = Tuning.Apply(" Kickoff.DodgeJump = 0.5 ", typeof(Kickoff).Assembly);
+        Near(Kickoff.DodgeJump, 0.5f, 0);
+        Check(applied.Count == 1 && applied[0] == "Kickoff.DodgeJump = 0.5", $"unexpected report {string.Join(";", applied)}");
+        Check(Tuning.Apply(null, typeof(Kickoff).Assembly).Count == 0, "no assignments must change nothing");
+        bool Throws(string assignment)
+        {
+            try { Tuning.Apply(assignment, typeof(Kickoff).Assembly); return false; }
+            catch (ArgumentException) { return true; }
+        }
+        Check(Throws("Kickoff.Missing=1"), "unknown field was accepted");
+        Check(Throws("SpeedFlip.Duration=1"), "a constant was accepted");
+        Check(Throws("Kickoff.DodgeJump"), "an assignment without a value was accepted");
+    }
+    finally { Kickoff.DodgeJump = saved; }
 });
 
 Console.WriteLine($"RESULT {passed} passed, {failed} failed; no in-game performance claim.");

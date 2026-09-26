@@ -59,6 +59,18 @@ namespace RedUtils
                 (changedTouch && action.Interruptible && !(ownTouch && action is IPossessionAction));
         }
         public static float Axis(float value) => float.IsFinite(value) ? System.Math.Clamp(value, -1f, 1f) : 0f;
+        /// <summary>
+        /// The jump output for a tick. The game jumps only on a press, so a jump the game applied
+        /// last tick that started nothing (the car on its wheels, no jump under way) is released
+        /// for this tick; otherwise an action taking over from one that held jump would have its
+        /// takeoff swallowed. The press lands on the next tick. <paramref name="appliedLastTick"/>
+        /// is the input the game reports it applied, not the bot's own last output: a press still
+        /// in flight must not be taken for a stale hold, or press, release, press becomes a double
+        /// jump or a dodge once the car is up.
+        /// </summary>
+        public static bool JumpOutput(bool wanted, bool appliedLastTick, bool grounded, bool jumpStarted) =>
+            wanted && !(appliedLastTick && grounded && !jumpStarted);
+
         public static ControllerStateT Sanitize(ControllerStateT input, bool demolished, float boost)
         {
             if (demolished || input == null) return new ControllerStateT();

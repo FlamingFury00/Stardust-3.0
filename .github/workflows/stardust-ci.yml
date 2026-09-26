@@ -44,3 +44,71 @@ jobs:
         run: dotnet run --project tests/Stardust.BoostGoal/Stardust.BoostGoal.csproj --configuration Release
       - name: Run possession mechanics physics regressions
         run: dotnet run --project tests/Stardust.MechanicsPhysics/Stardust.MechanicsPhysics.csproj --configuration Release
+  physics-models:
+    # The bot plans with analytic physics models (src/RedUtils/Physics, src/RedUtils/Planning).
+    # Each is checked against RocketSim ground truth; the arena is generated from published
+    # dimensions, so no game assets are needed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Make schema generator executable
+        run: chmod +x src/generate-flatbuffers.sh src/flatbuffers-schema/binaries/flatc
+      - name: Build RocketSim bridge and simulator
+        run: tools/simulator/build.sh
+      - name: Check physics models against RocketSim
+        run: dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll physics-check --model all
+  bot-pack:
+    # The bot pack is built by bob from bob.toml: `docker build` of the dockerfile from the repository
+    # root, then `docker run`, whose output is a tar of the binaries; bob points the bot config's run
+    # commands at them. This job does the same, rejects trimming and AOT warnings (code that breaks
+    # only in those builds), and plays the packaged native build against the local build of
+    # Stardust.bot.toml in the simulator, with telemetry on.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build the bot pack image
+        run: docker build --progress=plain -f dockerfile -t stardust-pack . 2>&1 | tee "$RUNNER_TEMP/docker-build.log"
+      - name: Reject trimming and AOT warnings
+        run: |
+          if grep -E "warning IL[0-9]+" "$RUNNER_TEMP/docker-build.log"; then exit 1; fi
+      - name: Package the binaries as bob does
+        run: |
+          pack="$RUNNER_TEMP/pack"
+          mkdir -p "$pack"
+          docker run --rm stardust-pack | tar -x -C "$pack"
+          test -x "$pack/x86_64-linux/Bot"
+          test -f "$pack/x86_64-windows/Bot.exe"
+          sed -e 's|^run_command = .*|run_command = "x86_64-windows\\\\Bot.exe"|' \
+              -e 's|^run_command_linux = .*|run_command_linux = "x86_64-linux/Bot"|' \
+              Stardust.bot.toml > "$pack/Stardust.bot.toml"
+          cp loadout.toml logo.png "$pack/"
+      - name: Build the local bot
+        run: dotnet build src/Bot/Bot.csproj --configuration Release
+      - name: Build RocketSim bridge and simulator
+        run: tools/simulator/build.sh
+      - name: Play the packaged build against the local build
+        env:
+          STARDUST_TELEMETRY: '1'
+        run: |
+          dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll match \
+            --a "$RUNNER_TEMP/pack/Stardust.bot.toml" --a-label pack --b Stardust.bot.toml --b-label local \
+            --games 2 --seconds 60 --parallel 2 --out "$RUNNER_TEMP/smoke"
+          if grep -E "STARDUST_TELEMETRY_ERROR|Unhandled [Ee]xception" "$RUNNER_TEMP"/smoke/*/bot-*.log; then exit 1; fi
+          python3 - "$RUNNER_TEMP/pack/x86_64-linux/logs" <<'PY'
+          import glob, json, sys
+          records = [json.loads(line) for path in glob.glob(sys.argv[1] + "/*.jsonl") for line in open(path)]
+          print(f"{len(records)} telemetry records from the packaged build")
+          sys.exit(0 if len(records) >= 100 else 1)
+          PY

@@ -5,6 +5,15 @@ namespace rlbot.flat;
 /// A normal human player.
 table Human {}
 
+/// A user-defined environment variable to pass to an agent process.
+table EnvironmentVariable {
+  /// Environment variable name.
+  name: string (required);
+
+  /// Environment variable value.
+  value: string (required);
+}
+
 /// A bot controlled by the RLBot framework.
 table CustomBot {
   /// Requested bot name. When match start, RLBot will ensure each bot has a unique name; bots with
@@ -29,6 +38,9 @@ table CustomBot {
   /// Whether this player is part of a hivemind bot where all players/cars are controlled by the same process.
   /// Players in the hivemind must have the same name, team, run command, and agent id.
   hivemind: bool;
+
+  /// User-defined environment variables to pass to the bot process.
+  environment: [EnvironmentVariable];
 }
 
 /// Various skill levels of Psyonix bots.
@@ -150,7 +162,8 @@ enum MaxScoreMutator: ubyte {
   SeventyGoals,
   EightyGoals,
   NinetyGoals,
-  HundredGoals
+  HundredGoals,
+  OneHundredFiftyOneGoals,
 }
 
 /// Multi ball mutator options.
@@ -207,7 +220,9 @@ enum BallTypeMutator: ubyte {
   Dropshot,
   ScoreAbsorb,
   Shoe,
-  PizzaPuck
+  PizzaPuck,
+  Strike,
+  SpookyBalloon
 }
 
 /// Ball weight mutator options.
@@ -219,7 +234,8 @@ enum BallWeightMutator: ubyte {
   CurveBall,
   BeachBallCurve,
   MagnusFutBall,
-  MagnusFutballLess
+  MagnusFutballLess,
+  Balloon
 }
 
 /// Ball size mutator options.
@@ -318,7 +334,21 @@ enum RespawnTimeMutator: ubyte {
 /// Max time mutator options.
 enum MaxTimeMutator: ubyte {
   Unlimited,
-  ElevenMinutes
+  OneMinute,
+  TwoMinutes,
+  ThreeMinutes,
+  FourMinutes,
+  FiveMinutes,
+  SixMinutes,
+  SevenMinutes,
+  EightMinutes,
+  NineMinutes,
+  TenMinutes,
+  ElevenMinutes,
+  TwelveMinutes,
+  ThirteenMinutes,
+  FourteenMinutes,
+  FifteenMinutes
 }
 
 /// Game event mutator options.
@@ -408,6 +438,37 @@ enum InputRestrictionMutator: ubyte {
 enum ScoringRuleMutator: ubyte {
   Default,
   Disabled
+}
+
+enum TriTipModeMutator: ubyte {
+  Off,
+  Tritip
+}
+
+enum LockedDamagePhaseMutator: ubyte {
+  Default,
+  High
+}
+
+enum SpawnDemoballMutator: ubyte {
+  Off,
+  On
+}
+
+enum BoostRestritionMutator: ubyte {
+  Default,
+  AerialOnly
+}
+
+enum KeepUpRulesMutator: ubyte {
+  Off,
+  EnabledIncrement,
+  Enabled
+}
+
+enum MatchAdminMutator: ubyte {
+  Off,
+  On
 }
 
 /// All mutators options.
@@ -508,6 +569,24 @@ table MutatorSettings {
 
   /// Additional rules about scoring (ball-goal interaction).
   scoring_rule: ScoringRuleMutator;
+
+  /// Tri tip car mode.
+  tri_tip_mode: TriTipModeMutator;
+
+  /// Locked damage phase mode.
+  locked_damage_phase: LockedDamagePhaseMutator;
+
+  /// Spawn demoball.
+  spawn_demoball: SpawnDemoballMutator;
+
+  /// Boost restriction.
+  boost_restriction: BoostRestritionMutator;
+
+  /// Keep up rules.
+  keep_up_rules: KeepUpRulesMutator;
+
+  /// Match admin.
+  match_admin: MatchAdminMutator;
 }
 
 enum DebugRendering: ubyte {
@@ -566,6 +645,16 @@ table ScriptConfiguration {
   /// Upon connecting the process announces that it is responsible for this agent id and RLBot will pair the two.
   /// The recommended format for agent ids is "developername/botname".
   agent_id: string (required);
+
+  /// User-defined environment variables to pass to the script process.
+  environment: [EnvironmentVariable];
+}
+
+/// Controls when the in-game performance monitor is shown.
+enum PerformanceMonitor: ubyte {
+  ShowWhenSuboptimal,
+  AlwaysShow,
+  NeverShow,
 }
 
 /// Definition of a match.
@@ -628,4 +717,7 @@ table MatchConfiguration {
   /// If set to true, a free play match is launched instead of an exhibition match.
   /// This allows the players to use training keybinds, Bakkesmod plugins, and other features that are only allowed in free play.
   freeplay: bool;
+
+  /// Controls when the in-game performance monitor will display.
+  performance_monitor: PerformanceMonitor;
 }

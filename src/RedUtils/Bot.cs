@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using RLBot.Flat;
+using RedUtils.Math;
 using RLBot.Manager;
 
 namespace RedUtils
@@ -12,8 +13,9 @@ namespace RedUtils
         private static readonly object WorldGate = new();
         private readonly TickClock clock = new();
         private readonly ShotClaimLedger claims = new();
-        private bool ready, hasOutput, shotClaimActive;
+        private bool ready, hasOutput, shotClaimActive, touchBaselined;
         private float lastTouchTime = -1f, lastClaimSent = float.NegativeInfinity;
+        private float kickoffTouchBaseline = -1f;
 
         public new ExtendedRenderer Renderer { get; internal set; }
         public Car Me => Index >= 0 && Index < Cars.Count ? Cars.AllCars[Index] : new Car();
@@ -57,15 +59,25 @@ namespace RedUtils
             Game.Update(packet);
             Field.Update(packet);
             if (packet.Balls.Count > 0) Ball.Update(this, packet.Balls[0]);
-            bool kickoff = Game.MatchPhase == MatchPhase.Kickoff;
-            if ((kickoff && !IsKickoff) || ClockReset)
+            // A kickoff lasts until the ball is first touched. RLBot may report Active after two
+            // seconds without a touch, so the phase alone must not end the kickoff routine.
+            bool kickoffPhase = Game.MatchPhase == MatchPhase.Kickoff;
+            bool kickoffStart = kickoffPhase && !IsKickoff;
+            if (kickoffStart || ClockReset || !touchBaselined)
             {
                 Action = null;
                 claims.Clear();
-                lastTouchTime = -1f;
+                // The packet keeps every car's latest touch, however old. Baseline it so only a
+                // touch made after the reset counts as new (else an old own touch reads as one now).
+                lastTouchTime = Ball.LatestTouch?.Time ?? -1f;
+                touchBaselined = true;
                 lastClaimSent = float.NegativeInfinity;
+                kickoffTouchBaseline = Ball.LatestTouch?.Time ?? -1f;
             }
-            IsKickoff = kickoff;
+            bool ballUntouched = (Ball.LatestTouch?.Time ?? -1f) == kickoffTouchBaseline &&
+                Ball.Velocity.Length() < 5f && Ball.Location.Flatten().Length() < 5f;
+            IsKickoff = kickoffStart || (IsKickoff && ballUntouched &&
+                (kickoffPhase || Game.MatchPhase == MatchPhase.Active));
         }
 
         public override ControllerStateT GetOutput(GamePacketT packet)
@@ -101,7 +113,9 @@ namespace RedUtils
                 lastTouchTime = touch;
                 if (ControlRuntime.CancelBeforeRun(Action, changedTouch, OwnTouchThisTick, Me.IsDemolished, ClockReset)) Action = null;
 
-                base.Renderer.Begin($"BOT_{Index}");
+                // Nothing is drawn unless rendering is on; an empty group every tick is wasted traffic.
+                bool rendering = base.Renderer.CanRender;
+                if (rendering) base.Renderer.Begin($"BOT_{Index}");
                 try
                 {
                     Run();
@@ -114,10 +128,11 @@ namespace RedUtils
                     }
                     UpdateShotClaimState();
                     Controller = ControlRuntime.Sanitize(Controller, Me.IsDemolished, Me.Boost);
+                    Controller.Jump = ControlRuntime.JumpOutput(Controller.Jump, Me.LastInput?.Jump == true, Me.IsGrounded, Me.JumpStarted);
                     OnOutputReady();
                     return Controller;
                 }
-                finally { base.Renderer.End(); }
+                finally { if (rendering) base.Renderer.End(); }
             }
         }
 
@@ -129,6 +144,8 @@ namespace RedUtils
         protected bool HasTeammateEarlierShot(float mySliceTime, float grace = 0.04f) => claims.EarlierThan(Index, mySliceTime, Game.Time, grace);
         private void UpdateShotClaimState()
         {
+            // Claims coordinate teammates; without any there is nobody to tell.
+            if (Teammates.Count == 0) return;
             float slice = Action is Shot shot && shot.Slice != null ? shot.Slice.Time :
                 Action is IPossessionAction possession ? possession.ClaimTime : float.NaN;
             if (float.IsFinite(slice))

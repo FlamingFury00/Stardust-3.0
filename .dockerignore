@@ -1,0 +1,8 @@
+# The image builds src/Bot and what it references; local build output would clash with the
+# container's restore.
+.git
+**/bin/
+**/obj/
+docs/
+tests/
+tools/

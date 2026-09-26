@@ -534,8 +534,10 @@ internal static class DefenseRegression
                 $"deep defensive possession did not escape upfield: {lane}");
             Check(lane.x < -0.10f,
                 $"deep right-corner possession did not cut inward: {lane}");
-            Check(!PossessionControl.ShouldFlick(
-                    car, ball, lane, 0.20f, 300f, blueGoal),
+            Car challenger = CarAt(1950, -4500, 1, 1);
+            challenger.Velocity = new Vec3(0, -1400, 0);
+            Check(PossessionControl.PlanFlick(car, ball, lane, new[] { challenger }, blueGoal,
+                    new Vec3(0, 5120, 0), out _) == null,
                 "goal-line possession was allowed to flick across the box");
         });
 
@@ -725,6 +727,45 @@ internal static class DefenseRegression
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", oldHz);
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
+            }
+        });
+
+        test("telemetry: opening a file prunes the oldest telemetry beyond 256 MB", () =>
+        {
+            string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
+            string? oldFile = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
+            string directory = Path.Combine(Path.GetTempPath(), $"stardust-prune-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            try
+            {
+                // Three 100 MB matches (sparse files), oldest first, plus a file that is not telemetry.
+                string[] matches = Enumerable.Range(0, 3)
+                    .Select(i => Path.Combine(directory, $"stardust-telemetry-match{i}.jsonl")).ToArray();
+                for (int i = 0; i < matches.Length; i++)
+                {
+                    using (var stream = new FileStream(matches[i], FileMode.CreateNew))
+                        stream.SetLength(100L * 1024 * 1024);
+                    File.SetLastWriteTimeUtc(matches[i], DateTime.UtcNow.AddHours(i - 3));
+                }
+                string other = Path.Combine(directory, "notes.jsonl");
+                File.WriteAllText(other, "{}");
+
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE",
+                    Path.Combine(directory, "stardust-telemetry-current.jsonl"));
+                World(new Vec3(0, 0, 100), CarAt(0, -3000));
+
+                Check(!File.Exists(matches[0]), "the oldest match beyond the budget was kept");
+                Check(File.Exists(matches[1]) && File.Exists(matches[2]),
+                    "a match within the budget was deleted");
+                Check(File.Exists(other), "a file that is not telemetry was deleted");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
+                try { Directory.Delete(directory, true); }
+                catch (IOException) { } // the bot's telemetry file stays open until exit
             }
         });
     }

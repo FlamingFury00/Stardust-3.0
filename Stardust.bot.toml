@@ -1,28 +1,21 @@
 [settings]
-# A unique string identifying this type of bot, typically on the form "<developer>/<botname>"
-# VVVVV CHANGE THIS VVVVV
+# Identifies this bot to RLBot, "<developer>/<botname>"
 agent_id = "flamingfury00/stardust"
-# The name that will be displayed in game
+# The name shown in game
 name = "Stardust-3.0"
-# Path to loadout config from runner
 loadout_file = "loadout.toml"
-# (OPTIONAL) - what you want the working directory set to
-# This is relative to the location of this file
+# Working directory of the bot process, relative to this file
 root_dir = ""
-# The command RLBot will call to start your bot on Windows
-# ex: "bot.exe" for after your bot is compiled (via `dotnet publish`), or `dotnet run`/`dotnet run -c "Release"` during development
+# Commands for a local build (`dotnet build -c Release`). Botpack builds (bob.toml) replace both
+# with the published binaries.
 run_command = ".\\src\\Bot\\bin\\Release\\net8.0\\Bot.exe"
-# The command RLBot will call to start your bot on linux
-# If this isn't set, RLBot may attempt to run the Windows command under Wine
-# run_command_linux = "dotnet run --project ./Bot -c \"Release\""
+run_command_linux = "./src/Bot/bin/Release/net8.0/Bot"
 
 [details]
-description = "This is the second version of Stardust, this time it uses RedUtils. It is a bot that always tries to do teamplays and passes."
-fun_fact = "Each teammate trusts each other a lot, so every mistake or miss could lead to dangerous situations."
-source_link = "https://github.com/FlamingFury00/Stardust-2.0@v5"
+description = "Stardust 3.0 plans every touch against a physics model validated in RocketSim: ground, flip, double-jump and aerial strikes, speed-flip kickoffs, hood dribbles with flicks, and rotation-aware team play in 1v1, 2v2 and 3v3."
+fun_fact = "Each of its mechanics has a drill in its own RocketSim lab, with pass criteria set at what a pro would execute."
+source_link = "https://github.com/FlamingFury00/Stardust-3.0"
 developer = "FlamingFury00 (+CodeRed)"
 language = "C#"
-# ALL POSSIBLE TAGS: 1v1, teamplay, goalie, hoops, dropshot, snow-day, spike-rush, heatseaker, memebot
-# NOTE: Only add the goalie tag if your bot only plays as a goalie; this directly contrasts with the teamplay tag!
-# NOTE: Only add a tag for a special game mode if you bot properly supports it
-tags = []
+# RLBot tags: 1v1, teamplay, goalie, hoops, dropshot, snow-day, spike-rush, heatseeker, memebot
+tags = ["1v1", "teamplay"]

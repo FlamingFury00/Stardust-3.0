@@ -118,17 +118,21 @@ namespace Bot
         }
     }
 
-    /// <summary>Confirms a newly acquired reset only after spent-flip state and a recent own wheel contact.</summary>
+    /// <summary>
+    /// Confirms a flip reset from the packet flags: while airborne the flip was unavailable (used, or a
+    /// single jump's flip timed out), and later the car is airborne high up with jump, double jump and
+    /// dodge all cleared. Wheel contact with the ball leaves no ball touch, so no touch is required.
+    /// </summary>
     public sealed class ResetEvidence
     {
+        /// <summary>Lowest car height at which cleared flags count as a reset rather than a landing.</summary>
+        public const float MinimumHeight = 250f;
         private bool spent;
-        private float contact = float.NegativeInfinity;
         public bool Confirmed { get; private set; }
-        public bool Observe(JumpState state, bool ownTouch, bool wheelsAligned, float height, float now)
+        public bool Observe(JumpState state, float height)
         {
-            spent |= state.DoubleJumped || state.Dodged;
-            if (spent && ownTouch && wheelsAligned && height > 250) contact = now;
-            if (spent && state.HasReset && height > 250 && now >= contact && now - contact <= 0.2f) Confirmed = true;
+            spent |= !state.Grounded && !state.CanDodge;
+            if (spent && state.HasReset && height > MinimumHeight) Confirmed = true;
             return Confirmed;
         }
     }

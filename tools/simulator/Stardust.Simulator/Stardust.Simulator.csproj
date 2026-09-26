@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Stardust.Simulator</RootNamespace>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\RLBot\RLBot.csproj" />
+    <ProjectReference Include="..\..\..\src\RedUtils\RedUtils.csproj" />
+    <ProjectReference Include="..\..\..\src\Bot\Bot.csproj" />
+  </ItemGroup>
+
+  <!-- The RocketSim bridge is built by tools/simulator/build.sh into native/build. -->
+  <ItemGroup>
+    <None Include="..\native\build\librsbridge.so" Condition="Exists('..\native\build\librsbridge.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>librsbridge.so</Link>
+    </None>
+    <None Include="..\native\build\rsbridge.dll" Condition="Exists('..\native\build\rsbridge.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>rsbridge.dll</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

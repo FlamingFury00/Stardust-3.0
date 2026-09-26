@@ -119,6 +119,17 @@ namespace Bot
         }
 
         /// <summary>
+        /// How far a solo shadow's line turns from the goal centre toward the front post (0 to 1): pro
+        /// shadow defence sits on the attacker's side, in its straight lane, not inside it.
+        /// </summary>
+        public static float FrontPostShadow = 0f;
+        /// <summary>Distance (uu) inside the post that a front-post shadow line aims at.</summary>
+        private const float FrontPostInset = 150f;
+
+        /// <summary>Distance (uu) a support car keeps goal-side of the ball away from our goal; it closes by 290 uu near it.</summary>
+        public static float SupportGap = 1050f;
+
+        /// <summary>
         /// Continuous ball-to-goal defensive positioning. Every role is constrained to remain goal-side
         /// of the reference ball. The solo shadow compresses under imminent contact instead of parking.
         /// </summary>
@@ -135,7 +146,16 @@ namespace Bot
 
             Vec3 flatBall = new Vec3(ball.x, ball.y, 17);
             Vec3 flatGoal = new Vec3(goal.x, goal.y, 17);
-            Vec3 goalward = ControlMath.FlatUnit(flatGoal - flatBall, new Vec3(0, side, 0));
+            // A shadow covers the attacker's straight lane: the line from the ball to the nearest
+            // point of the goal mouth (the front post for a ball out wide) rather than to its centre.
+            bool frontPost = role == DefensiveRole.Shadow && FrontPostShadow > 0f;
+            Vec3 aim = flatGoal;
+            if (frontPost)
+            {
+                float post = Goal.Width * 0.5f - FrontPostInset;
+                aim.x = flatGoal.x + FrontPostShadow * System.Math.Clamp(flatBall.x - flatGoal.x, -post, post);
+            }
+            Vec3 goalward = ControlMath.FlatUnit(aim - flatBall, new Vec3(0, side, 0));
             float goalDistance = flatBall.FlatDist(flatGoal);
 
             // danger approaches one as the ball enters the defensive third.
@@ -155,7 +175,7 @@ namespace Bot
                     lateralBias = 520f;
                     break;
                 case DefensiveRole.Support:
-                    desiredGap = Lerp(1050f, 760f, danger);
+                    desiredGap = Lerp(SupportGap, SupportGap - 290f, danger);
                     minimumProgress = 500f;
                     lateralBias = 650f;
                     break;
@@ -178,7 +198,7 @@ namespace Bot
 
             Vec3 target = flatBall + goalward * gap;
             float lateral = MathF.Tanh((flatBall.x - flatGoal.x) / 900f);
-            target.x -= lateral * lateralBias * (1f - 0.40f * danger);
+            target.x -= lateral * lateralBias * (1f - 0.40f * danger) * (frontPost ? 1f - FrontPostShadow : 1f);
 
             // Deep anchors prefer the far-post half of the mouth. Blend continuously so crossing
             // midfield or a side threshold cannot teleport the target.
@@ -285,6 +305,19 @@ namespace Bot
             return new Vec3(target.x, target.y, 17);
         }
 
+        /// <summary>How late (s) a goal-side solo defender may be and still meet an attacker about to touch near our box.</summary>
+        public static float SoloTieDeficit = 0.22f;
+        /// <summary>Race margin (s) a solo challenge needs under pressure; negative allows arriving that much later.</summary>
+        public static float SoloPressureMargin = -0.10f;
+        /// <summary>Race margin (s) a solo challenge needs without pressure.</summary>
+        public static float SoloMargin = 0.05f;
+        /// <summary>Race margin (s) a challenge needs while a teammate covers the goal; negative allows arriving that much later.</summary>
+        public static float CoveredMargin = -0.12f;
+        /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, within 3300 uu of our goal.</summary>
+        public static float ContinueDeficitNear = 0.38f;
+        /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, further out.</summary>
+        public static float ContinueDeficitFar = 0.28f;
+
         /// <summary>
         /// Last-man challenges require both goal-side geometry and a race margin. Immediate controlled
         /// contact remains legal, preventing the safety gate from becoming passive goal-line defense.
@@ -309,18 +342,18 @@ namespace Bot
             // attacker is about to touch the ball. Clearly lost races still remain blocked.
             if (imminentPressure && goalDistance < 3300f && ballDistance < 1850f)
             {
-                float allowedDeficit = frame.TeamCount <= 1 ? 0.22f : 0.15f;
+                float allowedDeficit = frame.TeamCount <= 1 ? SoloTieDeficit : 0.15f;
                 if (frame.MyEta <= frame.OpponentEta + allowedDeficit)
                     return true;
             }
 
             float requiredMargin;
             if (frame.HasCover)
-                requiredMargin = -0.12f;
+                requiredMargin = CoveredMargin;
             else if (frame.UnderPressure)
-                requiredMargin = frame.TeamCount <= 1 ? -0.10f : -0.05f;
+                requiredMargin = frame.TeamCount <= 1 ? SoloPressureMargin : -0.05f;
             else
-                requiredMargin = frame.TeamCount <= 1 ? 0.05f : 0.10f;
+                requiredMargin = frame.TeamCount <= 1 ? SoloMargin : 0.10f;
 
             if (frame.LastBack && !frame.HasCover && frame.TeamCount > 1)
                 requiredMargin += 0.04f;
@@ -345,7 +378,7 @@ namespace Bot
                 return true;
 
             float goalDistance = ball.FlatDist(goal);
-            float allowedDeficit = goalDistance < 3300f ? 0.38f : 0.28f;
+            float allowedDeficit = goalDistance < 3300f ? ContinueDeficitNear : ContinueDeficitFar;
             if (frame.TeamCount > 1 && frame.LastBack && !frame.HasCover)
                 allowedDeficit -= 0.08f;
 
@@ -435,6 +468,11 @@ namespace Bot
             return System.Math.Clamp(frame.OpponentEta + continuation, 0f, 3f);
         }
 
+        /// <summary>Ball depth (uu toward our goal; negative is their half) an uncovered support car may refill behind.</summary>
+        public static float SupportRefillDepth = -900f;
+        /// <summary>Opponent arrival time (s) an uncovered support car's refill needs.</summary>
+        public static float SupportRefillWindow = 2.5f;
+
         public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
         {
             if (frame == null || car == null || pressure ||
@@ -458,8 +496,8 @@ namespace Bot
 
             // Without explicit cover, only a non-first-man may refill when the ball is clearly
             // out of our half and the opponent contact window is long.
-            bool ballSafelyUpfield = defensiveDepth < -900f;
-            return ballSafelyUpfield && frame.OpponentEta > 2.5f;
+            bool ballSafelyUpfield = defensiveDepth < SupportRefillDepth;
+            return ballSafelyUpfield && frame.OpponentEta > SupportRefillWindow;
         }
 
         /// <summary>
@@ -495,6 +533,11 @@ namespace Bot
             return true;
         }
 
+        /// <summary>Fraction of the ball's goalward speed a moving shadow matches.</summary>
+        public static float ShadowSpeedMatch = 0.8f;
+        /// <summary>Highest speed (uu/s) a moving shadow settles at.</summary>
+        public static float ShadowSpeedCap = 1350f;
+
         /// <summary>
         /// Target speed for a moving shadow. Match a useful fraction of the ball's goalward speed,
         /// while retaining enough speed to adjust laterally under pressure.
@@ -507,7 +550,7 @@ namespace Bot
 
             Vec3 axis = ControlMath.FlatUnit(goal - ball.location, new Vec3(0, Side(goal), 0));
             float goalwardSpeed = MathF.Max(0f, ball.velocity.Dot(axis));
-            return System.Math.Clamp(goalwardSpeed * 0.80f + (pressure ? 180f : 0f), 450f, 1350f);
+            return System.Math.Clamp(goalwardSpeed * ShadowSpeedMatch + (pressure ? 180f : 0f), 450f, ShadowSpeedCap);
         }
 
         /// <summary>

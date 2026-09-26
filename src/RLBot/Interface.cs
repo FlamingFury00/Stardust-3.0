@@ -28,6 +28,7 @@ public class Interface
     public event Action<BallPredictionT> OnBallPredictionCallback = delegate { };
     public event Action<ControllableTeamInfoT> OnControllableTeamInfoCallback = delegate { };
     public event Action<RenderingStatusT> OnRenderingStatusCallback = delegate { };
+    public event Action<ulong> OnPingResponse = delegate { };
     public event Action<CorePacketT> OnAnyMessageCallback = delegate { };
 
     public Interface(string agentId, int connectionTimeout = 120, Logging? logger = null)
@@ -82,9 +83,35 @@ public class Interface
         SendFlatBuffer(InterfaceMessageUnion.FromDesiredGameState(gameState));
     }
 
+    /// <summary>
+    /// Run a console command in Rocket League.
+    /// Find known console commands at https://wiki.rlbot.org/v5/framework/console-commands/
+    /// </summary>
+    public void SendConsoleCommand(ConsoleCommandT command)
+    {
+        SendFlatBuffer(InterfaceMessageUnion.FromConsoleCommand(command));
+    }
+
+    /// <summary>
+    /// Run a console command in Rocket League.
+    /// Find known console commands at https://wiki.rlbot.org/v5/framework/console-commands/
+    /// </summary>
+    public void SendConsoleCommand(string command)
+    {
+        SendConsoleCommand(new ConsoleCommandT { Command = command });
+    }
+
     public void SendRenderGroup(RenderGroupT renderGroup)
     {
         SendFlatBuffer(InterfaceMessageUnion.FromRenderGroup(renderGroup));
+    }
+
+    /// <summary>
+    /// Send a ping request to the RLBot server; subscribe to <see cref="OnPingResponse"/> for the reply.
+    /// </summary>
+    public void SendPingRequest(ulong cookie)
+    {
+        SendFlatBuffer(InterfaceMessageUnion.FromPingRequest(new PingRequestT { Cookie = cookie }));
     }
 
     public void SendRemoveRenderGroup(RemoveRenderGroupT removeRenderGroup)
@@ -322,6 +349,13 @@ public class Interface
             case CoreMessage.RenderingStatus:
                 RenderingStatusT renderingStatus = packet.Message.AsRenderingStatus();
                 OnRenderingStatusCallback(renderingStatus);
+                break;
+            case CoreMessage.PingRequest:
+                PingRequestT pingRequest = packet.Message.AsPingRequest();
+                SendFlatBuffer(InterfaceMessageUnion.FromPingResponse(new PingResponseT { Cookie = pingRequest.Cookie }));
+                break;
+            case CoreMessage.PingResponse:
+                OnPingResponse(packet.Message.AsPingResponse().Cookie);
                 break;
             default:
                 _logger.LogWarning("Received message of unknown type: {0}", packet.Message.Type);

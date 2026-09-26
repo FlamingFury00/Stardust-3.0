@@ -1,5 +1,7 @@
 using System;
 using RedUtils;
+using RedUtils.Physics;
+using RedUtils.Planning;
 using RedUtils.Math;
 
 namespace Bot
@@ -10,7 +12,10 @@ namespace Bot
         public bool GroundControl { get; init; } = Environment.GetEnvironmentVariable("STARDUST_GROUND_CONTROL") != "0";
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
         public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
+        public bool AirDribbles { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AIR_DRIBBLES") == "1";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
+        /// <summary>Also log the save options weighed on every planning tick (verbose).</summary>
+        public bool TraceSaves { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE_SAVES") == "1";
         public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
         public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
         public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
@@ -143,8 +148,7 @@ namespace Bot
             if (Game.Time < nextPlan)
                 return;
 
-            Situation = Tactics.Evaluate(this);
-            Situation.PressureTime = pressureTime;
+            Assess(pressureTime);
             nextPlan = Game.Time + (underPressure || emergency || counterDanger ? 0.05f : 0.12f);
 
             RawCanChallenge = Defense.CanChallenge(
@@ -157,6 +161,9 @@ namespace Bot
                 challengeCommitUntil = float.NegativeInfinity;
             ChallengeCommitted = RawCanChallenge ||
                 (Game.Time < challengeCommitUntil && challengeSafe);
+
+            if (emergency && PlannedSave(threat))
+                return;
 
             if (emergency || counterDanger)
             {
@@ -285,10 +292,14 @@ namespace Bot
                     return;
                 }
 
-                bool retain = Action is GroundCatch
-                    ? Situation.TeamRank == 0 && (canChallenge || Situation.FreeTime >= -0.12f)
-                    : PossessionControl.ShouldRetainPossession(
-                        Situation, Me, Ball.MainBall, OurGoal.Location);
+                // A flip reset flies upside down under the ball, which no roof or nose possession
+                // test recognises: keep it until it finishes unless an opponent is about to arrive.
+                bool retain = Action switch
+                {
+                    GroundCatch => Situation.TeamRank == 0 && (canChallenge || Situation.FreeTime >= -0.12f),
+                    FlipReset => Situation.OpponentEta > 0.6f,
+                    _ => PossessionControl.ShouldRetainPossession(Situation, Me, Ball.MainBall, OurGoal.Location),
+                };
 
                 if (retain && !possession.Finished)
                     return;
@@ -376,14 +387,14 @@ namespace Bot
             }
 
             Shot attack = priorityAttack;
-            BallSlice catchSlice = canPossessGround && Ball.Location.z > 175f
-                ? GroundCatch.FindCatch(Me)
+            CatchPlan catchPlan = canPossessGround
+                ? GroundCatch.FindCatch(Me, ControlMath.FlatUnit(TheirGoal.Location - Ball.Location, Me.Forward))
                 : null;
 
             // Prefer a real scoring/clearing contact when it is imminent or contested. With time and a
             // descending ball, keep the softer catch available instead of forcing every touch.
             if (attack != null &&
-                (underPressure || catchSlice == null || attack.Slice.Time - Game.Time <= 0.72f))
+                (underPressure || catchPlan == null || attack.Slice.Time - Game.Time <= 0.72f))
             {
                 Action = attack;
                 SetDecision(underPressure
@@ -401,9 +412,9 @@ namespace Bot
                 return;
             }
 
-            if (catchSlice != null)
+            if (catchPlan != null)
             {
-                Action = new GroundCatch();
+                Action = new GroundCatch(catchPlan);
                 SetDecision(underPressure
                     ? "mechanic / contested cushion catch"
                     : "mechanic / cushion catch");
@@ -508,6 +519,63 @@ namespace Bot
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
 
+        /// <summary>Quality a planned clearance needs to be taken ahead of a block.</summary>
+        public static float ComfortableClearQuality = 0.2f;
+        /// <summary>Spare time a planned clearance needs to be taken ahead of a block.</summary>
+        public static float ComfortableClearSlack = 0.1f;
+        /// <summary>Quality below which a planned clearance is worse than the scripted save.</summary>
+        public static float LastResortClearQuality = -0.5f;
+
+        /// <summary>
+        /// Physics-planned save for a ball that will otherwise go in: a comfortable ground or aerial
+        /// clearance, else a block in the ball's path, else any clearance, else a best-effort block.
+        /// Returns false to fall back to the scripted intercept and goal-line save.
+        /// </summary>
+        private bool PlannedSave(float threat)
+        {
+            if (Action is Block running && !running.Finished)
+            {
+                SetDecision("defend / block");
+                return true;
+            }
+            if (Action is IStrike strike && !strike.Finished && strike.Plan.Clear)
+                return true;
+
+            var path = new BallPath(Ball.Prediction.Slices);
+            var clearOptions = new StrikePlanner.Options
+            {
+                MaxTime = MathF.Max(0.1f, threat - 0.05f), TimePenalty = 0.6f, AimTolerance = 0.6f,
+            };
+            StrikePlan clear = StrikePlanner.Plan(Me, path, Game.Time, StrikeGoal.ClearFrom(Team, LivingOpponents), clearOptions);
+            if (clear != null && clear.Quality > ComfortableClearQuality && clear.Slack > ComfortableClearSlack &&
+                clear.Kind is StrikeKind.Ground or StrikeKind.Aerial)
+                return Strike(clear, "defend / planned clear");
+
+            BlockPlan block = BlockPlanner.Plan(Me, path, Game.Time, threat + 0.1f);
+            if (Options.TraceSaves)
+                Console.WriteLine(FormattableString.Invariant(
+                    $"stardust t={Game.Time:F3} car={Index} save threat={threat:F2} clear={clear?.ToString() ?? "none"} block={block?.ToString() ?? "none"}"));
+            if (block != null && block.Feasible)
+                return Guard(block, "defend / block");
+            if (clear != null && clear.Quality > LastResortClearQuality)
+                return Strike(clear, "defend / planned clear");
+            return block != null && Guard(block, "defend / desperate block");
+        }
+
+        private bool Strike(StrikePlan plan, string decision)
+        {
+            Action = plan.Kind == StrikeKind.Aerial ? new AerialStrike(plan) : new DrivenStrike(Me, plan);
+            SetDecision(decision);
+            return true;
+        }
+
+        private bool Guard(BlockPlan plan, string decision)
+        {
+            Action = new Block(plan);
+            SetDecision(decision);
+            return true;
+        }
+
         private bool TryBoostDetour(Vec3 destination)
         {
             if (Ball.Location.y * Field.Side(Team) > 2500f)
@@ -581,6 +649,13 @@ namespace Bot
                 Console.WriteLine(FormattableString.Invariant(
                     $"stardust t={Game.Time:F3} car={Index} decision={Decision} rank={Situation.TeamRank}/{Situation.TeamCount} eta={Situation.MyEta:F2} opponent={Situation.OpponentEta:F2} pressure={Situation.PressureTime:F2} last_back={Situation.LastBack} cover={Situation.HasCover} goal_side={Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location)}"));
             }
+        }
+
+        /// <summary>Refreshes <see cref="Situation"/> (arrival times, ranks, pressure) from the current world.</summary>
+        protected void Assess(float pressureTime)
+        {
+            Situation = Tactics.Evaluate(this);
+            Situation.PressureTime = pressureTime;
         }
 
         protected override void OnOutputReady() => telemetry.Sample(this);
