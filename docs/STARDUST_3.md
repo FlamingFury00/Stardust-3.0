@@ -273,6 +273,7 @@ Nexto. None survived:
 | No new ground catch or carry deeper than 1500 uu in our half | clear drill, 150; vs Nexto, 12 on one seed | 52 % vs 47 % cleared; −13.67 ± 0.71 against −12.92 ± 0.56 |
 | Aerial climb turning the nose by the quickest swing, roof left free | save drill, 200; aerial planner on the missed saves | 124 vs 125; best simulated miss 142 vs 152 uu: the flights are short, not slow to turn |
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
+| Shadow matches the attacker's full speed, up to 1800 uu/s (instead of 0.8 of it, up to 1350) | self-play, 85 games | +0.07 ± 0.29 |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
 goal-side with 20–100 boost. The gap to Nexto is not one misjudged threshold: each rule above fixes
