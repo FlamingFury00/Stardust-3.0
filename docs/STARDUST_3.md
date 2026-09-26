@@ -241,6 +241,17 @@ the build before the saves rework: 2–175, so the rework did not cost it). Repl
 - **Our kickoff touch is often our last.** In most goals the last Stardust touch before it was the
   kickoff itself, often a won one that sent the ball into Nexto's half at 2000–3000 uu/s. Nexto then
   collected it, carried it up and scored 5–8 s later without Stardust touching the ball again.
+  The kickoff is a true 50/50: Nexto is about 290 uu from the ball at 2000 uu/s when Stardust touches
+  it, and the direction the ball comes out decides the next ten seconds. Over 87 replayed kickoffs:
+
+  | Ball after the kickoff | Kickoffs | Nexto scores within 10 s |
+  |---|---|---|
+  | forward, over 500 uu/s toward Nexto's goal | 28 | 14 % |
+  | level | 25 | 48 % |
+  | backward, over 300 uu/s toward ours | 34 | 56 % |
+
+  A lost 50/50 costs that much because the final flip carries Stardust's car on into Nexto's half
+  for about 1.5 s after the touch, before it lands and turns while the ball rolls toward its goal.
 - **The saves were out of reach when they began.** At the moment the goal-line save starts, the car
   is typically 2000–5000 uu from the point where the ball will cross, at zero boost.
 - **Nexto carries the ball in.** It dribbles at up to 2300 uu/s, boosting as it goes. The shadow runs
@@ -258,6 +269,7 @@ Nexto. None survived:
 |---|---|---|
 | Refuel whenever the route through a pad still beats Nexto's quickest shot home | self-play, 63 games; vs Nexto, 12 | −0.27 ± 0.34; −14.9 vs −14.3 (more boost, 14 vs 9 average, same goals) |
 | Final kickoff dodge turned 0.25 rad away from the opponent's car | kickoff drill vs Nexto, 60; self-play kickoffs | kickoffs won 47 % vs 33 % against Nexto, but a mirror opponent gets the first touch 52 to 29, so it loses in self-play |
+| Final kickoff dodge turned 0.15–0.35 rad away from the opponent's side of the ball | kickoff drill vs Nexto: goals conceded within 10 s, 60 kickoffs per turn, then 120 | 18–35 % vs 32 %, then 29 % vs 29 % at 0.15, with the ball lost more often (44 % vs 24 %) |
 | Final dodge later (450–600 uu), none at all, or along the approach | kickoff drill vs Nexto, 60 each | worse or level; without the dodge every kickoff is lost |
 | Final dodge held 0.1 s instead of 0.18 s, hitting the ball lower | self-play, 24 games | −1.33 ± 0.65: ball-side advantage after the kickoff 75 to 126 |
 | Shadow holds its depth against a fast attack instead of stepping up | defense drill, 40 | 21 vs 15 conceded |
