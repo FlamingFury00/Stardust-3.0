@@ -269,7 +269,7 @@ Nexto. None survived:
 | Last-line aerial save, any direction, reached 0.05 s early | save drill, 200 shots; self-play, 48 games | 127 vs 125 saved; −0.17 ± 0.41 (left off) |
 | The same aerial accepting any simulated touch, without the early reach | save drill, 200 shots | 124 vs 125 |
 | Block car turned nose-up after its last jump when contact is above 350 / 450 uu | save drill, 200 shots | 126 / 122 vs 125: height gained, width lost |
-| Solo shadow aimed at the front post (half / full blend) | defense drill, 100 each | 27 / 37 vs 31 conceded |
+| Solo shadow aimed at the front post (half / full blend) | defense drill, 100 each; half blend in self-play, 107 games | 27 / 37 vs 31 conceded; +0.06 ± 0.29 |
 | Solo challenges up to 0.3–0.6 s late | vs Nexto, 12 games on one seed | −13.50 ± 0.85 against −12.92 ± 0.56 |
 | Defensive-half touches: planned strike accepted up to 0.25 s later, and/or planned as a clearance past 1500 uu deep | clear drill, 150 each | 42–44 % vs 47 % cleared (harder touches, 1339 vs 1191 uu/s, but aimed wide) |
 | 2v2: a covered first man challenges up to 0.35 s late | 2v2 self-play, 72 games | +0.06 ± 0.30 |
