@@ -407,6 +407,91 @@ public sealed class ClearDrill : Drill
 }
 
 /// <summary>
+/// A slow ball rolling into our goal with the car behind or beside it. Every fixture is savable: driving
+/// straight there, the car reaches the goal line in front of the ball at least half a second before
+/// the ball. A car that catches the ball from behind instead pushes it in.
+/// </summary>
+public sealed class RollerDrill : Drill
+{
+    /// <summary>Time the car needs in hand, driving straight to the line in front of the ball.</summary>
+    private const float SpareTime = 0.5f;
+
+    public override string Name => "roller";
+    public override string Description => "Keep out a slow ball rolling at our goal when the car starts behind or beside it.";
+    public override IReadOnlyList<Criterion> Criteria => new[] { Criterion.Rate(0.9) };
+
+    public override EpisodeSetup Generate(Random r)
+    {
+        while (true)
+        {
+            var ball = V(Uniform(r, -1500, 1500), Uniform(r, -3800, -1800), 93.15f);
+            float targetX = Uniform(r, -650, 650);
+            float heading = MathF.Atan2(-5120 - ball.Y, targetX - ball.X);
+            float speed = Uniform(r, 500, 1400);
+            var ballVelocity = V(MathF.Cos(heading) * speed, MathF.Sin(heading) * speed, 0);
+            // Behind the ball along its roll (negative: a little ahead of it), off to either side.
+            float back = Uniform(r, -300, 1500), side = Uniform(r, -800, 800);
+            var car = V(Math.Clamp(ball.X - MathF.Cos(heading) * back - MathF.Sin(heading) * side, -3800, 3800),
+                Math.Clamp(ball.Y - MathF.Sin(heading) * back + MathF.Cos(heading) * side, -4900, 4900), 17);
+            float yaw = heading + Uniform(r, -0.6f, 0.6f);
+            float carSpeed = Uniform(r, 0, 1500), boost = Uniform(r, 0, 50);
+            float arrival = (ball.Y + 5120) / MathF.Max(1f, -ballVelocity.Y);
+
+            // Straight-line time to the line in front of the ball, with a little for the turn.
+            var guard = V(ball.X + ballVelocity.X * arrival, -5000, 17);
+            float dx = guard.X - car.X, dy = guard.Y - car.Y, distance = MathF.Sqrt(dx * dx + dy * dy);
+            float facing = (MathF.Cos(yaw) * dx + MathF.Sin(yaw) * dy) / MathF.Max(distance, 1f);
+            float eta = RedUtils.DrivePhysics.TravelTime(distance, carSpeed * MathF.Max(facing, 0f), boost) +
+                (1f - facing) * 0.35f;
+            if (eta + SpareTime > arrival) continue;
+
+            return new EpisodeSetup(ball, ballVelocity, new[]
+            {
+                new CarSetup(car, yaw, V(MathF.Cos(yaw) * carSpeed, MathF.Sin(yaw) * carSpeed, 0), boost),
+            }, arrival + 1.5f);
+        }
+    }
+
+    // The decisions the bot ran, in order, and the one running when it first touched the ball.
+    private readonly List<string> decisions = new();
+    private string touchDecision = "";
+
+    protected override void Start(MatchSession session, EpisodeSetup setup)
+    {
+        Subject.Director = null;
+        decisions.Clear();
+        touchDecision = "";
+    }
+
+    protected override void Measure(MatchSession session, EpisodeTrace trace)
+    {
+        string decision = Subject.Decision ?? "none";
+        if (float.IsNaN(trace.FirstTouchTime))
+            touchDecision = decision;
+        if (decisions.Count == 0 || decisions[^1] != decision)
+            decisions.Add(decision);
+    }
+
+    public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
+    {
+        bool touched = !float.IsNaN(trace.FirstTouchTime);
+        bool conceded = trace.GoalTeam == 1;
+        trace.Notes.Add($"touch by {(touched ? touchDecision : "-")}; ran {string.Join(" > ", decisions)}");
+        trace.Metrics["conceded"] = conceded ? 1 : 0;
+        trace.Metrics["pushed-in"] = conceded && touched ? 1 : 0;
+        trace.Metrics["untouched-in"] = conceded && !touched ? 1 : 0;
+        if (touched)
+        {
+            trace.Metrics["touch-s"] = trace.FirstTouchTime;
+            trace.Metrics["touch-goalward"] = -trace.BallVelocityAfterFirstTouch.Y;
+        }
+        trace.Notes.Insert(0, string.Create(CultureInfo.InvariantCulture,
+            $"roll {setup.BallVelocity.Length:F0} from y {setup.BallPosition.Y:F0} car {setup.Cars[0].Position.X:F0},{setup.Cars[0].Position.Y:F0} out {trace.BallVelocityAfterFirstTouch.Length:F0} goalward {-trace.BallVelocityAfterFirstTouch.Y:F0}"));
+        return !conceded;
+    }
+}
+
+/// <summary>
 /// Shots at our goal, full bot, no opponent: the scenario suite's save fixture played in-process.
 /// Shots of 1500-3200 uu/s from up to 5000 uu out, the defender in net, at a post, or rotating
 /// back. Saved means no goal before the ball leaves our half.

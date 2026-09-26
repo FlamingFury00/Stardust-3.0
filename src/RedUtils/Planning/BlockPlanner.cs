@@ -117,10 +117,13 @@ namespace RedUtils.Planning
                     MathF.Max(0f, start.Speed), start.Boost);
                 if (bound > available + nearestShortfall) continue;
                 float through = ThroughTime(start, point, jumpTime > 0f ? t - jumpTime : float.PositiveInfinity,
-                    available + nearestShortfall);
+                    available + nearestShortfall, out float passSpeed);
                 log?.Invoke(FormattableString.Invariant(
                     $"  t={t:F2} ball={ball} jump={jumpTime:F2} available={available:F2} through={through:F2}"));
                 if (!float.IsFinite(through)) continue;
+                if (RejectPushes && jumpTime == 0f && PushesIn(start, point, slice, now, through, passSpeed, available,
+                        CarGeometry.Of(car), Field.Side((int)car.Team)))
+                    continue;
                 var plan = new BlockPlan
                 {
                     Slice = slice, Point = point, JumpTime = jumpTime, DoubleJump = doubleJump,
@@ -145,15 +148,25 @@ namespace RedUtils.Planning
         /// at its takeoff velocity: a car in the air cannot speed up or turn. Infinity when it does
         /// not get there by <paramref name="maxTime"/> or its coast misses the point.
         /// </summary>
-        public static float ThroughTime(GroundState start, Vec3 point, float takeoff, float maxTime)
+        public static float ThroughTime(GroundState start, Vec3 point, float takeoff, float maxTime) =>
+            ThroughTime(start, point, takeoff, maxTime, out _);
+
+        /// <summary>As <see cref="ThroughTime(GroundState, Vec3, float, float)"/>, with the car's speed as it passes the point.</summary>
+        public static float ThroughTime(GroundState start, Vec3 point, float takeoff, float maxTime, out float speed)
         {
+            speed = float.NaN;
             // A takeoff that is already due: the car carries on at its speed from here.
             takeoff = MathF.Max(takeoff, start.Time);
             var drive = new DriveTarget(point, Vec3.Zero);
             RolloutResult rollout = Navigator.Rollout(start, drive, MathF.Min(takeoff, maxTime));
-            if (rollout.Arrived) return rollout.Time;
+            if (rollout.Arrived)
+            {
+                speed = rollout.Final.Speed;
+                return rollout.Time;
+            }
             if (takeoff >= maxTime) return float.PositiveInfinity;
             GroundState s = rollout.Final;
+            speed = s.Speed;
             Vec3 heading = s.Forward.Flatten().Normalize();
             Vec3 to = (point - s.Position).Flatten();
             // The rollout's last step can carry the car just past the point: that is a pass.
@@ -163,6 +176,49 @@ namespace RedUtils.Planning
                 return float.PositiveInfinity;
             float time = s.Time + along / s.Speed;
             return time <= maxTime ? time : float.PositiveInfinity;
+        }
+
+        /// <summary>Spare time within which the block executor races through its point instead of pacing.</summary>
+        private const float PaceSlack = 0.05f;
+        /// <summary>Smallest cosine between the car's approach and the ball's roll for the car to be catching it up.</summary>
+        private const float ChaseAlignment = 0.5f;
+        /// <summary>Skip ground blocks that would push the ball into our goal (see <see cref="PushesIn"/>).</summary>
+        public static bool RejectPushes = false;
+
+        /// <summary>
+        /// Whether a ground block would send the ball into the goal on <paramref name="defendSide"/>.
+        /// The block meets the ball nose first, driving from the car's position through the point, so
+        /// a car that catches a rolling ball up from behind pushes it on instead of stopping it. The
+        /// car crosses the point at its pace (path over time) when early and flat out when tight.
+        /// </summary>
+        public static bool PushesIn(GroundState start, Vec3 point, BallSlice slice, float now, float through,
+            float flatOutSpeed, float available, CarGeometry geometry, int defendSide)
+        {
+            Vec3 approach = (point - start.Position).Flatten();
+            float distance = approach.Length();
+            if (distance < 1f) return false;
+            Vec3 heading = approach / distance;
+            // Only a car catching the ball up from behind pushes it on. One crossing its path or
+            // meeting it head-on stops or deflects it, which a nose-first contact would misjudge.
+            Vec3 roll = slice.Velocity.Flatten();
+            if (roll.Length() < 1f || heading.Dot(roll.Normalize()) < ChaseAlignment) return false;
+            float t = slice.Time - now;
+            float pace = distance / MathF.Max(t - start.Time, RL.TickTime);
+            float speed = through >= available - PaceSlack || !float.IsFinite(flatOutSpeed)
+                ? flatOutSpeed : MathF.Min(flatOutSpeed, pace);
+            if (!float.IsFinite(speed)) return false;
+            Vec3 right = new(-heading.y, heading.x, 0);
+            float lateral = (point - slice.Location).Flatten().Dot(right);
+            if (!Contact.FirstTouch(slice.Location, heading, lateral, JumpModel.RestHeight, geometry, out Vec3 position))
+                return false;
+            var pose = new CarPose(position, heading, right, Vec3.Up, heading * speed, Vec3.Zero,
+                geometry.HitboxSize, geometry.HitboxOffset);
+            HitModel.Result hit = HitModel.Collide(pose, slice.Location, slice.Velocity, Vec3.Zero, 4f);
+            if (!hit.Contact) return false;
+            // A ball already on the line is in as soon as the touch keeps it going goalward.
+            if (slice.Location.y * defendSide >= BallFlight.GoalLine)
+                return hit.Velocity.y * defendSide > 0f && MathF.Abs(slice.Location.x) < BallFlight.GoalHalfWidth;
+            return BallFlight.ToGoal(slice.Location, hit.Velocity, defendSide, 3f).OnTarget;
         }
     }
 }

@@ -19,7 +19,7 @@ public static class MechanicsLab
     };
 
     /// <summary>Drills run only by name, not as part of "all".</summary>
-    public static IReadOnlyList<Drill> Extra() => new Drill[] { new ActionProfileDrill(), new DefenseDrill(), new KickoffFollowDrill(), new ClearDrill() };
+    public static IReadOnlyList<Drill> Extra() => new Drill[] { new ActionProfileDrill(), new DefenseDrill(), new KickoffFollowDrill(), new ClearDrill(), new RollerDrill() };
 
     /// <summary>
     /// Overrides static tuning fields of the bot for an experiment, e.g. "HoodCarry.LaneGain=40".

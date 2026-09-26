@@ -29,6 +29,16 @@ namespace RedUtils
         private const float TakeoffReach = 130f;
         /// <summary>How long past its planned takeoff a car waits to cover the point before it jumps regardless.</summary>
         private const float LateTakeoff = 0.08f;
+        /// <summary>Farthest point behind the car that it backs onto rather than turning round.</summary>
+        private const float ReverseReach = 500f;
+        private const float ReverseMaxSpeed = 900f;
+        /// <summary>Reverse speed per unit of distance still to go, so the car slows onto the point.</summary>
+        private const float ReverseGain = 3f;
+        /// <summary>Average reversing speed and settling time assumed when checking there is time to back up.</summary>
+        private const float ReverseAverageSpeed = 600f;
+        private const float ReverseSettle = 0.1f;
+        /// <summary>Back onto a point the car has overshot instead of circling round to it (switch for A/B).</summary>
+        public static bool ReverseOntoPoint = false;
 
         /// <summary>Optional per-tick diagnostics sink for mechanics debugging (null in play).</summary>
         public static Action<string> Diagnostics;
@@ -117,6 +127,17 @@ namespace RedUtils
 
             float distance = (Point - car.Location).Flatten().Length();
             float takeoffIn = remaining - Plan.JumpTime;
+            // A car that overshot its point with time in hand backs onto it: turning round to it
+            // at speed circles far past it. Reverse throttle also brakes any forward speed first.
+            Vec3 local = car.Local(Point - car.Location);
+            if (ReverseOntoPoint && distance > SettledRadius && distance < ReverseReach && local.x < -MathF.Abs(local.y) &&
+                takeoffIn > MathF.Max(speed, 0f) / RL.BrakeAccel + distance / ReverseAverageSpeed + ReverseSettle)
+            {
+                bot.AimAt(Point, backwards: true);
+                bot.Throttle(MathF.Min(ReverseMaxSpeed, distance * ReverseGain), true);
+                Status = "reversing";
+                return;
+            }
             var park = new DriveTarget(Point, Vec3.Zero) { ArrivalSpeed = 0f };
             bool parked = distance <= SettledRadius && MathF.Abs(speed) < ParkedSpeed;
             if (parked || (distance > SettledRadius && ParkEta(car, park, takeoffIn - ParkSettle) + ParkSettle <= takeoffIn))
