@@ -14,7 +14,7 @@
     <WriteLinesToFile
       File="Util\VersionInfo.cs"
       Lines='namespace RLBot.Util%3b public static class VersionInfo { public const string PackageVersion = "$(PackageVersion)"%3b }'
-      Overwrite="true"/>
+      Overwrite="true" WriteOnlyWhenDifferent="true"/>
   </Target>
 
   <ItemGroup>
@@ -26,11 +26,17 @@
     <PackageReference Include="Google.FlatBuffers" Version="25.2.10" />
   </ItemGroup>
 
-  <Target Name="GenerateFlatBuffersWindows" BeforeTargets="PreBuildEvent" Condition=" '$(OS)' == 'Windows_NT' ">
+  <ItemGroup>
+    <FlatBuffersSchema Include="..\flatbuffers-schema\schema\*.fbs" />
+  </ItemGroup>
+
+  <Target Name="GenerateFlatBuffersWindows" BeforeTargets="PreBuildEvent" Condition=" '$(OS)' == 'Windows_NT' "
+          Inputs="@(FlatBuffersSchema);..\generate-flatbuffers.bat;..\flatbuffers-schema\binaries\flatc.exe" Outputs="Flat\Flat.cs">
     <Exec Command="call ../generate-flatbuffers.bat" />
   </Target>
 
-  <Target Name="GenerateFlatBuffersLinux" BeforeTargets="PreBuildEvent" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))'">
+  <Target Name="GenerateFlatBuffersLinux" BeforeTargets="PreBuildEvent" Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))'"
+          Inputs="@(FlatBuffersSchema);../generate-flatbuffers.sh;../flatbuffers-schema/binaries/flatc" Outputs="Flat/Flat.cs">
     <Exec Command="../generate-flatbuffers.sh" />
   </Target>
 </Project>

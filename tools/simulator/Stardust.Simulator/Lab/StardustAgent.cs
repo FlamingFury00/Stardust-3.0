@@ -1,3 +1,4 @@
+using Google.FlatBuffers;
 using RLBot.Flat;
 using Stardust.Simulator.Match;
 using Stardust.Simulator.Scenarios;
@@ -33,15 +34,43 @@ public sealed class LabBot : global::Bot.Stardust
 /// in place of an RLBot connection. RedUtils keeps its world state in statics, so only one
 /// in-process bot can run at a time.
 /// </summary>
-public sealed class StardustAgent : ScriptedAgent
+public sealed class StardustAgent : ScriptedAgent, IAgent
 {
     private static readonly Type ManagerBot = typeof(RLBot.Manager.Bot);
     private FieldInfoT? fieldInfo;
     private MatchConfigurationT? matchConfig;
     private bool bound;
+    private readonly List<MatchCommT> outgoing = new();
+    private readonly List<MatchCommT> incoming = new();
 
     public LabBot Bot { get; } = new();
     public override string Description => "stardust (in-process)";
+
+    public StardustAgent() => Bot.MatchCommSink = outgoing.Add;
+
+    void IAgent.Send(Participant self, byte[] framedPrediction, byte[] framedPacket, GamePacketT packet,
+        BallPredictionT prediction, IReadOnlyList<byte[]> framedComms)
+    {
+        incoming.Clear();
+        foreach (byte[] frame in framedComms)
+        {
+            if (frame == null || frame.Length < 2 || ((frame[0] << 8) | frame[1]) != frame.Length - 2)
+                throw new InvalidDataException("Invalid simulator match-communication frame.");
+            CorePacketT message = CorePacket.GetRootAsCorePacket(new ByteBuffer(frame, 2)).UnPack();
+            if (message.Message?.Type == CoreMessage.MatchComm && message.Message.AsMatchComm() is { } comm)
+                incoming.Add(comm);
+        }
+        base.Send(self, framedPrediction, framedPacket, packet, prediction, framedComms);
+    }
+
+    ControllerStateT IAgent.Receive(Participant self, List<MatchCommT> outgoingComms)
+    {
+        outgoing.Clear();
+        ControllerStateT controls = base.Receive(self, outgoingComms);
+        outgoingComms.AddRange(outgoing);
+        outgoing.Clear();
+        return controls;
+    }
 
     /// <summary>Supplies the session's field and match configuration, as the RLBot core would at startup.</summary>
     public void Attach(MatchSession session)
@@ -67,6 +96,10 @@ public sealed class StardustAgent : ScriptedAgent
             bound = true;
         }
         Set("BallPrediction", prediction);
+        foreach (MatchCommT comm in incoming)
+            Bot.HandleMatchComm((int)comm.Index, (int)comm.Team,
+                comm.Content ?? new List<byte>(), comm.Display, comm.TeamOnly);
+        incoming.Clear();
         return Bot.GetOutput(packet);
     }
 

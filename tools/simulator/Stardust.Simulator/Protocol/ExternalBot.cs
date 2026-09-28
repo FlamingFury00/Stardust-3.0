@@ -3,15 +3,37 @@ using System.Net;
 using System.Net.Sockets;
 using RLBot.Flat;
 using Stardust.Simulator.Match;
+using Tomlyn;
+using Tomlyn.Model;
 
 namespace Stardust.Simulator.Protocol;
 
 /// <summary>How to start a bot process: program, arguments and working directory.</summary>
 public sealed record BotBuild(string Label, string Program, IReadOnlyList<string> Arguments, string WorkingDirectory, string Source)
 {
+    public ProcessStartInfo CreateStartInfo()
+    {
+        var start = new ProcessStartInfo(Program)
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            WorkingDirectory = WorkingDirectory,
+        };
+        if (OperatingSystem.IsWindows() && Arguments.Count == 4 && Arguments[2] == "/c" &&
+            Path.GetFileName(Program).Equals("cmd.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            // cmd parses shell quotes, not the C runtime backslash escaping used by ArgumentList.
+            // /s removes this outer pair while preserving a quoted executable or argument inside.
+            start.Arguments = "/d /s /c \"" + Arguments[3] + "\"";
+        }
+        else
+            foreach (string argument in Arguments) start.ArgumentList.Add(argument);
+        return start;
+    }
+
     /// <summary>
     /// Accepts a .NET build directory (containing Bot.dll), a path to an entry assembly, or an RLBot v5
-    /// bot config (<c>*.toml</c>), which is started with its Linux run command from its root directory.
+    /// bot config (<c>*.toml</c>), started with the host platform's command from its root directory.
     /// </summary>
     public static BotBuild FromPath(string label, string path)
     {
@@ -27,48 +49,36 @@ public sealed record BotBuild(string Label, string Program, IReadOnlyList<string
     }
 
     /// <summary>
-    /// Reads <c>[settings]</c> of a bot config. <c>run_command_linux</c> is used when present; otherwise the
-    /// Windows <c>run_command</c> is translated (path separators, venv <c>Scripts</c> to <c>bin</c>, no <c>.exe</c>).
+    /// Reads the platform-specific command. On Unix, a Windows-only command retains the existing
+    /// path translation fallback; Windows commands and executable extensions are preserved.
     /// </summary>
     public static BotBuild FromConfig(string label, string configPath)
     {
         if (!File.Exists(configPath))
             throw new FileNotFoundException($"Bot config not found: {configPath}");
         Dictionary<string, string> settings = ReadTomlSection(configPath, "settings");
-        string command = settings.GetValueOrDefault("run_command_linux") ?? settings.GetValueOrDefault("run_command")
+        bool windows = OperatingSystem.IsWindows();
+        string command = (windows ? settings.GetValueOrDefault("run_command") :
+            settings.GetValueOrDefault("run_command_linux") ?? settings.GetValueOrDefault("run_command"))
             ?? throw new InvalidDataException($"{configPath} has no run_command.");
-        if (!settings.ContainsKey("run_command_linux"))
+        if (!windows && !settings.ContainsKey("run_command_linux"))
             command = command.Replace('\\', '/').Replace("/Scripts/", "/bin/").Replace(".exe", "");
         string root = settings.GetValueOrDefault("root_dir") ?? "";
         string directory = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(configPath)!, root));
-        return new BotBuild(label, "/bin/sh", ["-c", command], directory, Path.GetFileName(configPath));
+        return windows
+            ? new BotBuild(label, Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe",
+                ["/d", "/s", "/c", command], directory, Path.GetFileName(configPath))
+            : new BotBuild(label, "/bin/sh", ["-c", command], directory, Path.GetFileName(configPath));
     }
 
-    /// <summary>String values of one table of a TOML file (enough for RLBot bot configs).</summary>
+    /// <summary>Parse TOML literal/escaped strings with the same parser used by RLBot.</summary>
     private static Dictionary<string, string> ReadTomlSection(string path, string section)
     {
         var values = new Dictionary<string, string>();
-        string current = "";
-        foreach (string raw in File.ReadLines(path))
-        {
-            string line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith('#')) continue;
-            if (line.StartsWith('['))
-            {
-                current = line.Trim('[', ']', ' ');
-                continue;
-            }
-            int equals = line.IndexOf('=');
-            if (current != section || equals < 0) continue;
-            string key = line[..equals].Trim();
-            string value = line[(equals + 1)..].Trim();
-            if (value.Length >= 2 && value[0] == '"')
-            {
-                int end = value.LastIndexOf('"');
-                value = value[1..end].Replace("\\\\", "\\").Replace("\\\"", "\"");
-            }
-            values[key] = value;
-        }
+        TomlTable model = Toml.ToModel(File.ReadAllText(path));
+        if (model.TryGetValue(section, out object? table) && table is TomlTable settings)
+            foreach (var (key, value) in settings)
+                if (value is string text) values[key] = text;
         return values;
     }
 }
@@ -175,15 +185,7 @@ public static class BotLauncher
             foreach (Request request in requests)
             {
                 string agentId = $"stardust-sim/{port}/{request.Index}";
-                var start = new ProcessStartInfo(request.Build.Program)
-                {
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    WorkingDirectory = request.Build.WorkingDirectory,
-                };
-                foreach (string argument in request.Build.Arguments)
-                    start.ArgumentList.Add(argument);
+                var start = request.Build.CreateStartInfo();
                 start.Environment["RLBOT_AGENT_ID"] = agentId;
                 start.Environment["RLBOT_SERVER_PORT"] = port.ToString();
                 // Production builds log telemetry to files by default; keep simulated series quiet

@@ -44,9 +44,11 @@ switch (command)
             Parallel = arguments.GetInt("parallel", Math.Max(1, Environment.ProcessorCount / 2)),
             MatchSeconds = arguments.GetFloat("seconds", 300f),
             OutputDirectory = arguments.Get("out", "sim-tournament"),
+            RecordReplays = arguments.Has("replays"),
         };
-        Console.WriteLine(Tournament.Run(options));
-        return 0;
+        var result = Tournament.Run(options);
+        Console.WriteLine(result.Report);
+        return result.FailedGames == 0 ? 0 : 2;
     }
     case "scenarios":
     {
@@ -107,12 +109,12 @@ switch (command)
                     [--out sim-results] [--replays]
 
               tournament --roster <file: one "label = bot" per line> [--size 1|2|3] [--games 8]
-                    [--seed 1] [--parallel N] [--seconds 300] [--out sim-tournament]
+                    [--seed 1] [--parallel N] [--seconds 300] [--out sim-tournament] [--replays]
                     Round robin of paired series; ranks bots by Bradley-Terry Elo. Finished pairs are
-                    reused, so a tournament can be resumed or extended.
+                    reused only when build fingerprints and match settings agree. Failed games exit non-zero.
 
               A bot is a .NET build directory (Bot.dll), an entry assembly, or an RLBot v5 bot
-              config (*.toml), which starts with its Linux run command.
+              config (*.toml), which starts with the host platform's run command.
 
               scenarios --a <bot build dir> [--b <bot build dir>] [--opponent <bot build dir>]
                     [--suite all|kickoff|open-net|vs-keeper|aerial|save|recovery] [--episodes 40]

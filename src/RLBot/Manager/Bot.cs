@@ -18,6 +18,12 @@ public abstract class Bot
     public FieldInfoT FieldInfo { get; private set; } = new();
     public BallPredictionT BallPrediction { get; private set; } = new();
 
+    /// <summary>
+    /// Optional host transport for match communication. An in-process simulator can relay the
+    /// same messages without opening a socket; null uses the ordinary RLBot connection.
+    /// </summary>
+    public Action<MatchCommT>? MatchCommSink { get; set; }
+
     public readonly Renderer Renderer;
 
     private bool _initializedBot = false;
@@ -133,16 +139,18 @@ public abstract class Bot
         bool teamOnly = false
     )
     {
-        _gameInterface.SendMatchComm(
-            new MatchCommT
-            {
-                Index = (uint)Index,
-                Team = (uint)Team,
-                Content = Content,
-                Display = Display,
-                TeamOnly = teamOnly,
-            }
-        );
+        var message = new MatchCommT
+        {
+            Index = (uint)Index,
+            Team = (uint)Team,
+            Content = Content ?? new List<byte>(),
+            Display = Display,
+            TeamOnly = teamOnly,
+        };
+        if (MatchCommSink is { } sink)
+            sink(message);
+        else
+            _gameInterface.SendMatchComm(message);
     }
 
     private void HandleBallPrediction(BallPredictionT ballPrediction) =>

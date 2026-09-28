@@ -698,7 +698,11 @@ internal static class DefenseRegression
                 Set(typeof(Game), nameof(Game.Time), null, 10.11f);
                 hook.Invoke(bot, null);
 
-                string[] lines = File.ReadAllLines(path);
+                // Telemetry remains open for writing. Windows requires the reader to share that
+                // access too, even though the writer itself allows concurrent readers.
+                using var reader = new StreamReader(new FileStream(path, FileMode.Open,
+                    FileAccess.Read, FileShare.ReadWrite));
+                string[] lines = reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
                 Check(lines.Length == 2, $"10 Hz telemetry wrote {lines.Length} lines for 0.11 s");
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);

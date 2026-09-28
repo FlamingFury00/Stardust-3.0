@@ -27,6 +27,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>rsbridge.dll</Link>
     </None>
+    <None Include="..\native\build\$(Configuration)\rsbridge.dll" Condition="Exists('..\native\build\$(Configuration)\rsbridge.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>rsbridge.dll</Link>
+    </None>
   </ItemGroup>
 
 </Project>

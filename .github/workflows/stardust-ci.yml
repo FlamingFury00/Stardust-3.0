@@ -44,6 +44,8 @@ jobs:
         run: dotnet run --project tests/Stardust.BoostGoal/Stardust.BoostGoal.csproj --configuration Release
       - name: Run possession mechanics physics regressions
         run: dotnet run --project tests/Stardust.MechanicsPhysics/Stardust.MechanicsPhysics.csproj --configuration Release
+      - name: Check simulator launch, cache identity and in-process communication
+        run: dotnet run --project tests/Stardust.SimulatorChecks/Stardust.SimulatorChecks.csproj --configuration Release
   physics-models:
     # The bot plans with analytic physics models (src/RedUtils/Physics, src/RedUtils/Planning).
     # Each is checked against RocketSim ground truth; the arena is generated from published

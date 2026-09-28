@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using Stardust.Simulator.Match;
 using Stardust.Simulator.Protocol;
 
@@ -15,6 +16,7 @@ public sealed class TournamentOptions
     public int Parallel { get; init; } = 2;
     public float MatchSeconds { get; init; } = 300f;
     public string OutputDirectory { get; init; } = "sim-tournament";
+    public bool RecordReplays { get; init; }
 }
 
 /// <summary>
@@ -25,6 +27,60 @@ public sealed class TournamentOptions
 /// </summary>
 public static class Tournament
 {
+    public sealed record Result(string Report, int FailedGames);
+
+    // Cache identity includes the bot code, models and configuration, not just its roster label.
+    public static string BuildFingerprint(BotBuild bot)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        void Add(string text) => hash.AppendData(Encoding.UTF8.GetBytes(text + "\n"));
+        Add(bot.Program);
+        foreach (string argument in bot.Arguments) Add(argument);
+        Add(bot.WorkingDirectory);
+        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { ".dll", ".exe", ".so", ".dylib", ".py", ".toml", ".json", ".pt", ".onnx", ".bin", ".pkl" };
+        foreach (string file in Directory.EnumerateFiles(bot.WorkingDirectory, "*", SearchOption.AllDirectories)
+                     .Where(f => extensions.Contains(Path.GetExtension(f)) || Path.GetExtension(f).Length == 0)
+                     .OrderBy(f => f, StringComparer.Ordinal))
+        {
+            string relative = Path.GetRelativePath(bot.WorkingDirectory, file);
+            if (relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(p => p is "logs" or "log" or ".git" or "__pycache__")) continue;
+            Add(relative);
+            using var stream = File.OpenRead(file);
+            hash.AppendData(SHA256.HashData(stream));
+        }
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    public static string ExperimentFingerprint()
+    {
+        string simulator = BuildFingerprint(new BotBuild("simulator", "dotnet",
+            [typeof(Tournament).Assembly.Location], AppContext.BaseDirectory, "simulator"));
+        var settings = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
+            .Where(e => e.Key is string key && key.StartsWith("STARDUST_", StringComparison.Ordinal))
+            .OrderBy(e => e.Key.ToString(), StringComparer.Ordinal)
+            .Select(e => $"{e.Key}={e.Value}");
+        string native = Environment.GetEnvironmentVariable("STARDUST_RSBRIDGE") ?? "";
+        string nativeHash = "";
+        if (File.Exists(native))
+        {
+            using var stream = File.OpenRead(native);
+            nativeHash = Convert.ToHexString(SHA256.HashData(stream));
+        }
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            simulator + "\n" + nativeHash + "\n" + string.Join("\n", settings))));
+    }
+
+    public sealed record CacheKey(string A, string B, int Games, int TeamSize, int Seed, float Seconds,
+        bool Replays = false, string Experiment = "", string ALabel = "a", string BLabel = "b");
+    private sealed record CachedSeries(CacheKey Key, List<MatchResult> Results);
+
+    public static bool CanReuse(CacheKey expected, CacheKey? actual, IReadOnlyList<MatchResult> results) =>
+        expected == actual && results.Count == expected.Games && results.Select((r, i) =>
+            r.Error == null && r.Seed == expected.Seed + i / 2 && r.TeamSize == expected.TeamSize &&
+            r.Blue == (i % 2 == 0 ? expected.ALabel : expected.BLabel) &&
+            r.Orange == (i % 2 == 0 ? expected.BLabel : expected.ALabel)).All(valid => valid);
     /// <summary>Reads a roster: one <c>label = path</c> per line (build directory, entry assembly or bot config).</summary>
     public static List<BotBuild> ReadRoster(string path)
     {
@@ -45,10 +101,15 @@ public static class Tournament
         return bots;
     }
 
-    public static string Run(TournamentOptions options)
+    public static Result Run(TournamentOptions options)
     {
+        if (options.Bots.Count < 2 || options.GamesPerPair < 2 || options.GamesPerPair % 2 != 0 ||
+            options.TeamSize is < 1 or > 3 || !float.IsFinite(options.MatchSeconds) || options.MatchSeconds <= 0)
+            throw new ArgumentException("Tournament needs at least two bots, a positive even game count, size 1–3 and positive duration.");
         Directory.CreateDirectory(options.OutputDirectory);
         var all = new List<MatchResult>();
+        var fingerprints = options.Bots.Select(BuildFingerprint).ToArray();
+        string experiment = ExperimentFingerprint();
         int pair = 0;
         for (int i = 0; i < options.Bots.Count; i++)
         for (int j = i + 1; j < options.Bots.Count; j++, pair++)
@@ -56,10 +117,22 @@ public static class Tournament
             BotBuild a = options.Bots[i], b = options.Bots[j];
             string directory = Path.Combine(options.OutputDirectory, $"{a.Label}-vs-{b.Label}");
             string saved = Path.Combine(directory, "results.json");
-            List<MatchResult> results;
-            if (File.Exists(saved))
+            string cache = Path.Combine(directory, "cache.json");
+            var key = new CacheKey(fingerprints[i], fingerprints[j], options.GamesPerPair,
+                options.TeamSize, options.Seed + 1000 * pair, options.MatchSeconds, options.RecordReplays,
+                experiment, a.Label, b.Label);
+            List<MatchResult>? results = null;
+            if (File.Exists(cache))
             {
-                results = JsonSerializer.Deserialize<List<MatchResult>>(File.ReadAllText(saved), Series.JsonOptions)!;
+                try
+                {
+                    var cached = JsonSerializer.Deserialize<CachedSeries>(File.ReadAllText(cache), Series.JsonOptions);
+                    if (cached?.Results != null && CanReuse(key, cached.Key, cached.Results)) results = cached.Results;
+                }
+                catch (JsonException) { } // Interrupted writes are rerun, never counted as results.
+            }
+            if (results != null)
+            {
                 Console.WriteLine($"{a.Label} vs {b.Label}: reusing {results.Count} finished games");
             }
             else
@@ -70,18 +143,23 @@ public static class Tournament
                     A = a, B = b, TeamSize = options.TeamSize, Games = options.GamesPerPair,
                     Seed = options.Seed + 1000 * pair, Parallel = options.Parallel, MatchSeconds = options.MatchSeconds,
                     OutputDirectory = directory,
+                    RecordReplays = options.RecordReplays,
                 };
                 results = Series.Run(series);
                 File.WriteAllText(Path.Combine(directory, "report.md"), Series.Report(series, results));
                 if (results.All(r => r.Error == null))
+                {
                     File.WriteAllText(saved, JsonSerializer.Serialize(results, Series.JsonOptions));
+                    File.WriteAllText(cache + ".tmp", JsonSerializer.Serialize(new CachedSeries(key, results), Series.JsonOptions));
+                    File.Move(cache + ".tmp", cache, overwrite: true);
+                }
             }
             all.AddRange(results);
         }
 
         string report = Report(options, all);
         File.WriteAllText(Path.Combine(options.OutputDirectory, "tournament.md"), report);
-        return report;
+        return new Result(report, all.Count(r => r.Error != null));
     }
 
     public static string Report(TournamentOptions options, IReadOnlyList<MatchResult> results)
