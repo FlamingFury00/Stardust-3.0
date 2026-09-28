@@ -86,6 +86,7 @@ namespace Bot
         private readonly float started = Game.Time;
         private readonly HoodCarry carry;
         private float stableSince = float.NaN;
+        private float flickReadySince = float.NaN;
         public bool Finished { get; private set; }
         public bool Interruptible => true;
         public float ClaimTime => Game.Time + 0.25f;
@@ -117,7 +118,9 @@ namespace Bot
                 bot.TheirGoal.Location, bot.OurGoal.Location);
             bool carried = PossessionControl.HasControlledPossession(car, Ball.MainBall);
             stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
-            if (carried && Game.Time - stableSince >= 0.06f &&
+            bool flickReady = PossessionControl.CanPrepareFlick(car, Ball.MainBall);
+            flickReadySince = flickReady ? (float.IsFinite(flickReadySince) ? flickReadySince : Game.Time) : float.NaN;
+            if (flickReady && Game.Time - flickReadySince >= 0.06f &&
                 PossessionControl.PlanFlick(car, Ball.MainBall, lane, bot.LivingOpponents,
                     bot.OurGoal.Location, bot.TheirGoal.Location, out Vec3 aim) is FlickKind kind)
             {
@@ -138,7 +141,7 @@ namespace Bot
             PossessionControl.Challenge challenge = PossessionControl.MostImminent(Ball.MainBall, lane, bot.LivingOpponents);
             carry.SteerToward(car, Ball.MainBall, lane);
             if (challenge.Committed)
-                carry.Spot = new Vec3(FlickRecipe.For(FlickKind.Power).Spot, carry.Spot.y, 0);
+                carry.Spot = new Vec3(FlickRecipe.For(FlickKind.Power).Spot, 0, 0);
 
             // Stay on the ball under pressure. The pressure response is the flick above, not abandoning
             // possession and driving back into a shadow lane.

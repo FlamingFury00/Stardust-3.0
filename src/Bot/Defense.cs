@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using RedUtils;
 using RedUtils.Math;
 
@@ -383,6 +384,75 @@ namespace Bot
                 allowedDeficit -= 0.08f;
 
             return frame.MyEta <= frame.OpponentEta + allowedDeficit;
+        }
+
+        /// <summary>
+        /// Meeting a carrier is not a race to an untouched ball: its owner already has contact.
+        /// A covered first defender can force a steerable ground challenge; an uncovered defender
+        /// needs a much shorter, aligned interception. Loose balls still use the ordinary race gate.
+        /// </summary>
+        public static bool TryChallengeCarrier(TacticalFrame frame, Car car, Ball ball,
+            IEnumerable<Car> opponents, Vec3 goal, out Vec3 target)
+        {
+            target = ball?.location ?? Vec3.Zero;
+            if (frame == null || car == null || ball == null || opponents == null ||
+                frame.TeamRank != 0 || car.IsDemolished || !car.IsGrounded || car.Up.z < 0.9f ||
+                !ControlMath.Finite(ball.velocity) || !ControlMath.Finite(car.Velocity) ||
+                !ControlMath.Finite(car.Forward) || !ControlMath.Finite(car.Up) ||
+                ball.location.z > car.Location.z + GroundCatch.RoofRest(car) + 15f ||
+                MathF.Abs(ball.velocity.z) > 120f ||
+                !IsGoalSide(car.Location, ball.location, goal, 80f))
+                return false;
+
+            Vec3 goalward = ControlMath.FlatUnit(goal - ball.location, Vec3.Y);
+            if (ball.velocity.Dot(goalward) < -200f)
+                return false;
+            float distance = car.Location.FlatDist(ball.location);
+            bool covered = frame.TeamCount > 1 && frame.HasCover;
+            if (distance > (covered ? 1500f : 800f))
+                return false;
+
+            bool carrier = false;
+            foreach (Car opponent in opponents)
+            {
+                if (opponent == null || opponent.IsDemolished || !opponent.IsGrounded ||
+                    !ControlMath.Finite(opponent.Location) || !ControlMath.Finite(opponent.Velocity) ||
+                    !ControlMath.Finite(opponent.Forward))
+                    continue;
+                Vec3 local = opponent.Local(ball.location - opponent.Location);
+                if (local.x < -60f || local.x > 320f || MathF.Abs(local.y) > 150f ||
+                    local.z < 40f || local.z > GroundCatch.RoofRest(opponent) + 15f || local.Length() > 360f ||
+                    (opponent.Velocity - ball.velocity).Length() > 650f ||
+                    opponent.Forward.FlatNorm().Dot(goalward) < 0.35f)
+                    continue;
+                carrier = true;
+                break;
+            }
+            if (!carrier)
+                return false;
+
+            float horizon = covered ? 0.95f : 0.60f;
+            for (float t = 0.10f; t <= horizon; t += 0.05f)
+            {
+                // Continuous ground contact keeps the carrier's ball moving with the car, unlike
+                // the free-flight prediction which drops a carried ball through its roof.
+                Vec3 contact = ball.location + ball.velocity.Flatten() * t;
+                if (!IsGoalSide(car.Location, contact, goal, 50f) ||
+                    MathF.Abs(contact.x) > Field.Width * 0.5f - 180f || MathF.Abs(contact.y) > 4950f)
+                    continue;
+                Vec3 direction = ControlMath.FlatUnit(contact - car.Location, car.Forward);
+                float alignment = car.Forward.FlatNorm().Dot(direction);
+                if (alignment < (covered ? 0.55f : 0.80f))
+                    continue;
+                float travel = DrivePhysics.TravelTime(MathF.Max(0f, car.Location.FlatDist(contact) - 150f),
+                    MathF.Max(0f, car.Velocity.Dot(direction)), car.Boost);
+                float turn = MathF.Acos(System.Math.Clamp(alignment, -1f, 1f)) * 0.25f;
+                if (travel + turn > t)
+                    continue;
+                target = Field.LimitToNearestSurface(contact);
+                return true;
+            }
+            return false;
         }
 
         /// <summary>

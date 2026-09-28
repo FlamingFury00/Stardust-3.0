@@ -151,7 +151,9 @@ namespace Bot
             Assess(pressureTime);
             nextPlan = Game.Time + (underPressure || emergency || counterDanger ? 0.05f : 0.12f);
 
-            RawCanChallenge = Defense.CanChallenge(
+            bool challengeCarrier = Defense.TryChallengeCarrier(Situation, Me, Ball.MainBall,
+                LivingOpponents, OurGoal.Location, out Vec3 carrierContact);
+            RawCanChallenge = challengeCarrier || Defense.CanChallenge(
                 Situation, Me, Ball.Location, OurGoal.Location);
             bool challengeSafe = Defense.CanContinueChallenge(
                 Situation, Me, Ball.Location, OurGoal.Location);
@@ -164,6 +166,20 @@ namespace Bot
 
             if (emergency && PlannedSave(threat))
                 return;
+
+            bool controlledPossession =
+                PossessionControl.HasControlledPossession(Me, Ball.MainBall) ||
+                PossessionControl.CanKeepGroundControl(Situation, Me, Ball.MainBall, OurGoal.Location) ||
+                PossessionControl.HasAirControl(Me, Ball.MainBall);
+
+            // A distant ball-only goal projection ignores the carrier's next touch. Force its
+            // decision while covered and in reach instead of retreating until it takes a shot.
+            if (!emergency && challengeCarrier && !controlledPossession)
+            {
+                DriveTo(carrierContact, Car.MaxSpeed, false, urgentBoost: true);
+                SetDecision("attack / challenge carrier");
+                return;
+            }
 
             if (emergency || counterDanger)
             {
@@ -269,9 +285,6 @@ namespace Bot
                 return;
             }
 
-            bool controlledPossession =
-                PossessionControl.HasControlledPossession(Me, Ball.MainBall) ||
-                PossessionControl.HasAirControl(Me, Ball.MainBall);
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
@@ -449,7 +462,7 @@ namespace Bot
                 return;
             }
 
-            DefensiveRole role = Situation.TeamCount == 1
+            DefensiveRole role = Situation.TeamRank == 0
                 ? DefensiveRole.Shadow
                 : Defense.ShouldAnchor(Situation)
                     ? DefensiveRole.Anchor
@@ -614,7 +627,8 @@ namespace Bot
             }
         }
 
-        private void DriveTo(Vec3 destination, float speed, bool allowDodges, bool allowHandbrake = true)
+        private void DriveTo(Vec3 destination, float speed, bool allowDodges, bool allowHandbrake = true,
+            bool urgentBoost = false)
         {
             if (!ControlMath.Finite(destination))
                 destination = OurGoal.Location;
@@ -625,11 +639,11 @@ namespace Bot
                 drive.TargetSpeed = speed;
                 drive.AllowDodges = allowDodges;
                 drive.AllowHandbrake = allowHandbrake;
-                drive.WasteBoost = false;
+                drive.WasteBoost = urgentBoost;
             }
             else
             {
-                Action = new Drive(Me, destination, speed, allowDodges, wasteBoost: false)
+                Action = new Drive(Me, destination, speed, allowDodges, wasteBoost: urgentBoost)
                 {
                     AllowHandbrake = allowHandbrake
                 };

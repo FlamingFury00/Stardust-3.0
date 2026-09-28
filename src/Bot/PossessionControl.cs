@@ -47,6 +47,45 @@ namespace Bot
         public static bool HasControlledPossession(Car car, Ball ball) =>
             RoofControlQuality(car, ball) >= 0.48f;
 
+        /// <summary>
+        /// A settled ball within the roof's working area can be prepared for a flick. The quality
+        /// score is centred on the carry spot, so using it here rejects the power flick's intended
+        /// forward setup. The flick executor handles the subsequent launch centring.
+        /// </summary>
+        public static bool CanPrepareFlick(Car car, Ball ball)
+        {
+            if (car == null || ball == null || car.IsDemolished || !car.IsGrounded || car.Up.z < 0.9f ||
+                !ControlMath.Finite(ball.location) || !ControlMath.Finite(ball.velocity) ||
+                !ControlMath.Finite(car.Location) || !ControlMath.Finite(car.Velocity)) return false;
+            Vec3 local = car.Local(ball.location - car.Location);
+            Vec3 relative = car.Local(ball.velocity - car.Velocity);
+            float rest = GroundCatch.RoofRest(car);
+            return local.x > -20f && local.x < 75f && MathF.Abs(local.y) < 45f &&
+                local.z > rest - 12f && local.z < rest + 35f &&
+                MathF.Abs(relative.z) < 160f && relative.Flatten().Length() < 300f;
+        }
+
+        /// <summary>
+        /// A cushion or sideways touch need not be a settled roof carry to remain ours. Keep the
+        /// first car on a nearby, speed-matched ball while it centres it, including the small
+        /// goal-side error of a ball beside the roof. This does not claim a ball merely passing by.
+        /// </summary>
+        public static bool CanKeepGroundControl(TacticalFrame frame, Car car, Ball ball, Vec3 ownGoal)
+        {
+            if (frame == null || car == null || ball == null || car.IsDemolished ||
+                !car.IsGrounded || car.Up.z < 0.9f || frame.TeamRank != 0 ||
+                !float.IsFinite(frame.FreeTime) || frame.FreeTime < -0.10f ||
+                !ControlMath.Finite(ball.velocity) ||
+                !ControlMath.Finite(car.Velocity) ||
+                !Defense.IsGoalSide(car.Location, ball.location, ownGoal, -80f))
+                return false;
+
+            Vec3 local = car.Local(ball.location - car.Location);
+            return ball.location.z < 300f && local.z > 45f && local.z < 230f &&
+                local.x > -105f && local.x < 220f && MathF.Abs(local.y) < 150f &&
+                local.Length() < 300f && (ball.velocity - car.Velocity).Length() < 600f;
+        }
+
         public static bool HasAirControl(Car car, Ball ball)
         {
             if (car == null || ball == null || car.IsGrounded ||
@@ -70,6 +109,8 @@ namespace Bot
                 return false;
 
             if (HasControlledPossession(car, ball))
+                return true;
+            if (CanKeepGroundControl(frame, car, ball, ownGoal))
                 return true;
             if (HasAirControl(car, ball) && (car.Boost > 0f || car.Location.Dist(ball.location) < 230f))
                 return true;
@@ -95,6 +136,9 @@ namespace Bot
                 return false;
 
             if (HasControlledPossession(car, ball))
+                return true;
+
+            if (CanKeepGroundControl(frame, car, ball, ownGoal))
                 return true;
 
             float side = ownGoal.y < 0 ? -1f : 1f;
@@ -249,7 +293,7 @@ namespace Bot
             Vec3 ownGoal, Vec3 theirGoal, out Vec3 aim)
         {
             aim = ControlMath.FlatUnit(lane, car.Forward);
-            if (!HasControlledPossession(car, ball) || car.Velocity.Dot(car.Forward) < 250f || !Safe(car, ball, aim, ownGoal))
+            if (!CanPrepareFlick(car, ball) || car.Velocity.Dot(car.Forward) < 250f || !Safe(car, ball, aim, ownGoal))
                 return null;
 
             Challenge challenge = MostImminent(ball, aim, opponents);

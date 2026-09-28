@@ -132,6 +132,20 @@ Test("ground dribble: a committed challenger triggers the flick", () =>
         $"a committed challenger did not trigger a flick; action is {bot.Action?.GetType().Name ?? "null"}");
 });
 
+Test("flick preparation: a forward settled ball remains eligible while a bouncing ball does not", () =>
+{
+    var car = new Car { IsGrounded = true, Location = new Vec3(0, 0, 17),
+        Velocity = new Vec3(1000, 0, 0), Orientation = new Mat3x3(Vec3.Zero) };
+    var ball = new Ball(car.Location + new Vec3(50, 35, GroundCatch.RoofRest(car)), car.Velocity);
+    Check(!PossessionControl.HasControlledPossession(car, ball), "fixture does not exercise the old readiness rejection");
+    Check(PossessionControl.CanPrepareFlick(car, ball), "forward flick setup revoked its own eligibility");
+    ball.velocity.z = 400;
+    Check(!PossessionControl.CanPrepareFlick(car, ball), "an unsettled bouncing ball was treated as ready");
+    ball.velocity = car.Velocity;
+    ball.location.y = 100;
+    Check(!PossessionControl.CanPrepareFlick(car, ball), "a ball off the roof was treated as ready");
+});
+
 Console.WriteLine($"MECHANICS PHYSICS RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
 
