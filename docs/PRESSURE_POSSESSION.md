@@ -141,6 +141,11 @@ Final frozen-build tournament matchups, 2v2, six side-swapped 120 s games per pa
 | Nexto | 0–6 | 5–49 |
 | Party Cannon | 2–4 | 13–15 |
 
+The complete round robin finished **60/60 games with zero errors**. Nexto placed first (24–0),
+Necto second (17–7), the baseline third (9–15), Party Cannon fourth (7–17), and the candidate
+fifth (3–21). The candidate therefore fails the tournament performance bar; it is not promoted
+as an overall stronger release. This negative result is retained alongside the targeted gains.
+
 These results do **not** support a professional-level claim. The learned opponents remain
 clearly stronger. Boost economy, uncovered 50/50 outcomes, transitions from shadowing into
 challenges, and flick setup timeouts remain priorities. A blind comparison to human professionals
@@ -179,6 +184,8 @@ The build passes without warnings. All eleven deterministic regression programs 
 the new launcher/cache/communication checks; all twelve physics-check groups pass at 300 trials
 where applicable. Schema generation is incremental and the Windows script avoids user shell
 profiles, keeping repeated regression builds from rewriting the tracked generated source.
+These are local Windows results. The Windows/Linux CI matrix is configured; remote CI and a
+live Rocket League client validation remain pending for this stacked draft.
 
 All results and replays from this session are retained under the ignored `artifacts/` directory;
 the original user telemetry remains in its original log directory.
