@@ -285,6 +285,9 @@ public class Interface
             _client.Client.Blocking = blocking;
 
             CorePacketT packet = _socketSpecReader!.ReadOne().UnPack();
+            // Message handlers may send replies. Nonblocking reads must not leave writes in
+            // nonblocking mode, where ordinary backpressure can drop an input or match claim.
+            _client.Client.Blocking = true;
 
             try
             {
@@ -304,12 +307,19 @@ public class Interface
         }
         catch (Exception e)
         {
-            if (e.InnerException is SocketException)
+            if (e is IOException { InnerException: SocketException { SocketErrorCode: SocketError.WouldBlock } } ||
+                e is SocketException { SocketErrorCode: SocketError.WouldBlock })
             {
                 return MsgHandlingResult.NoIncomingMsgs;
             }
             _logger.LogError("SocketRelay disconnected unexpectedly! {}", e);
             return MsgHandlingResult.Terminated;
+        }
+        finally
+        {
+            // A user callback may explicitly disconnect while handling the received message.
+            try { if (_client.Client != null) _client.Client.Blocking = true; }
+            catch (ObjectDisposedException) { }
         }
     }
 

@@ -95,7 +95,8 @@ switch (command)
         return PhysicsCheck.Run(arguments.Get("model", "all"), arguments.GetInt("trials", 300), arguments.GetInt("seed", 3));
     case "flick-search":
         return Stardust.Simulator.Lab.FlickSearch.Run(arguments.GetInt("top", 40), arguments.Get("out", "sim-flicks"),
-            arguments.Get("spots", "10,30,50").Split(',').Select(v => float.Parse(v, CultureInfo.InvariantCulture)).ToList());
+            arguments.Get("spots", "10,30,50").Split(',').Select(v => float.Parse(v, CultureInfo.InvariantCulture)).ToList(),
+            arguments.GetInt("parallel", 0));
     case "mechanics-lab":
         return Stardust.Simulator.Lab.MechanicsLab.Run(arguments.Get("drill", "all"), arguments.GetInt("episodes", 60),
             arguments.GetInt("seed", 11), arguments.Get("out", "sim-mechanics"), arguments.GetInt("trace", -1),
@@ -129,7 +130,7 @@ switch (command)
                     Runs the Stardust bot in-process on mechanics drills and checks each drill's pass
                     criteria; exits non-zero if any fails.
 
-              flick-search [--spots 10,30,50] [--top 40] [--out sim-flicks]
+              flick-search [--spots 10,30,50] [--top 40] [--parallel N] [--out sim-flicks]
                     Searches open-loop flick programs from settled carries in RocketSim.
 
               physics-check [--model all|...] [--trials 300] [--seed 3]

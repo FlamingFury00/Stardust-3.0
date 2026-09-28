@@ -41,8 +41,7 @@ public static class Series
         int completed = 0;
         var inv = CultureInfo.InvariantCulture;
 
-        System.Threading.Tasks.Parallel.For(0, options.Games,
-            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, options.Parallel) }, game =>
+        MatchWorkers.Run(options.Games, options.Parallel, game =>
         {
             int seed = options.Seed + game / 2;
             bool aIsBlue = game % 2 == 0;

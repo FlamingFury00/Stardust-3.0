@@ -156,6 +156,9 @@ public sealed class ExternalBotAgent : IAgent
         {
             try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
         }
+        // The timed overload does not wait for redirected-output callbacks. Drain them before
+        // disposing their log sink, including after killing a timed-out bot.
+        process.WaitForExit();
         connection.Dispose();
         process.Dispose();
         log?.Dispose();
@@ -178,7 +181,8 @@ public static class BotLauncher
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var processes = new Dictionary<string, (Request Request, Process Process, StreamWriter? Log)>();
+        var processes = new Dictionary<string, (Request Request, Process Process, StreamWriter? Log, Action CloseLog)>();
+        var connections = new List<RLBotConnection>();
 
         try
         {
@@ -204,10 +208,19 @@ public static class BotLauncher
                 StreamWriter? sink = log;
                 process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (process) sink?.WriteLine(e.Data); };
                 process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (process) sink?.WriteLine("ERR " + e.Data); };
+                void CloseLog()
+                {
+                    lock (process)
+                    {
+                        sink = null;
+                        log?.Dispose();
+                    }
+                }
+                // Register before Start: an invalid executable must also release its opened log.
+                processes[agentId] = (request, process, log, CloseLog);
                 process.Start();
                 process.BeginOutputReadLine();
                 process.BeginErrorReadLine();
-                processes[agentId] = (request, process, log);
             }
 
             var agents = new ExternalBotAgent?[requests.Count];
@@ -228,6 +241,7 @@ public static class BotLauncher
                 }
 
                 var connection = new RLBotConnection(listener.AcceptTcpClient());
+                connections.Add(connection);
                 InterfacePacketT hello = connection.Read(timeoutSeconds * 1000);
                 if (hello.Message.Type != InterfaceMessage.ConnectionSettings)
                     throw new InvalidDataException($"Expected ConnectionSettings, got {hello.Message.Type}.");
@@ -267,9 +281,19 @@ public static class BotLauncher
         {
             foreach (var entry in processes.Values)
             {
-                try { entry.Process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-                entry.Log?.Dispose();
+                try
+                {
+                    if (!entry.Process.HasExited) entry.Process.Kill(entireProcessTree: true);
+                    entry.Process.WaitForExit(); // drain redirected output before closing its sink
+                }
+                catch (InvalidOperationException) { } // Start failed before a process existed.
+                finally
+                {
+                    entry.CloseLog();
+                    entry.Process.Dispose();
+                }
             }
+            foreach (var connection in connections) connection.Dispose();
             throw;
         }
         finally

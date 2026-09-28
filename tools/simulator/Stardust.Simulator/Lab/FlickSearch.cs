@@ -61,8 +61,9 @@ public static class FlickSearch
     /// their worst gain over jittered starts: carry speed 950–1500 uu/s and the ball up to 6 uu off
     /// the spot either way, since a carry never places the ball exactly.
     /// </summary>
-    public static int Run(int top, string output, IReadOnlyList<float> spots)
+    public static int Run(int top, string output, IReadOnlyList<float> spots, int parallel = 0)
     {
+        parallel = parallel > 0 ? parallel : Math.Max(1, Environment.ProcessorCount - 1);
         using var arena = new SimArena();
         uint id = arena.AddCar(0);
         var report = new StringBuilder();
@@ -88,7 +89,7 @@ public static class FlickSearch
                 (float dp, float dy) = Stick(d * MathF.PI / 8f);
                 programs.Add(new FlickProgram(hold, wait, pitch, yaw, roll, dp, dy, boost));
             }
-            List<Scored> coarse = Evaluate(programs, starts);
+            List<Scored> coarse = Evaluate(programs, starts, parallel);
             Console.WriteLine($"ball {forward} uu forward: {coarse.Count}/{programs.Count} programs connect from 90% of starts");
 
             var refined = new List<Scored>();
@@ -101,7 +102,7 @@ public static class FlickSearch
                     for (int round = 0; round < 6; round++)
                     {
                         var candidates = Enumerable.Range(0, 24).Select(_ => Perturb(best.Program, random)).ToList();
-                        Scored challenger = Evaluate(candidates, starts).Where(family).DefaultIfEmpty(best).MaxBy(s => s.Score)!;
+                        Scored challenger = Evaluate(candidates, starts, parallel).Where(family).DefaultIfEmpty(best).MaxBy(s => s.Score)!;
                         if (challenger.Score > best.Score) best = challenger;
                     }
                     refined.Add(best);
@@ -128,10 +129,10 @@ public static class FlickSearch
         public float Score => LowGain - 10f * Spread;
     }
 
-    private static List<Scored> Evaluate(IReadOnlyList<FlickProgram> programs, List<Start> starts)
+    private static List<Scored> Evaluate(IReadOnlyList<FlickProgram> programs, List<Start> starts, int parallel)
     {
         var scored = new Scored?[programs.Count];
-        Parallel.For(0, programs.Count, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
+        Parallel.For(0, programs.Count, new ParallelOptions { MaxDegreeOfParallelism = parallel },
             () => { var a = new SimArena(); return (Arena: a, Id: a.AddCar(0)); },
             (i, _, local) =>
             {
