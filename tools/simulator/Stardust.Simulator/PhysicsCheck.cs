@@ -34,6 +34,7 @@ public static class PhysicsCheck
         if (which == "flip-probe") FlipProbe();
         if (which == "dodge-probe") DodgeProbe();
         if (all || which == "drive") failures += DriveOpenLoop(trials, seed);
+        if (all || which == "signed-travel") failures += SignedTravel(trials, seed);
         if (all || which == "navigate") failures += NavigateClosedLoop(trials, seed);
         if (all || which == "timed") failures += NavigateTimed(trials, seed);
         if (all || which == "jump") failures += JumpCheck(trials, seed);
@@ -49,6 +50,49 @@ public static class PhysicsCheck
     {
         var sorted = values.Where(double.IsFinite).OrderBy(x => x).ToList();
         return sorted.Count == 0 ? double.NaN : sorted[(int)Math.Min(sorted.Count - 1, q * sorted.Count)];
+    }
+
+    /// <summary>Interception ETA while initially moving toward or away from the target, including spent braking distance.</summary>
+    private static int SignedTravel(int trials, int seed)
+    {
+        using var arena = new SimArena();
+        uint car = arena.AddCar(0);
+        var random = new Random(seed);
+        var errors = new List<double>();
+        var legacyErrors = new List<double>();
+        for (int trial = 0; trial < trials; trial++)
+        {
+            float speed = -2300f + (float)random.NextDouble() * 4600f;
+            float distance = 150f + (float)random.NextDouble() * 1850f;
+            float boost = trial % 3 == 0 ? 0 : (float)random.NextDouble() * 60f;
+            RsbCarState state = GroundCar(arena, car, speed, 0);
+            state.Boost = boost;
+            arena.SetCar(car, state);
+            arena.Ball = new RsbBallState { Physics = new RsbPhysics { Position = new RsbVec(3000, 3000, 1000),
+                Forward = new RsbVec(1, 0, 0), Right = new RsbVec(0, 1, 0), Up = new RsbVec(0, 0, 1) } };
+            float actual = float.PositiveInfinity;
+            float previous = state.Physics.Position.X;
+            for (int tick = 0; tick < 1200; tick++)
+            {
+                arena.SetControls(car, new RsbControls { Throttle = 1, Boost = boost > 0 ? 1 : 0 });
+                arena.Step();
+                float x = arena.GetCar(car).Physics.Position.X;
+                if (x >= distance)
+                {
+                    actual = (tick + (distance - previous) / (x - previous)) * SimArena.TickTime;
+                    break;
+                }
+                previous = x;
+            }
+            errors.Add(Math.Abs(RedUtils.DrivePhysics.TravelTime(distance, speed, boost) - actual));
+            if (speed < 0)
+                legacyErrors.Add(Math.Abs(RedUtils.DrivePhysics.TravelTime(distance, 0, boost) - actual));
+        }
+        double p90 = Percentile(errors, 0.9);
+        Console.WriteLine(FormattableString.Invariant($"signed-travel: {errors.Count} trials; error p50 {Percentile(errors, 0.5):F3}s p90 {p90:F3}s; clamped-away-speed error p90 {Percentile(legacyErrors, 0.9):F3}s"));
+        bool passed = errors.All(double.IsFinite) && p90 < 0.10 && Percentile(errors, 0.5) < 0.05;
+        Console.WriteLine(passed ? "signed-travel: PASS" : "signed-travel: FAIL");
+        return passed ? 0 : 1;
     }
 
     /// <summary>Random piecewise-constant inputs applied to RocketSim and to GroundModel.</summary>

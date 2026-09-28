@@ -39,6 +39,10 @@ namespace Bot
         public string Decision { get; private set; } = "startup";
         public bool Shooting { get; set; }
 
+        /// <summary>Independent policy ablations; use STARDUST_TUNE for paired simulator experiments.</summary>
+        public static bool CarrierChallenges = true;
+        public static bool FirstManShadow = true;
+
         private float nextPlan = float.NegativeInfinity;
         private float challengeCommitUntil = float.NegativeInfinity;
         private bool defending, countering, pressured;
@@ -153,6 +157,7 @@ namespace Bot
 
             bool challengeCarrier = Defense.TryChallengeCarrier(Situation, Me, Ball.MainBall,
                 LivingOpponents, OurGoal.Location, out Vec3 carrierContact);
+            challengeCarrier &= CarrierChallenges;
             RawCanChallenge = challengeCarrier || Defense.CanChallenge(
                 Situation, Me, Ball.Location, OurGoal.Location);
             bool challengeSafe = Defense.CanContinueChallenge(
@@ -462,7 +467,7 @@ namespace Bot
                 return;
             }
 
-            DefensiveRole role = Situation.TeamRank == 0
+            DefensiveRole role = Situation.TeamCount == 1 || (FirstManShadow && Situation.TeamRank == 0)
                 ? DefensiveRole.Shadow
                 : Defense.ShouldAnchor(Situation)
                     ? DefensiveRole.Anchor

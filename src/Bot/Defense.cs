@@ -445,7 +445,7 @@ namespace Bot
                 if (alignment < (covered ? 0.55f : 0.80f))
                     continue;
                 float travel = DrivePhysics.TravelTime(MathF.Max(0f, car.Location.FlatDist(contact) - 150f),
-                    MathF.Max(0f, car.Velocity.Dot(direction)), car.Boost);
+                    car.Velocity.Dot(direction), car.Boost);
                 float turn = MathF.Acos(System.Math.Clamp(alignment, -1f, 1f)) * 0.25f;
                 if (travel + turn > t)
                     continue;

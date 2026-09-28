@@ -94,6 +94,15 @@ internal static class PressureRegression
                 ball.velocity.z = 600;
                 Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
                     "ground challenge chased a flick");
+                ball.velocity.z = 0;
+                frame.HasCover = false;
+                us.Location.y = 400 * sign;
+                us.Velocity = Vec3.Zero;
+                Check(Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
+                    "stationary defender could not meet the nearby carrier");
+                us.Velocity.y = -1300 * sign;
+                Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
+                    "retreating defender was given a stationary car's interception time");
             }
         });
     }

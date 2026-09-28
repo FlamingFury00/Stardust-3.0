@@ -31,7 +31,9 @@ namespace RedUtils
                 return float.PositiveInfinity;
             if (distance <= 0) return 0;
 
-            speed = System.Math.Clamp(speed, 0, Car.MaxSpeed);
+            // A car moving away first loses distance while braking. Clamping to zero incorrectly
+            // gives a retreating defender the same intercept time as a stationary car.
+            speed = System.Math.Clamp(speed, -Car.MaxSpeed, Car.MaxSpeed);
             fuel = reverse ? 0 : System.Math.Clamp(fuel, 0, 100);
 
             float covered = 0;
