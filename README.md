@@ -16,6 +16,9 @@ See **[docs/STARDUST_3.md](docs/STARDUST_3.md)** for:
 - the match results behind each change, including what was tried and rejected;
 - build and test commands and runtime switches.
 
+The September 2026 [pressure and possession evaluation](docs/PRESSURE_POSSESSION.md) records
+the telemetry-driven fixes, paired simulator results, Windows simulator support, and remaining gaps.
+
 ![Stardust Logo](./logo.png)
 
 ## History

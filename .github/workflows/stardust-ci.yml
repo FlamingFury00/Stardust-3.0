@@ -11,7 +11,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   regression:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -21,6 +24,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Make schema generator executable
+        if: runner.os == 'Linux'
         run: chmod +x src/generate-flatbuffers.sh src/flatbuffers-schema/binaries/flatc
       - name: Build bot
         run: dotnet build src/Bot/Bot.csproj --configuration Release
