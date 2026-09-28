@@ -22,10 +22,15 @@ public static class MechanicsLab
     public static IReadOnlyList<Drill> Extra() => new Drill[]
     {
         new ActionProfileDrill(), new DefenseDrill(), new KickoffFollowDrill(), new ClearDrill(), new RollerDrill(),
+        new CarryFinishDrill(),
         new ClosePossessionDrill(), new ClosePossessionDrill(1),
         new CarrierPressureDrill(), new CarrierPressureDrill(1),
         new CarrierPressureDrill(fast: true), new CarrierPressureDrill(1, fast: true),
         new CarrierPressureDrill(fast: true, covered: false), new CarrierPressureDrill(1, fast: true, covered: false),
+        new ReverseRecoveryDrill(), new ReverseRecoveryDrill(1),
+        new ReverseRecoveryDrill(mode: "slow"), new ReverseRecoveryDrill(1, "slow"),
+        new ReverseRecoveryDrill(mode: "near-ball"), new ReverseRecoveryDrill(1, "near-ball"),
+        new ReverseRecoveryDrill(mode: "net"), new ReverseRecoveryDrill(1, "net"),
     };
 
     /// <summary>

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using RedUtils;
 using RedUtils.Math;
+using RedUtils.Planning;
+using RedUtils.Physics;
 using RLBot.Flat;
 
 namespace Bot
@@ -12,6 +14,7 @@ namespace Bot
     /// </summary>
     public static class PossessionControl
     {
+        private static readonly FlickKind[] GoalFlicks = { FlickKind.Power, FlickKind.Lob };
         /// <summary>
         /// How securely the ball is balanced on the roof, 0 to 1. A ball off the roof footprint, well
         /// above or below its resting height, or moving fast relative to the car scores zero;
@@ -307,10 +310,26 @@ namespace Bot
             if (toGoal.Length() < ShotRange)
             {
                 Vec3 shot = toGoal.Normalize();
-                if (LaneOpen(ball.location, theirGoal, opponents, challenge))
+                foreach (FlickKind candidate in GoalFlicks)
                 {
+                    FlickRecipe recipe = FlickRecipe.For(candidate);
+                    float speed = MathF.Max(ball.velocity.FlatLen(), car.Velocity.FlatLen()) + recipe.Gain;
+                    float elevation = (candidate == FlickKind.Power ? 23f : 26f) * MathF.PI / 180f;
+                    float horizontal = speed * MathF.Cos(elevation);
+                    // The jump carries the ball forward and raises its release point. Check the
+                    // whole ball against the crossbar, not just its flat goal lane. If the apex is
+                    // above the mouth, only an ascending crossing remains safe as setup moves us closer.
+                    Vec3 release = ball.location + shot * ball.velocity.FlatLen() * (recipe.Hold + recipe.Wait) + Vec3.Up * 80f;
+                    Vec3 exit = shot * horizontal + Vec3.Up * (speed * MathF.Sin(elevation));
+                    GoalCrossing crossing = BallFlight.ToGoal(release, exit, theirGoal.y > 0 ? 1 : -1);
+                    float apexTime = exit.z / -RL.Gravity;
+                    float apex = release.z + exit.z * apexTime * 0.5f;
+                    if (!crossing.OnTarget || crossing.FrameMargin < 15f ||
+                        (apex > BallFlight.GoalHeight - RL.BallRadius && crossing.Time > apexTime) ||
+                        !LaneOpen(ball.location, theirGoal, opponents, horizontal))
+                        continue;
                     aim = shot;
-                    return FlickKind.Power;
+                    return candidate;
                 }
             }
             return null;
@@ -336,8 +355,8 @@ namespace Bot
         /// <summary>Distance to the opponent goal inside which a power flick is a shot.</summary>
         public const float ShotRange = 3000f;
 
-        /// <summary>No defender near the ball's line to goal who could get there before a 2200 uu/s flick.</summary>
-        private static bool LaneOpen(Vec3 from, Vec3 goal, IEnumerable<Car> opponents, Challenge imminent)
+        /// <summary>No defender near the line to goal who could arrive before the selected flick.</summary>
+        private static bool LaneOpen(Vec3 from, Vec3 goal, IEnumerable<Car> opponents, float shotSpeed)
         {
             if (opponents == null) return true;
             Vec3 line = (goal - from).Flatten();
@@ -349,7 +368,7 @@ namespace Bot
                 Vec3 offset = (opponent.Location - from).Flatten();
                 float along = System.Math.Clamp(offset.Dot(direction), 0f, length);
                 float miss = (offset - direction * along).Length();
-                float flight = along / 2200f;
+                float flight = along / MathF.Max(shotSpeed, 300f);
                 // A defender reaching the line within the ball's flight time (at ~1400 uu/s plus a car's reach) blocks it.
                 if (miss < 180f + 1400f * flight) return false;
             }

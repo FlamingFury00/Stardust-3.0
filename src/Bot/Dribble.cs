@@ -124,7 +124,9 @@ namespace Bot
                 PossessionControl.PlanFlick(car, Ball.MainBall, lane, bot.LivingOpponents,
                     bot.OurGoal.Location, bot.TheirGoal.Location, out Vec3 aim) is FlickKind kind)
             {
-                bot.Action = new Flick(kind, aim, carry, urgent: true);
+                bool urgent = PossessionControl.MostImminent(Ball.MainBall, aim, bot.LivingOpponents).Contact < 1.2f;
+                bot.Action = new Flick(kind, aim, carry, urgent,
+                    urgent ? null : bot.TheirGoal.Location);
                 bot.Action.Run(bot);
                 return;
             }

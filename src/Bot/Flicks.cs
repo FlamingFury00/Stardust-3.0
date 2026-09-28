@@ -66,10 +66,12 @@ namespace Bot
         /// <summary>Longest turn onto the aim, then longest centring, before the flick goes anyway.</summary>
         private const float TurnLimit = 0.7f, CentreLimit = 0.35f, UrgentCentreLimit = 0.1f;
         private readonly float turnLimit, centreLimit;
+        private bool threatened;
         private readonly HoodCarry carry;
         private readonly FlickRecipe recipe;
         private readonly float started = Game.Time;
         private Vec3 aim;
+        private Vec3? worldTarget;
         private float centring = float.NaN, jumped = float.NaN, released = float.NaN, dodged = float.NaN;
 
         public FlickKind Kind { get; }
@@ -79,10 +81,16 @@ namespace Bot
 
         /// <param name="urgent">Under a challenge: no turn onto the aim, only a brief centring on the spot.</param>
         public Flick(FlickKind kind, Vec3 aim, HoodCarry carry = null, bool urgent = false)
+            : this(kind, aim, carry, urgent, null) { }
+
+        /// <param name="worldTarget">An unpressured finish re-aims at this point while carrying forward during setup.</param>
+        public Flick(FlickKind kind, Vec3 aim, HoodCarry carry, bool urgent, Vec3? worldTarget)
         {
             Kind = kind;
             recipe = FlickRecipe.For(kind);
             this.aim = aim.Flatten().Normalize();
+            this.worldTarget = worldTarget;
+            threatened = urgent;
             this.carry = carry ?? new HoodCarry();
             turnLimit = urgent ? 0f : TurnLimit;
             centreLimit = urgent ? UrgentCentreLimit : CentreLimit;
@@ -91,7 +99,11 @@ namespace Bot
         /// <summary>Retargets a flick that has not jumped yet.</summary>
         public void Aim(Vec3 direction)
         {
-            if (!float.IsFinite(jumped)) aim = direction.Flatten().Normalize();
+            if (!float.IsFinite(jumped))
+            {
+                worldTarget = null;
+                aim = direction.Flatten().Normalize();
+            }
         }
 
         public void Run(RUBot bot)
@@ -142,6 +154,8 @@ namespace Bot
 
         private void Setup(RUBot bot, Car car, float now)
         {
+            if (worldTarget is Vec3 targetPoint && ControlMath.Finite(targetPoint))
+                aim = ControlMath.FlatUnit(targetPoint - Ball.Location, aim);
             Vec3 local = car.Local(Ball.Location - car.Location);
             bool onRoof = car.IsGrounded && local.z > GroundCatch.RoofRest(car) - 25f &&
                 MathF.Abs(local.x) < 110f && MathF.Abs(local.y) < 80f;
@@ -150,13 +164,17 @@ namespace Bot
                 Finished = true;
                 return;
             }
+            // Free setup is not a commitment to ignore a defender who arrives later. Preserve
+            // the short contested sequence once any opponent is within its execution window.
+            threatened |= PossessionControl.MostImminent(Ball.MainBall, aim, bot.LivingOpponents).Contact < 0.6f;
             // The recipe's exit heading is a few degrees off the car's: aim the car to cancel it.
             Vec3 target = GroundModel.Rotate(aim, -recipe.Heading * MathF.PI / 180f);
             float headingError = MathF.Abs(GroundModel.SignedAngle(car.Forward.Flatten(), target));
             // First turn the carry onto the aim (the ball rides off-centre to steer it), then centre
             // the ball at the recipe's spot: the recipes were found with the ball on the centre line.
-            if (headingError > TurnedTolerance && now - started < turnLimit)
+            if (headingError > TurnedTolerance && now - started < (threatened ? 0f : turnLimit))
             {
+                centring = float.NaN;
                 carry.SteerToward(car, Ball.MainBall, target);
                 carry.Spot = new Vec3(recipe.Spot, carry.Spot.y, 0);
             }
@@ -167,7 +185,7 @@ namespace Bot
                 Vec3 relative = car.Local(Ball.Velocity - car.Velocity);
                 bool placed = MathF.Abs(local.x - recipe.Spot) < 8f && MathF.Abs(local.y) < recipe.Tolerance &&
                     relative.Flatten().Length() < 90f && MathF.Abs(relative.z) < 150f;
-                if (placed || now - centring > centreLimit)
+                if (placed || now - centring > (threatened ? UrgentCentreLimit : centreLimit))
                 {
                     jumped = now;
                     bot.Controller.Jump = true;
