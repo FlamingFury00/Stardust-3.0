@@ -9,6 +9,10 @@ WORKDIR /stardust
 COPY . .
 WORKDIR /stardust/src/Bot
 
+# ZIP extraction on Windows may discard executable bits; normalize the Linux schema tools here.
+RUN sed -i 's/\r$//' ../generate-flatbuffers.sh \
+    && chmod +x ../generate-flatbuffers.sh ../flatbuffers-schema/binaries/flatc
+
 RUN dotnet publish -r linux-x64 -c Release -p:DebugType=None -p:DebugSymbols=false -p:PublishAot=true -o /stardust/_BOB_OUT/x86_64-linux
 RUN dotnet publish -r win-x64 -c Release -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false --self-contained true -o /stardust/_BOB_OUT/x86_64-windows
 
