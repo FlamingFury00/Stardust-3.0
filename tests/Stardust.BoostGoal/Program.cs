@@ -98,47 +98,126 @@ Test("boost action: changed field or public index cancels before stale route exe
     });
 });
 
-Test("boost: critically low support may choose a safe full pad beyond 400 uu detour", () =>
+Car GroundCar(Vec3 location, float boost, float yaw = -MathF.PI / 2, Vec3? velocity = null, int index = 0) => new()
 {
-    var car = new Car
+    Index = index,
+    Location = location,
+    Velocity = velocity ?? new Vec3(0, -800, 0),
+    Orientation = new Mat3x3(new Vec3(0, yaw, 0)),
+    IsGrounded = true,
+    Boost = boost
+};
+Boost PadAt(int index, float x, float y, bool large) => new(index, new BoostPadT
+{
+    Location = new Vector3T { X = x, Y = y, Z = 70 }, IsFullBoost = large
+});
+Func<Car, Vec3, float> Straight(float speed = 1400f) => (car, point) => car.Location.FlatDist(point) / speed;
+
+Test("boost economy: a pad is worth most to an empty tank and nothing to a full one", () =>
+{
+    float emptyBig = BoostEconomy.Worth(0, true), emptySmall = BoostEconomy.Worth(0, false);
+    Check(emptyBig > 3 * emptySmall && emptyBig > 1.0f && emptyBig < 2.0f,
+        $"empty-tank values {emptyBig:F2}/{emptySmall:F2} s are outside the measured 1-2 s per full tank");
+    float previous = float.PositiveInfinity;
+    for (float boost = 0; boost <= 100; boost += 10)
     {
-        Location = new Vec3(2200, -2200, 17),
-        Velocity = new Vec3(0, -800, 0),
-        Orientation = new Mat3x3(new Vec3(0, -MathF.PI / 2, 0)),
-        IsGrounded = true,
-        Boost = 5
-    };
-    var full = new Boost(0, new BoostPadT
-    {
-        Location = new Vector3T { X = 3072, Y = -4096, Z = 73 },
-        IsFullBoost = true
-    });
-    Vec3 ball = new(0, -500, 100);
-    Vec3 destination = new(500, -4000, 17);
-    float detour = RoutePlanner.Detour(car.Location, full.Location, destination);
-    Check(detour > 400, $"fixture detour {detour:F1} did not exceed legacy cap");
-    Boost? selected = RoutePlanner.SelectBoost(car, new[] { full }, ball, destination, 0, 4f, (_, _) => 1f);
-    Check(ReferenceEquals(selected, full), $"safe full pad was rejected at detour {detour:F1}");
+        float worth = BoostEconomy.Worth(boost, true);
+        Check(worth <= previous, $"worth rose with a fuller tank at {boost}");
+        previous = worth;
+    }
+    Check(BoostEconomy.Worth(100, true) == 0 && BoostEconomy.Worth(100, false) == 0, "a full tank still values a pad");
+    Check(BoostEconomy.Worth(94, false) < BoostEconomy.Worth(60, false),
+        "a pad that only tops up 6 units was valued like a full 12");
 });
 
-Test("boost: pressure still rejects a full-pad excursion", () =>
+Test("boost economy: slack vanishes when the opponent is on the ball and grows with time", () =>
 {
-    var car = new Car
-    {
-        Location = new Vec3(2200, -2200, 17),
-        Velocity = new Vec3(0, -800, 0),
-        Orientation = new Mat3x3(new Vec3(0, -MathF.PI / 2, 0)),
-        IsGrounded = true,
-        Boost = 5
-    };
-    var full = new Boost(0, new BoostPadT
-    {
-        Location = new Vector3T { X = 3072, Y = -4096, Z = 73 },
-        IsFullBoost = true
-    });
-    Boost? selected = RoutePlanner.SelectBoost(car, new[] { full }, new Vec3(0, -500, 100),
-        new Vec3(500, -4000, 17), 0, 1.5f, (_, _) => 1f);
-    Check(selected == null, "pressure allowed a risky full-pad excursion");
+    var frame = new TacticalFrame { OpponentEta = 0.05f, TeamCount = 1 };
+    Check(BoostEconomy.Slack(frame, 0f, 0f, false) == 0f, "slack survived an opponent already on the ball");
+    frame.OpponentEta = 3f;
+    float midfield = BoostEconomy.Slack(frame, 0.5f, 0f, false);
+    Check(midfield > 1.5f && midfield <= BoostEconomy.MaxSlack, $"open-ball slack {midfield:F2} s is implausible");
+    float deep = BoostEconomy.Slack(frame, 0.5f, 4500f, false);
+    Check(deep < midfield - 0.4f, $"a ball deep in our half left {deep:F2} s against {midfield:F2} s at midfield");
+    Check(BoostEconomy.Slack(frame, 0.5f, 0f, true) < midfield, "a car out of position kept its full slack");
+    Check(BoostEconomy.Slack(frame, 0.5f, 0f, false, pressureTime: 0.6f) < 0.1f,
+        "an opponent about to touch did not cap the slack");
+    frame.TeamCount = 2;
+    frame.TeamRank = 1;
+    frame.HasCover = false;
+    float uncovered = BoostEconomy.Slack(frame, 0.5f, 0f, false);
+    frame.HasCover = true;
+    float covered = BoostEconomy.Slack(frame, 0.5f, 0f, false);
+    Check(uncovered > midfield && covered > uncovered, "support slack did not follow the first man's contest");
+    Check(BoostEconomy.Slack(frame, float.NaN, 0f, false) == 0f, "a nonfinite route time produced slack");
+});
+
+Test("boost economy: on-route pads are taken, off-route ones only when the slack pays for them", () =>
+{
+    Car car = GroundCar(new Vec3(0, -1000, 17), 20);
+    Vec3 ball = new(0, 1500, 100), destination = new(0, 1500, 17);
+    Boost onRoute = PadAt(0, 40, 0, false), offRoute = PadAt(1, 2400, -1000, false);
+    var opponents = Array.Empty<Car>();
+    Boost? pick = BoostEconomy.Choose(car, new[] { onRoute }, ball, destination, 0, 0.5f, opponents, Straight());
+    Check(ReferenceEquals(pick, onRoute), "a pad on the route was not taken");
+    Check(BoostEconomy.Choose(car, new[] { offRoute }, ball, destination, 0, 0.5f, opponents, Straight()) == null,
+        "a 2400 uu sidetrack for 12 boost fit half a second of slack");
+    Check(BoostEconomy.Choose(car, new[] { onRoute }, ball, destination, 0, 0f, opponents, Straight()) == null,
+        "no slack still allowed a detour");
+    Check(BoostEconomy.Choose(car, new[] { onRoute }, ball, destination, 0, 2f, opponents, (_, _) => float.NaN) == null,
+        "nonfinite travel time must be rejected");
+    car.Boost = 99;
+    Check(BoostEconomy.Choose(car, new[] { onRoute }, ball, destination, 0, 2f, opponents, Straight()) == null,
+        "a full tank drove to a pad");
+});
+
+Test("boost economy: an empty tank crosses the field for a big pad, a half tank does not", () =>
+{
+    Car car = GroundCar(new Vec3(2200, -2200, 17), 5);
+    Boost big = PadAt(0, 3072, -4096, true);
+    Vec3 ball = new(0, -500, 100), destination = new(2600, -4000, 17);
+    var opponents = Array.Empty<Car>();
+    Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { big }, ball, destination, 0, 2f, opponents, Straight()), big),
+        "a nearly empty car ignored a big pad 2 s of slack could pay for");
+    car.Boost = 70;
+    Check(BoostEconomy.Choose(car, new[] { big }, new Vec3(0, -500, 100), new Vec3(3000, -1500, 17), 0, 0.4f,
+        opponents, Straight()) == null, "a car with 70 boost detoured for a big pad in 0.4 s of slack");
+});
+
+Test("boost economy: pads upfield of the ball, dark pads and pads the opponent reaches first are refused", () =>
+{
+    Car car = GroundCar(new Vec3(0, -1000, 17), 5);
+    Vec3 ball = new(0, -2000, 100), destination = new(0, -1200, 17);
+    Boost ahead = PadAt(0, 0, -3000, true);
+    Check(BoostEconomy.Choose(car, new[] { ahead }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight()) == null,
+        "a pad upfield of the ball was taken as a refill");
+
+    Boost pad = PadAt(1, 300, -800, true);
+    ball = new Vec3(0, 1500, 100);
+    destination = new Vec3(0, 1000, 17);
+    var dark = PadAt(2, 300, -800, true);
+    dark.Update(new BoostPadStateT { IsActive = false, Timer = 1f });
+    Check(BoostEconomy.Choose(car, new[] { dark }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight()) == null,
+        "a pad dark for another nine seconds was chosen");
+
+    Car rival = GroundCar(new Vec3(330, -800, 17), 50, index: 1);
+    rival.Team = 1;
+    Check(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, new[] { rival }, Straight()) == null,
+        "a pad the opponent reaches first was contested");
+    Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight()), pad),
+        "the same pad without a rival was refused");
+});
+
+Test("boost economy: a pad being driven to is kept unless another is clearly better", () =>
+{
+    Car car = GroundCar(new Vec3(0, -1000, 17), 10);
+    Vec3 ball = new(0, 2000, 100), destination = new(0, 1500, 17);
+    Boost current = PadAt(0, 120, 0, true), rival = PadAt(1, -110, 0, true);
+    var pads = new[] { current, rival };
+    Boost? kept = BoostEconomy.Choose(car, pads, ball, destination, 0, 3f, Array.Empty<Car>(), Straight(), current);
+    Check(ReferenceEquals(kept, current), "a pad in progress lost to an equivalent one");
+    Boost? unbiased = BoostEconomy.Choose(car, pads, ball, destination, 0, 3f, Array.Empty<Car>(), Straight());
+    Check(unbiased != null, "the fixture offered no pad at all");
 });
 
 Test("goal return: drive exposes a handbrake safety switch", () =>

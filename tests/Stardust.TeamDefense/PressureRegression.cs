@@ -55,6 +55,32 @@ internal static class PressureRegression
             }
         });
 
+        test("pressure zones: an uncovered defender meets a carrier further out in midfield than near its net", () =>
+        {
+            foreach (int team in new[] { 0, 1 })
+            {
+                float sign = team == 0 ? 1 : -1;
+                Vec3 goal = new(0, -5120 * sign, 0);
+                bool Meets(float ballY, float gap)
+                {
+                    var ball = new Ball(new Vec3(0, ballY * sign, 100), new Vec3(0, -500 * sign, 0));
+                    var us = new Car { IsGrounded = true, Boost = 60, Location = new Vec3(0, (ballY - gap) * sign, 17),
+                        Velocity = new Vec3(0, 500 * sign, 0),
+                        Orientation = new Mat3x3(new Vec3(0, sign * MathF.PI / 2, 0)) };
+                    var opponent = new Car { IsGrounded = true, Location = new Vec3(0, (ballY + 170) * sign, 17),
+                        Velocity = ball.velocity,
+                        Orientation = new Mat3x3(new Vec3(0, -sign * MathF.PI / 2, 0)) };
+                    var frame = new TacticalFrame { TeamCount = 1, TeamRank = 0, HasCover = false,
+                        MyEta = 1.2f, OpponentEta = 0.05f, PressureTime = 0.08f };
+                    return Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _);
+                }
+                Check(Meets(600, 1100), "a defender 1100 uu from a midfield carrier did not press it");
+                Check(!Meets(600, 1800), "a defender 1800 uu from a midfield carrier lunged");
+                Check(!Meets(-3300, 1100), "a defender 1100 uu from a carrier in our third lunged");
+                Check(Meets(-3300, 600), "a defender 600 uu from a carrier in our third did not meet it");
+            }
+        });
+
         test("pressure: carrier challenge is distinct from a lost loose-ball race", () =>
         {
             foreach (int team in new[] { 0, 1 })
@@ -75,8 +101,13 @@ internal static class PressureRegression
                     "covered first man left the carrier uncontested");
                 Check(Defense.IsGoalSide(us.Location, contact, goal, 50), "challenge ran behind the carrier");
                 frame.HasCover = false;
+                // Near our net an uncovered defender must already be close; the midfield reach is
+                // covered by its own test below.
+                float neutralReach = Defense.NeutralCarrierRange;
+                Defense.NeutralCarrierRange = Defense.CarrierRange;
                 Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
                     "uncovered defender took a long speculative lunge");
+                Defense.NeutralCarrierRange = neutralReach;
                 frame.HasCover = true;
                 frame.TeamRank = 1;
                 Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
@@ -100,9 +131,14 @@ internal static class PressureRegression
                 us.Velocity = Vec3.Zero;
                 Check(Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
                     "stationary defender could not meet the nearby carrier");
+                // The interception time of a car moving away must include braking: judged against the
+                // near-net horizon, where the meeting has to come within 0.6 s.
+                float neutralHorizon = Defense.NeutralHorizon;
+                Defense.NeutralHorizon = 0.6f;
                 us.Velocity.y = -1300 * sign;
                 Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
                     "retreating defender was given a stationary car's interception time");
+                Defense.NeutralHorizon = neutralHorizon;
             }
         });
     }

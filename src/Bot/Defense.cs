@@ -93,13 +93,10 @@ namespace Bot
         /// </summary>
         public static bool ShouldAnchor(TacticalFrame frame)
         {
-            if (frame == null || frame.TeamCount <= 1)
+            if (frame == null || frame.TeamCount <= 1 || frame.TeamRank == 0)
                 return false;
-            if (frame.TeamCount == 2)
-                return frame.TeamRank > 0;
-            if (frame.TeamRank >= 2)
-                return true;
-            return frame.TeamRank > 0 && (frame.LastBack || !frame.HasCover);
+            // One anchor at a time: two cars given the same job stack on the same spot.
+            return frame.TeamCount == 2 || frame.DeepestSupport;
         }
 
         /// <summary>
@@ -126,6 +123,26 @@ namespace Bot
         public static float FrontPostShadow = 0f;
         /// <summary>Distance (uu) inside the post that a front-post shadow line aims at.</summary>
         private const float FrontPostInset = 150f;
+
+        /// <summary>Scale on the gap a first defender keeps goal-side of the ball; below one, it stands closer to the carrier.</summary>
+        public static float ShadowGapScale = 1f;
+        /// <summary>Nearest gap (uu) a first defender's scaled shadow may close to.</summary>
+        public static float ShadowMinGap = 560f;
+        /// <summary>Reach (uu) within which an uncovered / a covered first defender meets a carrier near our net.</summary>
+        public static float CarrierRange = 800f, CoveredCarrierRange = 1500f;
+        /// <summary>The same reaches, and the time (s) allowed to make contact, once the play is in midfield or their half.</summary>
+        public static float NeutralCarrierRange = 1500f, NeutralCoveredCarrierRange = 2200f;
+        public static float NeutralHorizon = 1.0f, NeutralCoveredHorizon = 1.5f;
+        /// <summary>
+        /// Gap scale in midfield and their half. A miss there costs a goal only much later, so a
+        /// defender presses the carrier instead of holding the reaction room it needs near its net.
+        /// </summary>
+        public static float NeutralGapScale = 1f;
+        /// <summary>Ball depth (uu into our half) where pressure starts to give way to caution, and how far it takes.</summary>
+        public static float PressureZoneStart = 800f, PressureZoneWidth = 2400f;
+
+        /// <summary>0 in midfield and their half, 1 in our third: how much of the cautious near-net behaviour applies.</summary>
+        public static float Caution(float ballDepth) => SmoothStep((ballDepth - PressureZoneStart) / PressureZoneWidth);
 
         /// <summary>Distance (uu) a support car keeps goal-side of the ball away from our goal; it closes by 290 uu near it.</summary>
         public static float SupportGap = 1050f;
@@ -184,8 +201,9 @@ namespace Bot
                     break;
                 default:
                     // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
-                    desiredGap = Lerp(1425f, 900f, danger) - 420f * urgency;
-                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1450f);
+                    float pressing = Lerp(NeutralGapScale, 1f, Caution(flatBall.y * side));
+                    desiredGap = (Lerp(1425f, 900f, danger) - 420f * urgency) * ShadowGapScale * pressing;
+                    desiredGap = System.Math.Clamp(desiredGap, MathF.Min(560f, ShadowMinGap), 1450f);
                     minimumProgress = 460f - 120f * urgency;
                     lateralBias = 260f;
                     break;
@@ -327,6 +345,8 @@ namespace Bot
         public static float SoloMargin = 0.05f;
         /// <summary>Race margin (s) a challenge needs while a teammate covers the goal; negative allows arriving that much later.</summary>
         public static float CoveredMargin = -0.12f;
+        /// <summary>The same margin in midfield and their half, where a lost race with a teammate behind is no goal.</summary>
+        public static float NeutralCoveredMargin = -0.12f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, within 3300 uu of our goal.</summary>
         public static float ContinueDeficitNear = 0.38f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, further out.</summary>
@@ -363,7 +383,7 @@ namespace Bot
 
             float requiredMargin;
             if (frame.HasCover)
-                requiredMargin = CoveredMargin;
+                requiredMargin = Lerp(NeutralCoveredMargin, CoveredMargin, Caution(ball.y * Side(goal)));
             else if (frame.UnderPressure)
                 requiredMargin = frame.TeamCount <= 1 ? SoloPressureMargin : -0.05f;
             else
@@ -422,7 +442,11 @@ namespace Bot
                 return false;
             float distance = car.Location.FlatDist(ball.location);
             bool covered = frame.TeamCount > 1 && frame.HasCover;
-            if (distance > (covered ? 1500f : 800f))
+            float caution = Caution(ball.location.y * Side(goal));
+            float range = covered
+                ? Lerp(NeutralCoveredCarrierRange, CoveredCarrierRange, caution)
+                : Lerp(NeutralCarrierRange, CarrierRange, caution);
+            if (distance > range)
                 return false;
 
             bool carrier = false;
@@ -444,7 +468,9 @@ namespace Bot
             if (!carrier)
                 return false;
 
-            float horizon = covered ? 0.95f : 0.60f;
+            float horizon = covered
+                ? Lerp(NeutralCoveredHorizon, 0.95f, caution)
+                : Lerp(NeutralHorizon, 0.60f, caution);
             for (float t = 0.10f; t <= horizon; t += 0.05f)
             {
                 // Continuous ground contact keeps the carrier's ball moving with the car, unlike
@@ -549,38 +575,6 @@ namespace Bot
                 continuation -= 0.08f;
 
             return System.Math.Clamp(frame.OpponentEta + continuation, 0f, 3f);
-        }
-
-        /// <summary>Ball depth (uu toward our goal; negative is their half) an uncovered support car may refill behind.</summary>
-        public static float SupportRefillDepth = -900f;
-        /// <summary>Opponent arrival time (s) an uncovered support car's refill needs.</summary>
-        public static float SupportRefillWindow = 2.5f;
-
-        public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
-        {
-            if (frame == null || car == null || pressure ||
-                !IsGoalSide(car.Location, ball, goal, 20f))
-                return false;
-
-            float side = Side(goal);
-            float defensiveDepth = ball.y * side;
-
-            // In 1v1 there is no second man, so forbidding rank zero refills means the bot has no
-            // intentional boost economy at all. Allow only goal-side, low-risk refills while the
-            // opponent is not about to touch and the ball is outside the dangerous own-box depth.
-            if (frame.TeamCount <= 1)
-                return defensiveDepth < 2500f && frame.OpponentEta > 1.35f &&
-                    (frame.FreeTime > 0.30f || defensiveDepth < 300f);
-
-            if (frame.TeamRank == 0)
-                return false;
-            if (frame.HasCover)
-                return true;
-
-            // Without explicit cover, only a non-first-man may refill when the ball is clearly
-            // out of our half and the opponent contact window is long.
-            bool ballSafelyUpfield = defensiveDepth < SupportRefillDepth;
-            return ballSafelyUpfield && frame.OpponentEta > SupportRefillWindow;
         }
 
         /// <summary>

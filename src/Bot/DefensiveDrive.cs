@@ -13,6 +13,10 @@ namespace Bot
     public sealed class DefensiveDrive : IAction
     {
         public static bool BoundedTurns = true;
+        /// <summary>Boost whenever the braking envelope asks for more speed, not only for fast, distant routes.</summary>
+        public static bool EagerBoost = false;
+        /// <summary>Terminal speed (uu/s) from which a shadow boosts to hold pace; above the throttle-only limit of 1410.</summary>
+        public static float BoostTerminal = float.PositiveInfinity;
         public bool Finished => false;
         public bool Interruptible => drive.Interruptible;
         public Vec3 Target
@@ -205,7 +209,13 @@ namespace Bot
                 bot.Controller.Jump = false;
             }
 
-            if (!mobilityCommitted && (speed < 1800f || distance < 950f || drive.Backwards))
+            // A retreat that has to hold pace with an attack faster than a throttle-only car can go
+            // (1410 uu/s) needs boost however near the shadow point is.
+            bool matchingFastAttack = TerminalSpeed >= BoostTerminal;
+            bool boostSuppressed = EagerBoost || matchingFastAttack
+                ? distance < 350f || drive.Backwards
+                : speed < 1800f || distance < 950f || drive.Backwards;
+            if (!mobilityCommitted && boostSuppressed)
                 bot.Controller.Boost = false;
         }
 

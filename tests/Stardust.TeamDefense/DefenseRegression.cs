@@ -324,6 +324,39 @@ internal static class DefenseRegression
                 $"reaction distance did not reduce approach speed: {fastClosing} >= {far}");
         });
 
+        test("pressure zones: the first defender presses in midfield and keeps its room near the net", () =>
+        {
+            float original = Defense.NeutralGapScale;
+            try
+            {
+                Defense.NeutralGapScale = 0.6f;
+                Vec3 attackerNeutral = new(0, 0, 100), attackerDeep = new(0, -3600, 100);
+                float Gap(Vec3 ball)
+                {
+                    Vec3 target = Defense.ShadowTarget(ball, blueGoal, DefensiveRole.Shadow);
+                    return ball.FlatDist(target);
+                }
+                Defense.NeutralGapScale = 1f;
+                float normalNeutral = Gap(attackerNeutral), normalDeep = Gap(attackerDeep);
+                Defense.NeutralGapScale = 0.6f;
+                float pressedNeutral = Gap(attackerNeutral), pressedDeep = Gap(attackerDeep);
+                Check(pressedNeutral < normalNeutral - 250f,
+                    $"midfield gap {pressedNeutral:F0} did not close from {normalNeutral:F0}");
+                Check(MathF.Abs(pressedDeep - normalDeep) < 5f,
+                    $"the gap near our net moved from {normalDeep:F0} to {pressedDeep:F0}");
+                Check(Defense.Caution(-2000f) < 0.01f && Defense.Caution(4500f) > 0.99f,
+                    "caution is not 0 in their half and 1 deep in ours");
+                float previous = 0f;
+                for (float depth = -1000f; depth <= 5000f; depth += 250f)
+                {
+                    float caution = Defense.Caution(depth);
+                    Check(caution >= previous - 1e-6f, $"caution fell at depth {depth}");
+                    previous = caution;
+                }
+            }
+            finally { Defense.NeutralGapScale = original; }
+        });
+
         test("defense-v3: shadow terminal speed tracks goalward ball motion within bounds", () =>
         {
             float stationary = Defense.ShadowTerminalSpeed(
@@ -336,27 +369,25 @@ internal static class DefenseRegression
                 $"incoming terminal speed did not scale: {incoming}");
         });
 
-        test("defense-v3: uncovered defender cannot leave own-half shape for boost", () =>
+        test("defense-v3: an uncovered defender's boost trip is bounded by the opponent's arrival", () =>
         {
-            Car support = CarAt(0, -3000, 2, 0);
             var frame = new TacticalFrame
             {
                 TeamCount = 2,
                 TeamRank = 1,
-                OpponentEta = 4f,
+                OpponentEta = 1.0f,
                 HasCover = false
             };
-            Check(!Defense.CanRefill(frame, support, new Vec3(0, -1500, 100),
-                    blueGoal, false),
-                "own-half defense allowed an uncovered boost diversion");
+            float ownHalf = BoostEconomy.Slack(frame, 0.6f, 3000f, false);
+            Check(ownHalf < 0.1f, $"an own-half defender with the opponent 1 s out kept {ownHalf:F2} s of slack");
 
+            frame.OpponentEta = 2.5f;
+            float uncovered = BoostEconomy.Slack(frame, 0.6f, 3000f, false);
             frame.HasCover = true;
-            Check(Defense.CanRefill(frame, support, new Vec3(0, -1500, 100),
-                    blueGoal, false),
-                "covered support could not take a safe refill");
-            Check(!Defense.CanRefill(frame, support, new Vec3(0, -1500, 100),
-                    blueGoal, true),
-                "pressure did not cancel refill");
+            float covered = BoostEconomy.Slack(frame, 0.6f, 3000f, false);
+            Check(covered > uncovered, "cover did not free the support car to take boost");
+            Check(BoostEconomy.Slack(frame, 0.6f, 3000f, false, pressureTime: 0.5f) < 0.1f,
+                "pressure did not cancel the refill");
         });
 
         test("counter defence: recovery follows a changed ball path on the next planning tick", () =>
@@ -575,23 +606,22 @@ internal static class DefenseRegression
                 "wrong-side car was allowed to attack an emergency ball");
         });
 
-        test("log-v5: solo shadow may take a safe refill but never in the deep box", () =>
+        test("log-v5: solo shadow may take a safe refill but not while the ball is at its net", () =>
         {
-            Car car = CarAt(0, -2400);
             var frame = new TacticalFrame
             {
                 MyEta = 0.8f,
-                OpponentEta = 2.0f,
+                OpponentEta = 2.6f,
                 TeamRank = 0,
                 TeamCount = 1,
                 LastBack = true
             };
 
-            Check(Defense.CanRefill(frame, car, new Vec3(0, 300, 100), blueGoal, false),
-                "1v1 rank-zero rule still disabled all intentional boost economy");
-            Check(!Defense.CanRefill(frame, car, new Vec3(0, -3300, 100), blueGoal, false),
-                "deep own-box ball allowed a solo refill");
-            Check(!Defense.CanRefill(frame, car, new Vec3(0, 300, 100), blueGoal, true),
+            float open = BoostEconomy.Slack(frame, 0.4f, -300f, false);
+            Check(open > 0.8f, $"1v1 rank-zero rule still disabled all intentional boost economy: {open:F2} s");
+            float deep = BoostEconomy.Slack(frame, 0.4f, 4600f, false);
+            Check(deep < open - 0.4f, "a deep own-box ball left a solo refill as much slack as an open ball");
+            Check(BoostEconomy.Slack(frame, 0.4f, -300f, false, pressureTime: 0.3f) == 0f,
                 "opponent pressure did not cancel solo refill");
         });
 
