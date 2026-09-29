@@ -47,6 +47,17 @@ public sealed class PlayerStats
     public int Assists { get; set; }
     public int DemosInflicted { get; set; }
     public int DemosTaken { get; set; }
+    /// <summary>Time an opponent held the ball (last touch theirs within 2.5 s, still within 650 uu of it).</summary>
+    public double PressureSeconds { get; set; }
+    /// <summary>Integral of the distance from this team's nearest car to the ball while an opponent held it.</summary>
+    public double PressureGapIntegral { get; set; }
+    /// <summary>Time an opponent held the ball with none of this team's cars within 1000 uu of it.</summary>
+    public double PressureFreeSeconds { get; set; }
+    /// <summary>Opponent possessions begun, those this team contested (a touch, or a car within 400 uu, within 1.5 s).</summary>
+    public int PressureEpisodes { get; set; }
+    public int PressureContested { get; set; }
+    /// <summary>Summed time from a possession's start until a car of this team closed on the ball at 600 uu/s (capped at 2 s).</summary>
+    public double PressureResponseSeconds { get; set; }
     public int KickoffsTaken { get; set; }
     public int KickoffFirstTouches { get; set; }
     public double KickoffTimeToBall { get; set; }
@@ -104,6 +115,15 @@ public sealed class StatsTracker
     private readonly IReadOnlyList<Participant> players;
     private readonly float[] previousBoost;
     private readonly bool[] previousDemoed;
+    private readonly PossessionTracker[] possession = { new(), new() };
+    private double clock;
+
+    /// <summary>Follows one team's holds on the ball, as seen by the team defending against it.</summary>
+    private sealed class PossessionTracker
+    {
+        public bool Holding, Contested, Responded;
+        public double Started;
+    }
 
     public StatsTracker(IReadOnlyList<Participant> players)
     {
@@ -111,6 +131,19 @@ public sealed class StatsTracker
         previousBoost = new float[players.Count];
         previousDemoed = new bool[players.Count];
         Array.Fill(previousBoost, float.NaN);
+    }
+
+    private int lastToucherTeam = -1;
+    private double lastTouchClock = double.NegativeInfinity;
+
+    /// <summary>Notes a counted touch, so a defender's touch during an opponent's possession is a contest.</summary>
+    public void NoteTouch(int player)
+    {
+        int team = players[player].Team;
+        lastToucherTeam = team;
+        lastTouchClock = clock;
+        PossessionTracker held = possession[1 - team];
+        if (held.Holding && clock - held.Started < 1.5) held.Contested = true;
     }
 
     public void ResetBoostBaseline(RsbCarState[] cars)
@@ -148,6 +181,8 @@ public sealed class StatsTracker
                 lastBackPerTeam[team] = i;
             }
         }
+
+        SamplePossession(cars, ballPos, closestDistance, dt);
 
         for (int i = 0; i < players.Count; i++)
         {
@@ -213,6 +248,69 @@ public sealed class StatsTracker
             if (depth > ballPos.Y * side) s.BehindBallSeconds += dt;
             if (lastBackPerTeam[team] == i) s.LastBackSeconds += dt;
             if (closestPerTeam[team] == i) s.ClosestToBallSeconds += dt;
+        }
+    }
+
+    /// <summary>
+    /// Space, contest and response measures for each team defending against a possession. A team holds
+    /// the ball while it made the latest touch within 2.5 s and one of its cars is still within 650 uu of it.
+    /// </summary>
+    private void SamplePossession(RsbCarState[] cars, RsbVec ballPos, float[] closestDistance, float dt)
+    {
+        clock += dt;
+        for (int holder = 0; holder < 2; holder++)
+        {
+            int defender = 1 - holder;
+            PossessionTracker hold = possession[holder];
+            bool holding = lastToucherTeam == holder && clock - lastTouchClock < 2.5 && closestDistance[holder] < 650f;
+            if (holding && !hold.Holding)
+            {
+                hold.Started = clock;
+                hold.Contested = hold.Responded = false;
+                foreach (Participant p in players.Where(p => p.Team == defender)) p.Stats.PressureEpisodes++;
+            }
+            if (!holding && hold.Holding)
+            {
+                if (!hold.Responded)
+                    foreach (Participant p in players.Where(p => p.Team == defender))
+                        p.Stats.PressureResponseSeconds += Math.Min(2.0, clock - hold.Started);
+                if (hold.Contested)
+                    foreach (Participant p in players.Where(p => p.Team == defender)) p.Stats.PressureContested++;
+            }
+            hold.Holding = holding;
+            if (!holding) continue;
+
+            float gap = closestDistance[defender];
+            // A team with every car demolished has no distance to measure; the tick is not counted.
+            if (gap >= float.MaxValue) continue;
+            double elapsed = clock - hold.Started;
+            if (gap < 400f && elapsed < 1.5) hold.Contested = true;
+            if (!hold.Responded)
+            {
+                bool closing = false;
+                for (int i = 0; i < players.Count; i++)
+                {
+                    if (players[i].Team != defender || cars[i].IsDemoed != 0) continue;
+                    RsbVec toBall = ballPos - cars[i].Physics.Position;
+                    float distance = toBall.Length;
+                    if (distance < 1f) { closing = true; break; }
+                    float speedToBall = (cars[i].Physics.Velocity.X * toBall.X + cars[i].Physics.Velocity.Y * toBall.Y +
+                        cars[i].Physics.Velocity.Z * toBall.Z) / distance;
+                    if (speedToBall >= 600f || distance < 400f) { closing = true; break; }
+                }
+                if (closing || elapsed >= 2.0)
+                {
+                    hold.Responded = true;
+                    foreach (Participant p in players.Where(p => p.Team == defender))
+                        p.Stats.PressureResponseSeconds += Math.Min(2.0, elapsed);
+                }
+            }
+            foreach (Participant p in players.Where(p => p.Team == defender))
+            {
+                p.Stats.PressureSeconds += dt;
+                p.Stats.PressureGapIntegral += gap * dt;
+                if (gap > 1000f) p.Stats.PressureFreeSeconds += dt;
+            }
         }
     }
 }

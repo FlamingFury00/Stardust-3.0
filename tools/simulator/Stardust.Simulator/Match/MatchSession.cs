@@ -350,6 +350,7 @@ public sealed class MatchSession : IDisposable
                 if (car.IsOnGround == 0 && ball.Physics.Position.Z > 300) p.Stats.AerialTouches++;
             }
             p.LastCountedTouch = hitTime;
+            if (StatsEnabled) stats.NoteTouch(p.Index);
             toucher = p.Index;
         }
         if (toucher < 0)
