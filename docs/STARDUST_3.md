@@ -272,6 +272,7 @@ Nexto. None survived:
 | Final kickoff dodge turned 0.15–0.35 rad away from the opponent's side of the ball | kickoff drill vs Nexto: goals conceded within 10 s, 60 kickoffs per turn, then 120 | 18–35 % vs 32 %, then 29 % vs 29 % at 0.15, with the ball lost more often (44 % vs 24 %) |
 | Final dodge later (450–600 uu), none at all, or along the approach | kickoff drill vs Nexto, 60 each | worse or level; without the dodge every kickoff is lost |
 | Final dodge held 0.1 s instead of 0.18 s, hitting the ball lower | self-play, 24 games | −1.33 ± 0.65: ball-side advantage after the kickoff 75 to 126 |
+| Final dodge held 0.12 s instead of 0.18 s | kickoff drill vs Nexto, goals conceded within 10 s: 120 kickoffs on each of two seeds (the second on the September build); team kickoffs vs two Nextos, 48 | 18 % vs 29 %, then 22.5 % vs 27.5 %; 2v2 14 vs 15 conceded. Kept at 0.18: the RLBC 2026 bracket is hardcoded bots, and against a speed-flipping opponent the shorter hold gives up the first touch (row above) |
 | Shadow holds its depth against a fast attack instead of stepping up | defense drill, 40 | 21 vs 15 conceded |
 | Meet a carried ball with a clearance before a block | defense drill, 40 + 60 | 29 vs 32 per 100 conceded: level |
 | Challenge a carrier whenever its path is reachable within 0.8 s | defense drill, 100 | 36 vs 35: level |
