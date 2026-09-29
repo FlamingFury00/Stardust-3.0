@@ -4,135 +4,6 @@ using RedUtils.Math;
 
 namespace Bot
 {
-    public sealed class GroundDribble : IPossessionAction
-    {
-        private readonly float started = Game.Time;
-        private float stableSince = float.NaN;
-        public bool Finished { get; private set; }
-        public bool Interruptible => true;
-        public float ClaimTime => Game.Time + 0.25f;
-        public static bool CanStart(Car car, Ball ball, float freeTime)
-        {
-            if (car == null || ball == null || !car.IsGrounded || car.Up.z <= 0.9f)
-                return false;
-
-            Vec3 local = car.Local(ball.location - car.Location);
-            float relativeSpeed = (ball.velocity - car.Velocity).Length();
-            bool alreadyControlled = PossessionControl.HasControlledPossession(car, ball);
-            return ball.location.z < 300f &&
-                local.x > -105f && local.x < 590f && MathF.Abs(local.y) < 195f &&
-                relativeSpeed < 1100f && (alreadyControlled || freeTime > 0.10f);
-        }
-        public void Run(RUBot bot)
-        {
-            Car car = bot.Me;
-            Vec3 offset = Ball.Location - car.Location;
-            if (!car.IsGrounded || offset.Length() > 850f || Game.Time - started > 8f || Ball.Location.z > 365f)
-            { Finished = true; return; }
-
-            Vec3 lane = PossessionControl.AttackingLane(
-                car, Ball.MainBall, bot.LivingOpponents,
-                bot.TheirGoal.Location, bot.OurGoal.Location);
-            bool carried = PossessionControl.HasControlledPossession(car, Ball.MainBall);
-            stableSince = carried ? (float.IsFinite(stableSince) ? stableSince : Game.Time) : float.NaN;
-
-            float pressure = bot is Stardust stardust
-                ? MathF.Min(stardust.Situation.OpponentEta, stardust.Situation.PressureTime)
-                : 6f;
-            float opponentDistance = float.PositiveInfinity;
-            foreach (Car opponent in bot.LivingOpponents)
-                opponentDistance = MathF.Min(opponentDistance, opponent.Location.Dist(Ball.Location));
-
-            float requiredStable = pressure < 0.40f || opponentDistance < 450f ? 0.06f : 0.13f;
-            if (carried && Game.Time - stableSince >= requiredStable &&
-                PossessionControl.ShouldFlick(
-                    car, Ball.MainBall, lane, pressure, opponentDistance, bot.OurGoal.Location))
-            {
-                bot.Action = new ControlledFlick(car, lane);
-                return;
-            }
-
-            // Stay on the ball under pressure. The pressure response is the flick above, not abandoning
-            // possession and driving back into a shadow lane.
-            bot.Controller = PossessionControl.GroundCarry(car, Ball.MainBall, lane);
-        }
-    }
-
-    public sealed class GroundCatch : IPossessionAction
-    {
-        private readonly float started = Game.Time;
-        private Drive drive;
-        public bool Finished { get; private set; }
-        public bool Interruptible => drive?.Interruptible ?? true;
-        public float ClaimTime { get; private set; }
-        public static BallSlice FindCatch(Car car)
-        {
-            if (!car.IsGrounded || Ball.Prediction.Slices == null) return null;
-            float next = Game.Time + 0.15f;
-            foreach (BallSlice slice in Ball.Prediction.Slices)
-            {
-                if (slice == null || slice.Time < next) continue;
-                float time = slice.Time - Game.Time;
-                if (time > 1.5f) break;
-                next = slice.Time + 0.04f;
-                if (slice.Location.z < 105 || slice.Location.z > 175 || slice.Velocity.z > -80) continue;
-                float eta = Drive.GetEta(car, slice.Location.Flatten());
-                if (float.IsFinite(eta) && eta < time - 0.06f) return slice;
-            }
-            return null;
-        }
-        public void Run(RUBot bot)
-        {
-            if (Game.Time - started > 1.8f || !bot.Me.IsGrounded || GroundDribble.CanStart(bot.Me, Ball.MainBall, 1))
-            { Finished = true; return; }
-            BallSlice catchSlice = FindCatch(bot.Me);
-            if (catchSlice == null) { Finished = true; return; }
-            ClaimTime = catchSlice.Time;
-            Vec3 lane = ControlMath.FlatUnit(bot.TheirGoal.Location - catchSlice.Location, bot.Me.Forward);
-            Vec3 target = (catchSlice.Location - lane * 40).Flatten();
-            float time = MathF.Max(0.1f, catchSlice.Time - Game.Time);
-            float distance = bot.Me.Location.FlatDist(target);
-            float speed = System.Math.Clamp(distance / time, 100, 1800);
-            if (distance < 300) speed = MathF.Min(speed, catchSlice.Velocity.FlatLen() + 150);
-            drive ??= new Drive(bot.Me, target, speed, allowDodges: false, wasteBoost: false);
-            drive.Target = target;
-            drive.TargetSpeed = MathF.Max(100, speed);
-            drive.Run(bot);
-            bot.Controller.Boost = false;
-            bot.Controller.Handbrake = false;
-        }
-    }
-
-    public sealed class ControlledFlick : IPossessionAction
-    {
-        private readonly JumpSequence jumps = new();
-        private readonly Vec3 direction;
-        private readonly float started = Game.Time;
-        private float elapsed;
-        public bool Finished { get; private set; }
-        public bool Interruptible => elapsed > 0.65f;
-        public float ClaimTime => started + 0.25f;
-        public ControlledFlick(Car car, Vec3 direction) { this.direction = ControlMath.Unit(direction, car.Forward); }
-        public void Run(RUBot bot)
-        {
-            elapsed = Game.Time - started;
-            if (elapsed > 0.9f || (elapsed > 0.3f && bot.Me.IsGrounded)) { Finished = true; return; }
-            JumpCommand command = jumps.Step(Game.Time, bot.Jump.CanDodge);
-            ControlMath.Aim(bot.Me, bot.Controller, direction, Vec3.Up);
-            bot.Controller.Jump = command.Jump;
-            bot.Controller.Boost = false;
-            bot.Controller.Throttle = 1;
-            if (command.Dodge)
-            {
-                Vec3 local = ControlMath.FlatUnit(bot.Me.Local(direction), new Vec3(1, 0, 0));
-                bot.Controller.Pitch = -local.x;
-                bot.Controller.Yaw = local.y;
-                bot.Controller.Roll = 0;
-            }
-            else if (!jumps.Fired) bot.Controller.Pitch = -0.15f;
-        }
-    }
-
     public sealed class AerialCarry : IPossessionAction
     {
         private readonly BoostGate boost = new();
@@ -208,8 +79,29 @@ namespace Bot
     }
 
     /// <summary>Experimental, evidence-gated acquisition. Enable with STARDUST_FLIP_RESETS=1.</summary>
+    /// <summary>
+    /// Flip reset: put the wheels on a high ball to get the flip back, then use it on the ball.
+    ///
+    /// In Rocket League (and RocketSim) the wheels are suspension rays that also land on the ball:
+    /// three touching wheels count as grounded, which clears the used jump and flip. The ball must sit
+    /// within about 30° of the car's underside and near the wheel centre; the wheels leave no ball
+    /// touch and do not push the ball. So the approach first closes in nose-first under boost, then,
+    /// in the last half second, presents the underside to the ball and drifts in at a gentle closing
+    /// speed. The reset is confirmed from the packet flags alone: airborne with jump, double jump and
+    /// dodge all cleared after they were spent. Then the car lets the ball move ahead, flies in behind
+    /// it relative to the target, and dodges into it: the regained flip becomes a shot.
+    /// </summary>
     public sealed class FlipReset : IPossessionAction
     {
+        /// <summary>Car origin to ball centre when the wheels rest on the ball (RocketSim: 100-103 uu).</summary>
+        private const float WheelContact = 102f;
+        /// <summary>
+        /// Time to contact from which the underside faces the ball, and the closing speed along the
+        /// line to the ball to arrive with. Tuned in the mechanics lab (flip-reset drill).
+        /// </summary>
+        private static float PresentTime = 0.45f, ClosingSpeed = 220f;
+        /// <summary>Distance behind the ball, along the aim, from which the reset flip is fired.</summary>
+        private const float ShotStandoff = 190f;
         private readonly ResetEvidence evidence = new();
         private readonly BoostGate boost = new();
         private readonly float started = Game.Time;
@@ -217,69 +109,124 @@ namespace Bot
         public bool Finished { get; private set; }
         public bool Interruptible => !float.IsFinite(firedAt);
         public float ClaimTime => Game.Time + 0.25f;
+        /// <summary>Whether the regained flip has been confirmed from the packet flags.</summary>
+        public bool Confirmed => float.IsFinite(confirmedAt);
+
         public FlipReset(JumpState initialState)
         {
-            // Capture spent state at selection, even if contact happens before the next control tick.
-            evidence.Observe(initialState, false, false, 0, Game.Time);
+            // Record the spent flip at selection, even if the wheels land on the next tick.
+            evidence.Observe(initialState, 0f);
         }
+
+        /// <summary>
+        /// Airborne with no flip left (used, or a single jump's flip timed out), boost to fly with,
+        /// and a high ball just above and near enough to reach before gravity separates them.
+        /// </summary>
         public static bool CanStart(Car car, Ball ball, JumpState jump)
         {
             Vec3 delta = ball.location - car.Location;
-            return !car.IsGrounded && car.Location.z > 350 && ball.location.z > 550 && car.Boost > 20 &&
-                (jump.DoubleJumped || jump.Dodged) && delta.z > 60 && delta.z < 280 && delta.Length() < 360 &&
-                (car.Velocity - ball.velocity).Length() < 650;
+            return !car.IsGrounded && !jump.Grounded && !jump.CanDodge && car.Location.z > 350f &&
+                ball.location.z > 550f && car.Boost > 20f && delta.z > 60f && delta.z < 400f &&
+                delta.Length() < 500f && (car.Velocity - ball.velocity).Length() < 700f;
         }
+
         public void Run(RUBot bot)
         {
             Car car = bot.Me;
             Vec3 delta = Ball.Location - car.Location;
-            if (car.Location.z < 180 || delta.Length() > 650 || Game.Time - started > 2)
-            { Finished = true; return; }
-            Vec3 towardBall = ControlMath.Unit(delta, Vec3.Up);
-            Vec3 lane = ControlMath.FlatUnit(bot.TheirGoal.Location - Ball.Location, car.Forward);
-            bool wheelsAligned = (-car.Up).Dot(towardBall) > 0.85f;
-            bool confirmed = evidence.Observe(bot.Jump, bot.OwnTouchThisTick, wheelsAligned, car.Location.z, Game.Time);
-            bot.Controller.Jump = false;
-            bot.Controller.Boost = false;
-            if (confirmed)
+            float distance = delta.Length();
+            // Grounded high up means the wheels are on the ball: that is contact, not a landing.
+            bool landed = car.IsGrounded && car.Location.z < 250f;
+            if (landed || distance > 900f || Game.Time - started > 3f)
             {
-                if (!float.IsFinite(confirmedAt)) confirmedAt = Game.Time;
-                ControlMath.Aim(car, bot.Controller, towardBall, Vec3.Up);
-                if (!float.IsFinite(firedAt) && Game.Time - confirmedAt > 0.08f && bot.Jump.CanDodge &&
-                    delta.Length() < 230 && car.Forward.Dot(towardBall) > 0.8f && car.AngularVelocity.Length() < 2.5f)
-                    firedAt = Game.Time;
-                if (float.IsFinite(firedAt))
-                {
-                    bool pulse = Game.Time - firedAt < 0.05f;
-                    bot.Controller.Jump = pulse;
-                    if (pulse)
-                    {
-                        Vec3 local = ControlMath.FlatUnit(car.Local(towardBall), new Vec3(1, 0, 0));
-                        bot.Controller.Pitch = -local.x;
-                        bot.Controller.Yaw = local.y;
-                        bot.Controller.Roll = 0;
-                    }
-                    Finished = Game.Time - firedAt > 0.8f;
-                }
-                else if (Game.Time - confirmedAt > 0.55f) Finished = true;
+                Finished = true;
                 return;
             }
-            if (Game.Time - started > 1.35f) { Finished = true; return; }
-            const float horizon = 0.08f;
-            Ball prediction = Ball.MainBall.Predict(horizon);
-            Vec3 target = prediction.location - Vec3.Up * (Ball.Radius + 18) - lane * 20;
-            Vec3 acceleration = PossessionControl.FlightAtHorizon(car, target, prediction.velocity, horizon);
-            if (delta.Length() > 220)
+            if (!Confirmed && evidence.Observe(bot.Jump, car.Location.z))
+                confirmedAt = Game.Time;
+            bot.Controller.Jump = false;
+            bot.Controller.Throttle = 0f;
+
+            Vec3 aim = ControlMath.FlatUnit(bot.TheirGoal.Location - Ball.Location, car.Forward);
+            if (Confirmed)
             {
+                Shoot(bot, car, delta, distance, aim);
+                return;
+            }
+            if (Game.Time - started > 1.6f)
+            {
+                Finished = true;
+                return;
+            }
+            Approach(bot, car, delta, distance, aim);
+        }
+
+        private void Approach(RUBot bot, Car car, Vec3 delta, float distance, Vec3 aim)
+        {
+            Vec3 toBall = delta / MathF.Max(distance, 1f);
+            float closing = (car.Velocity - Ball.Velocity).Dot(toBall);
+            float contact = MathF.Max(0f, distance - WheelContact) / MathF.Max(closing, 60f);
+            if (contact > PresentTime)
+            {
+                // Close in nose first: be one wheel-contact short of the ball, closing gently.
+                float horizon = System.Math.Clamp(contact, 0.1f, 0.5f);
+                Ball ahead = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
+                Vec3 target = ahead.location - toBall * WheelContact;
+                Vec3 acceleration = PossessionControl.FlightAtHorizon(car, target, ahead.velocity + toBall * ClosingSpeed, horizon);
                 Vec3 nose = ControlMath.Unit(acceleration, car.Forward);
-                ControlMath.Aim(car, bot.Controller, nose, -Vec3.Up);
+                Orient(bot, car, nose, -toBall);
                 bot.Controller.Boost = boost.Step(Game.Time, acceleration.Dot(car.Forward), car.Forward.Dot(nose), car.Boost, false);
+                return;
             }
-            else
+            // Present the underside: roof away from the ball, nose along the aim across the line to it.
+            Vec3 across = aim - toBall * aim.Dot(toBall);
+            Vec3 nose2 = ControlMath.Unit(across, ControlMath.Unit(Vec3.Up - toBall * toBall.z, car.Forward));
+            Orient(bot, car, nose2, -toBall);
+            bot.Controller.Boost = false;
+        }
+
+        private void Shoot(RUBot bot, Car car, Vec3 delta, float distance, Vec3 aim)
+        {
+            if (float.IsFinite(firedAt))
             {
-                // Coast into wheel contact rather than boosting the ball away.
-                ControlMath.Aim(car, bot.Controller, lane, -Vec3.Up);
+                // A short press dodges; after it, hands off so nothing cancels the flip.
+                bot.Controller.Jump = Game.Time - firedAt < 0.05f;
+                Finished = Game.Time - firedAt > 0.6f;
+                return;
             }
+            Vec3 toBall = delta / MathF.Max(distance, 1f);
+            // Dodge once the nose is on the ball, close, and the ball would leave toward the aim.
+            if (bot.Jump.CanDodge && distance < ShotStandoff + 60f && car.Forward.Dot(toBall) > 0.85f &&
+                toBall.Flatten().Normalize().Dot(aim) > 0.6f)
+            {
+                firedAt = Game.Time;
+                Vec3 local = ControlMath.FlatUnit(car.Local(toBall), new Vec3(1, 0, 0));
+                bot.Controller.Jump = true;
+                bot.Controller.Pitch = -local.x;
+                bot.Controller.Yaw = local.y;
+                bot.Controller.Roll = 0f;
+                return;
+            }
+            // Fly to the spot behind the ball along the aim, nose on the ball.
+            const float horizon = 0.2f;
+            Ball ahead = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
+            Vec3 target = ahead.location - (aim * 0.8f + Vec3.Up * 0.2f).Normalize() * ShotStandoff;
+            Vec3 acceleration = PossessionControl.FlightAtHorizon(car, target, ahead.velocity, horizon);
+            bool facing = car.Forward.Dot(toBall) > 0.6f;
+            Vec3 nose = distance < 350f && facing ? toBall : ControlMath.Unit(acceleration, car.Forward);
+            Orient(bot, car, nose, Vec3.Up);
+            bot.Controller.Boost = boost.Step(Game.Time, acceleration.Dot(car.Forward), car.Forward.Dot(nose), car.Boost, false);
+            if (Game.Time - confirmedAt > 1.5f) Finished = true;
+        }
+
+        private static void Orient(RUBot bot, Car car, Vec3 forward, Vec3 up)
+        {
+            RedUtils.Physics.AirInput air = RedUtils.Physics.AirControl.Orient(car.Forward, car.Right, car.Up,
+                new Vec3(car.AngularVelocity.Dot(car.Forward), car.AngularVelocity.Dot(car.Right), car.AngularVelocity.Dot(car.Up)),
+                forward, up);
+            bot.Controller.Pitch = air.Pitch;
+            bot.Controller.Yaw = air.Yaw;
+            bot.Controller.Roll = air.Roll;
         }
     }
 

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using RedUtils;
 using RedUtils.Math;
+using RedUtils.Physics;
+using RedUtils.Planning;
 
 namespace Bot
 {
@@ -17,6 +19,9 @@ namespace Bot
 
     public static class Tactics
     {
+        /// <summary>How much later than the scripted shot a physics-planned strike may touch and still replace it.</summary>
+        private const float PlannedStrikeWindow = 0.02f;
+
         public static float GoalThreat(BallSlice[] slices, Vec3 goal, float now, float horizon = 2.5f) =>
             Defense.GoalThreat(slices, goal, now, horizon, out _);
 
@@ -405,7 +410,31 @@ namespace Bot
                     break;
             }
 
-            return best;
+            return best == null ? null : PlannedStrike(bot, emergency, claimed, maxContactTime, slices, best) ?? best;
+        }
+
+        /// <summary>
+        /// The physics planner's strike when it touches no later than the scripted shot: its contact
+        /// is aimed with the validated hit model, jump touches flip into the ball, and its timing is
+        /// the rollout the strike executes. A later touch is never taken: in a contested game the
+        /// earlier ball is the one that matters (see docs/STARDUST_3.md for the match evidence).
+        /// </summary>
+        private static Shot PlannedStrike(RUBot bot, bool emergency, Func<float, bool> claimed, float maxContactTime,
+            BallSlice[] slices, Shot scripted)
+        {
+            StrikeGoal goal = emergency
+                ? StrikeGoal.ClearFrom(bot.Team, bot.LivingOpponents)
+                : StrikeGoal.Shoot(bot.Team, bot.LivingOpponents);
+            var options = new StrikePlanner.Options
+            {
+                MaxTime = MathF.Min(4f, maxContactTime),
+                Claimed = emergency ? null : claimed,
+                AimTolerance = emergency ? 0.6f : 0.35f,
+            };
+            StrikePlan plan = StrikePlanner.Plan(bot.Me, new BallPath(slices), Game.Time, goal, options);
+            if (plan == null || plan.ContactTime > scripted.Slice.Time + PlannedStrikeWindow)
+                return null;
+            return plan.Kind == StrikeKind.Aerial ? new AerialStrike(plan) : new DrivenStrike(bot.Me, plan);
         }
     }
 }

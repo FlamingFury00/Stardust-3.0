@@ -125,6 +125,40 @@ internal static class DefenseRegression
                 $"orange anchor missed far-post geometry: {orange}");
         });
 
+        test("corner pressure: first defender keeps a reachable shadow outside the posts", () =>
+        {
+            foreach (int side in new[] { -1, 1 })
+            foreach (int mirror in new[] { -1, 1 })
+            foreach (var point in new[] { new Vec3(2870, 4197, 100), new Vec3(2507, 4836, 100) })
+            {
+                Vec3 goal = new(0, side * 5120, 0);
+                Vec3 ball = new(point.x * mirror, point.y * side, point.z);
+                Vec3 shadow = Defense.ShadowTarget(ball, goal, DefensiveRole.Shadow, 0.08f);
+                Vec3 anchor = Defense.ShadowTarget(ball, goal, DefensiveRole.Anchor, 0.08f);
+                Check(shadow.FlatDist(ball) < 1200, $"corner shadow surrendered the lane: {ball} -> {shadow}");
+                Check(MathF.Abs(shadow.x) > Goal.Width / 2, $"first defender parked inside posts: {shadow}");
+                Check(Defense.IsGoalSide(shadow, ball, goal, 300), "wide pressure abandoned goal-side coverage");
+                Check(MathF.Abs(anchor.x) < Goal.Width / 2, "goal anchor followed the first defender out wide");
+            }
+        });
+
+        test("corner pressure: wide targets stay inside the field and behind-goal targets use the mouth", () =>
+        {
+            foreach (int side in new[] { -1, 1 })
+            foreach (int mirror in new[] { -1, 1 })
+            foreach (float x in new[] { 0f, 700f, 1800f, 3000f, 3900f })
+            foreach (float depth in new[] { 3800f, 4700f, 5000f, 5100f })
+            foreach (var role in new[] { DefensiveRole.Shadow, DefensiveRole.Support })
+            {
+                Vec3 ball = new(x * mirror, side * depth, 100);
+                Vec3 target = Defense.ShadowTarget(ball, new Vec3(0, side * 5120, 0), role, 0.1f);
+                Check(MathF.Abs(target.x) + MathF.Abs(target.y) <= Field.CornerIntersection - 100,
+                    $"target crossed corner wall: {target}");
+                Check(MathF.Abs(target.x) <= Goal.Width / 2 - 175 || MathF.Abs(target.y) <= 5000,
+                    $"target crossed back wall outside net: {target}");
+            }
+        });
+
         test("defense-v3: recovery waypoint goes behind the ball on the far-post side", () =>
         {
             Vec3 ball = new(1600, -3900, 100);
@@ -323,6 +357,46 @@ internal static class DefenseRegression
             Check(!Defense.CanRefill(frame, support, new Vec3(0, -1500, 100),
                     blueGoal, true),
                 "pressure did not cancel refill");
+        });
+
+        test("counter defence: recovery follows a changed ball path on the next planning tick", () =>
+        {
+            float originalTime = Game.Time;
+            try
+            {
+                foreach (int team in new[] { 0, 1 })
+                {
+                    float side = team == 0 ? -1 : 1;
+                    Car car = CarAt(0, 0, team: team);
+                    var bot = World(new Vec3(400, side * 2000, 93), car);
+                    void Update(float time, float depth)
+                    {
+                        Set(typeof(Game), "Time", null!, time);
+                        Set(typeof(Ball), "Location", null!, new Vec3(400, side * depth, 93));
+                        Set(typeof(Ball), "Velocity", null!, new Vec3(0, side * 1000, 0));
+                        Set(typeof(Ball), "Prediction", null!, new RedUtils.BallPrediction
+                        {
+                            Slices = new[]
+                            {
+                                new BallSlice(time, new Vec3(400, side * depth, 93), new Vec3(0, side * 1000, 0)),
+                                new BallSlice(time + (5300 - depth) / 1000,
+                                    new Vec3(400, side * 5300, 93), new Vec3(0, side * 1000, 0))
+                            }
+                        });
+                        bot.Run();
+                    }
+                    Update(200, 2000);
+                    Check(bot.Decision == "defend / counter recover" && bot.Action is DefensiveDrive,
+                        $"fixture did not enter counter recovery: {bot.Decision}");
+                    Vec3 firstTarget = ((DefensiveDrive)bot.Action).Target;
+                    Update(200.08f, 2080);
+                    Check(bot.Decision == "defend / counter recover" && bot.Action is DefensiveDrive,
+                        $"recovery was mistaken for a clearance: {bot.Decision}");
+                    Check(((DefensiveDrive)bot.Action).Target.FlatDist(firstTarget) > 10,
+                        "recovery kept driving toward the old ball path");
+                }
+            }
+            finally { Set(typeof(Game), "Time", null!, originalTime); }
         });
 
         test("defense-v3: goal crossing is interpolated in time and lateral position", () =>
@@ -534,8 +608,10 @@ internal static class DefenseRegression
                 $"deep defensive possession did not escape upfield: {lane}");
             Check(lane.x < -0.10f,
                 $"deep right-corner possession did not cut inward: {lane}");
-            Check(!PossessionControl.ShouldFlick(
-                    car, ball, lane, 0.20f, 300f, blueGoal),
+            Car challenger = CarAt(1950, -4500, 1, 1);
+            challenger.Velocity = new Vec3(0, -1400, 0);
+            Check(PossessionControl.PlanFlick(car, ball, lane, new[] { challenger }, blueGoal,
+                    new Vec3(0, 5120, 0), out _) == null,
                 "goal-line possession was allowed to flick across the box");
         });
 
@@ -696,7 +772,11 @@ internal static class DefenseRegression
                 Set(typeof(Game), nameof(Game.Time), null, 10.11f);
                 hook.Invoke(bot, null);
 
-                string[] lines = File.ReadAllLines(path);
+                // Telemetry remains open for writing. Windows requires the reader to share that
+                // access too, even though the writer itself allows concurrent readers.
+                using var reader = new StreamReader(new FileStream(path, FileMode.Open,
+                    FileAccess.Read, FileShare.ReadWrite));
+                string[] lines = reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
                 Check(lines.Length == 2, $"10 Hz telemetry wrote {lines.Length} lines for 0.11 s");
 
                 using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
@@ -725,6 +805,45 @@ internal static class DefenseRegression
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", oldHz);
                 Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
+            }
+        });
+
+        test("telemetry: opening a file prunes the oldest telemetry beyond 256 MB", () =>
+        {
+            string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
+            string? oldFile = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
+            string directory = Path.Combine(Path.GetTempPath(), $"stardust-prune-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            try
+            {
+                // Three 100 MB matches (sparse files), oldest first, plus a file that is not telemetry.
+                string[] matches = Enumerable.Range(0, 3)
+                    .Select(i => Path.Combine(directory, $"stardust-telemetry-match{i}.jsonl")).ToArray();
+                for (int i = 0; i < matches.Length; i++)
+                {
+                    using (var stream = new FileStream(matches[i], FileMode.CreateNew))
+                        stream.SetLength(100L * 1024 * 1024);
+                    File.SetLastWriteTimeUtc(matches[i], DateTime.UtcNow.AddHours(i - 3));
+                }
+                string other = Path.Combine(directory, "notes.jsonl");
+                File.WriteAllText(other, "{}");
+
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE",
+                    Path.Combine(directory, "stardust-telemetry-current.jsonl"));
+                World(new Vec3(0, 0, 100), CarAt(0, -3000));
+
+                Check(!File.Exists(matches[0]), "the oldest match beyond the budget was kept");
+                Check(File.Exists(matches[1]) && File.Exists(matches[2]),
+                    "a match within the budget was deleted");
+                Check(File.Exists(other), "a file that is not telemetry was deleted");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
+                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
+                try { Directory.Delete(directory, true); }
+                catch (IOException) { } // the bot's telemetry file stays open until exit
             }
         });
     }

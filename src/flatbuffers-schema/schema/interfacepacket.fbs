@@ -46,11 +46,24 @@ union InterfaceMessage {
   /// game messages without delay. The match will not start until all sessions have sent this
   /// message.
   InitComplete,
-  
+
   /// Requests for a specificed agent to have its ability to render changed.
   /// This changed will then be broadcasted to all current connections.
   /// Does nothing if rendering has been completely disabled.
   RenderingStatus,
+
+  /// Requests for server to send a PingResponse asap for measuring latency
+  PingRequest,
+
+  /// Response to PingRequest for measuring latency
+  PingResponse,
+
+  /// Sent by sessions to control when the in-game performance monitor will display
+  UpdatePerformanceMonitor,
+
+  /// Run an Rocket League or Unreal console command.
+  /// See https://wiki.rlbot.org/framework/console-commands/ for a list of known commands.
+  ConsoleCommand,
 }
 
 /// Packet containing a InterfaceMessage

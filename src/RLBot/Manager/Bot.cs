@@ -18,6 +18,12 @@ public abstract class Bot
     public FieldInfoT FieldInfo { get; private set; } = new();
     public BallPredictionT BallPrediction { get; private set; } = new();
 
+    /// <summary>
+    /// Optional host transport for match communication. An in-process simulator can relay the
+    /// same messages without opening a socket; null uses the ordinary RLBot connection.
+    /// </summary>
+    public Action<MatchCommT>? MatchCommSink { get; set; }
+
     public readonly Renderer Renderer;
 
     private bool _initializedBot = false;
@@ -133,16 +139,18 @@ public abstract class Bot
         bool teamOnly = false
     )
     {
-        _gameInterface.SendMatchComm(
-            new MatchCommT
-            {
-                Index = (uint)Index,
-                Team = (uint)Team,
-                Content = Content,
-                Display = Display,
-                TeamOnly = teamOnly,
-            }
-        );
+        var message = new MatchCommT
+        {
+            Index = (uint)Index,
+            Team = (uint)Team,
+            Content = Content ?? new List<byte>(),
+            Display = Display,
+            TeamOnly = teamOnly,
+        };
+        if (MatchCommSink is { } sink)
+            sink(message);
+        else
+            _gameInterface.SendMatchComm(message);
     }
 
     private void HandleBallPrediction(BallPredictionT ballPrediction) =>
@@ -178,11 +186,14 @@ public abstract class Bot
         catch (Exception e)
         {
             Logger.LogError(
-                "Bot {0} encountered an error while processing game packet: {1}",
+                "Bot {0} failed on frame {1}; releasing controls: {2}",
                 Name,
+                packet.MatchInfo.FrameNum,
                 e
             );
-            return;
+            // Always reply to a valid frame. Retaining the preceding boost/jump input is unsafe,
+            // and a lockstep host cannot deliver the next frame until it receives this response.
+            controller = new ControllerStateT();
         }
 
         var playerInput = new PlayerInputT
@@ -246,11 +257,10 @@ public abstract class Bot
     public void SetGameState(
         Dictionary<int, DesiredBallStateT>? balls = null,
         Dictionary<int, DesiredCarStateT>? cars = null,
-        DesiredMatchInfoT? matchInfo = null,
-        List<ConsoleCommandT>? commands = null
+        DesiredMatchInfoT? matchInfo = null
     )
     {
-        var gameState = GameStateExt.FillDesiredGameState(balls, cars, matchInfo, commands);
+        var gameState = GameStateExt.FillDesiredGameState(balls, cars, matchInfo);
         _gameInterface.SendGameState(gameState);
     }
 

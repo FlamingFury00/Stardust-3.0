@@ -1,5 +1,6 @@
 ﻿using System;
 using RedUtils.Math;
+using RedUtils.Physics;
 
 namespace RedUtils
 {
@@ -72,22 +73,12 @@ namespace RedUtils
 				// If the directional input hasn't been set
 				if (_input.Length() == 0)
 				{
-					// Find the local direction
-					Vec3 localDirection = new Vec3(-bot.Me.Forward.FlatNorm().Cross().Dot(Direction), -bot.Me.Forward.FlatNorm().Dot(Direction));
-
-					// Calculates some special values that we need to know for getting the correct input
-					float forwardVel = bot.Me.Forward.Dot(bot.Me.Velocity);
-					float s = MathF.Abs(forwardVel) / Car.MaxSpeed;
-					bool backwardsDodge = MathF.Abs(forwardVel) < 100 ? (localDirection[0] < 0) : (localDirection[0] >= 0) != (forwardVel > 0);
-
-					// Manipulate the local direction by some special values, so we are dodging in the right direction
-					localDirection[0] /= backwardsDodge ? (16f / 15f) * (1 + 1.5f * s) : 1;
-					localDirection[1] /= (1 + 0.9f * s);
-
-					localDirection = localDirection.Normalize();
-
-					// Sets the input
-					_input = localDirection;
+					// The model compensates forward/backward and lateral impulse on their own axes.
+					// Keep the tuple names explicit: _input stores yaw first, while the physics API
+					// returns pitch first. Swapping these made mirrored approaches dodge differently.
+					var input = DodgeModel.InputToward(bot.Me.Forward, Direction,
+						bot.Me.Forward.Dot(bot.Me.Velocity));
+					_input = new Vec3(input.Yaw, input.Pitch);
 				}
 
 				// Dodges in the specified direction

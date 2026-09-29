@@ -82,6 +82,8 @@ Test("opponent model: player facing and driving away does not create pressure", 
 });
 
 DefenseRegression.Run(Test);
+PressureRegression.Run(Test);
+ReverseRegression.Run(Test);
 
 Console.WriteLine($"TEAM DEFENSE RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
