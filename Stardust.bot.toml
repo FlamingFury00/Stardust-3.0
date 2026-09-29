@@ -1,9 +1,11 @@
+#:schema https://rlbot.org/schemas/agent.json
 [settings]
 # Identifies this bot to RLBot, "<developer>/<botname>"
 agent_id = "flamingfury00/stardust"
 # The name shown in game
 name = "Stardust-3.0"
 loadout_file = "loadout.toml"
+logo_file = "logo.png"
 # Working directory of the bot process, relative to this file
 root_dir = ""
 # Commands for a local build (`dotnet build -c Release`). Botpack builds (bob.toml) replace both
@@ -12,8 +14,8 @@ run_command = ".\\src\\Bot\\bin\\Release\\net8.0\\Bot.exe"
 run_command_linux = "./src/Bot/bin/Release/net8.0/Bot"
 
 [details]
-description = "Stardust 3.0 plans every touch against a physics model validated in RocketSim: ground, flip, double-jump and aerial strikes, speed-flip kickoffs, hood dribbles with flicks, and rotation-aware team play in 1v1, 2v2 and 3v3."
-fun_fact = "Each of its mechanics has a drill in its own RocketSim lab, with pass criteria set at what a pro would execute."
+description = "Physics-guided strikes, ground control, speed-flip kickoffs, and team play for 1v1, 2v2 and 3v3."
+fun_fact = "Its control and physics regressions are checked in RocketSim, including mirrored dodge impulses."
 source_link = "https://github.com/FlamingFury00/Stardust-3.0"
 developer = "FlamingFury00 (+CodeRed)"
 language = "C#"

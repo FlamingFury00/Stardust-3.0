@@ -1,0 +1,48 @@
+#:schema https://rlbot.org/schemas/match.json
+# Open Rocket League through the RLBot v5 GUI first, then load this match.
+[rlbot]
+launcher = "NoLaunch"
+auto_start_agents = true
+wait_for_agents = true
+
+[match]
+game_mode = "Soccar"
+game_map_upk = "Stadium_P"
+skip_replays = false
+auto_save_replay = true
+start_without_countdown = false
+existing_match_behavior = "Restart"
+enable_rendering = "AlwaysOff"
+enable_state_setting = false
+freeplay = false
+
+[mutators]
+match_length = "TenMinutes"
+max_score = "Unlimited"
+game_speed = "Default"
+boost_amount = "NormalBoost"
+overtime = "Unlimited"
+
+[[cars]]
+team = "Blue"
+type = "RLBot"
+config_file = "../Stardust.bot.toml"
+name = "Stardust I"
+
+[[cars]]
+team = "Blue"
+type = "RLBot"
+config_file = "../Stardust.bot.toml"
+name = "Stardust II"
+
+[[cars]]
+team = "Orange"
+type = "Psyonix"
+skill = "Rookie"
+name = "Rookie I"
+
+[[cars]]
+team = "Orange"
+type = "Psyonix"
+skill = "Rookie"
+name = "Rookie II"

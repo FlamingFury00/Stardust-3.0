@@ -119,3 +119,17 @@ jobs:
           print(f"{len(records)} telemetry records from the packaged build")
           sys.exit(0 if len(records) >= 100 else 1)
           PY
+      - name: Create source and runtime handoff archives
+        run: |
+          python3 tools/package_submission.py --output "$RUNNER_TEMP/Stardust-3.0-RLBC2026-source.zip"
+          python3 tools/package_submission.py --binaries "$RUNNER_TEMP/pack" --output "$RUNNER_TEMP/Stardust-3.0-RLBC2026-runtime.zip"
+      - name: Upload tested handoff archives
+        uses: actions/upload-artifact@v7
+        with:
+          name: Stardust-3.0-RLBC2026-candidate
+          path: |
+            ${{ runner.temp }}/Stardust-3.0-RLBC2026-*.zip
+            ${{ runner.temp }}/Stardust-3.0-RLBC2026-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

@@ -24,6 +24,10 @@ The [corner-pressure evaluation](docs/CORNER_PRESSURE.md) covers wider first-man
 near-goal turns, rejected boost-routing experiments, and cross-platform validation.
 The [counterattack recovery evaluation](docs/COUNTER_RECOVERY.md) records a stale-route fix,
 replay-based defence failures, and rejected anchor experiments.
+The [dodge and kickoff evaluation](docs/DODGE_KICKOFF.md) covers corrected directional impulses,
+safe boost-action termination, and full-team kickoff follow-through.
+For the competition archive, qualification preset and remaining submission steps, see the
+[RLBC 2026 handoff](docs/RLBC_2026.md).
 
 ![Stardust Logo](./logo.png)
 
