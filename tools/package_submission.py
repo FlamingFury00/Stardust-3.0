@@ -30,7 +30,8 @@ def main():
         raise ValueError('Source contains submodules; vendor their required contents before packaging')
     output.parent.mkdir(parents=True, exist_ok=True)
     if args.binaries is None:
-        subprocess.run(['git', 'archive', '--format=zip', '--prefix=' + PREFIX,
+        subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                        'archive', '--format=zip', '--prefix=' + PREFIX,
                         '--output=' + str(output), revision], cwd=ROOT, check=True)
         config = git('show', revision + ':Stardust.bot.toml')
     else:
@@ -60,6 +61,8 @@ def main():
         if PREFIX + 'bot.toml' not in entries:
             archive.writestr(PREFIX + 'bot.toml', config)
         archive.writestr(PREFIX + 'BUILD_INFO.json', json.dumps(info, indent=2) + '\n')
+        if any(b'\r\n' in archive.read(name) for name in archive.namelist() if name.endswith('.sh')):
+            raise ValueError('Shell scripts must retain LF line endings for the Linux builder')
         if archive.testzip() is not None:
             raise ValueError('Archive CRC validation failed')
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
