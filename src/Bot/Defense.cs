@@ -358,8 +358,13 @@ namespace Bot
         public static float SoloMargin = 0.05f;
         /// <summary>Race margin (s) a challenge needs while a teammate covers the goal; negative allows arriving that much later.</summary>
         public static float CoveredMargin = -0.12f;
-        /// <summary>The same margin in midfield and their half, where a lost race with a teammate behind is no goal.</summary>
-        public static float NeutralCoveredMargin = -0.12f;
+        /// <summary>
+        /// The same margin in midfield and their half, where a lost race with a teammate behind is no
+        /// goal, so the first man commits to a 50/50 he is 0.35 s late for instead of waiting for the
+        /// touch. In 3v3 against the previous build this won 21 of 24 games (+1.6 goals per game) against
+        /// 18 of 24 (+1.0) at the near-net margin; in 2v2 the two were level.
+        /// </summary>
+        public static float NeutralCoveredMargin = -0.35f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, within 3300 uu of our goal.</summary>
         public static float ContinueDeficitNear = 0.38f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, further out.</summary>

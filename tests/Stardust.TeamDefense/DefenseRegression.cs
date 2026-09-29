@@ -368,6 +368,29 @@ internal static class DefenseRegression
             finally { Defense.NeutralGapScale = original; }
         });
 
+        test("pressure zones: a covered first man commits to a late race in midfield, not near the net", () =>
+        {
+            // 0.25 s late: inside the midfield margin (0.35 s), outside the near-net one (0.12 s).
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.65f, OpponentEta = 0.4f, TeamRank = 0, TeamCount = 2, HasCover = true, LastBack = false
+            };
+            Car midfield = CarAt(0, -800), deep = CarAt(0, -4200);
+            Vec3 midfieldBall = new(0, 0, 100), deepBall = new(0, -3600, 100);
+            Check(Defense.CanChallenge(frame, midfield, midfieldBall, blueGoal),
+                "a covered first man let a 50/50 in midfield go");
+            Check(!Defense.CanChallenge(frame, deep, deepBall, blueGoal),
+                "a covered first man committed to a lost race in front of our net");
+            float original = Defense.NeutralCoveredMargin;
+            try
+            {
+                Defense.NeutralCoveredMargin = Defense.CoveredMargin;
+                Check(!Defense.CanChallenge(frame, midfield, midfieldBall, blueGoal),
+                    "the midfield margin did not come from NeutralCoveredMargin");
+            }
+            finally { Defense.NeutralCoveredMargin = original; }
+        });
+
         test("defense-v3: shadow terminal speed tracks goalward ball motion within bounds", () =>
         {
             float stationary = Defense.ShadowTerminalSpeed(
