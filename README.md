@@ -22,6 +22,8 @@ The [recovery and finishing follow-up](docs/RECOVERY_FINISHING.md) covers revers
 braking-aware interception, flight-aware flicks, and communication reliability.
 The [corner-pressure evaluation](docs/CORNER_PRESSURE.md) covers wider first-man positioning,
 near-goal turns, rejected boost-routing experiments, and cross-platform validation.
+The [counterattack recovery evaluation](docs/COUNTER_RECOVERY.md) records a stale-route fix,
+replay-based defence failures, and rejected anchor experiments.
 
 ![Stardust Logo](./logo.png)
 
