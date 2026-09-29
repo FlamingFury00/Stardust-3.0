@@ -234,7 +234,9 @@ namespace Bot
                     defensiveShot = null;
                 }
 
-                if (Action != null && !(Action is GoalLineSave))
+                // Only the shot selected above is a clearance. A persistent recovery/intercept
+                // drive must be replanned as the ball path changes, even while danger stays active.
+                if (Action is Shot && ReferenceEquals(Action, defensiveShot))
                 {
                     SetDecision(emergency
                         ? "defend / emergency clear"

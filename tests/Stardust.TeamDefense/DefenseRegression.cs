@@ -359,6 +359,46 @@ internal static class DefenseRegression
                 "pressure did not cancel refill");
         });
 
+        test("counter defence: recovery follows a changed ball path on the next planning tick", () =>
+        {
+            float originalTime = Game.Time;
+            try
+            {
+                foreach (int team in new[] { 0, 1 })
+                {
+                    float side = team == 0 ? -1 : 1;
+                    Car car = CarAt(0, 0, team: team);
+                    var bot = World(new Vec3(400, side * 2000, 93), car);
+                    void Update(float time, float depth)
+                    {
+                        Set(typeof(Game), "Time", null!, time);
+                        Set(typeof(Ball), "Location", null!, new Vec3(400, side * depth, 93));
+                        Set(typeof(Ball), "Velocity", null!, new Vec3(0, side * 1000, 0));
+                        Set(typeof(Ball), "Prediction", null!, new RedUtils.BallPrediction
+                        {
+                            Slices = new[]
+                            {
+                                new BallSlice(time, new Vec3(400, side * depth, 93), new Vec3(0, side * 1000, 0)),
+                                new BallSlice(time + (5300 - depth) / 1000,
+                                    new Vec3(400, side * 5300, 93), new Vec3(0, side * 1000, 0))
+                            }
+                        });
+                        bot.Run();
+                    }
+                    Update(200, 2000);
+                    Check(bot.Decision == "defend / counter recover" && bot.Action is DefensiveDrive,
+                        $"fixture did not enter counter recovery: {bot.Decision}");
+                    Vec3 firstTarget = ((DefensiveDrive)bot.Action).Target;
+                    Update(200.08f, 2080);
+                    Check(bot.Decision == "defend / counter recover" && bot.Action is DefensiveDrive,
+                        $"recovery was mistaken for a clearance: {bot.Decision}");
+                    Check(((DefensiveDrive)bot.Action).Target.FlatDist(firstTarget) > 10,
+                        "recovery kept driving toward the old ball path");
+                }
+            }
+            finally { Set(typeof(Game), "Time", null!, originalTime); }
+        });
+
         test("defense-v3: goal crossing is interpolated in time and lateral position", () =>
         {
             var slices = new[]

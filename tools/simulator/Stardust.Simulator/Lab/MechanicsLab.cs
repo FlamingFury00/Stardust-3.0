@@ -27,6 +27,8 @@ public static class MechanicsLab
         new CornerPressureDrill(backwall: true), new CornerPressureDrill(1, backwall: true),
         new SupportPadReplayDrill(), new SupportPadReplayDrill(1),
         new GoalwardSlipDrill(), new GoalwardSlipDrill(1),
+        new CounterReplayDrill(), new CounterReplayDrill(1),
+        new CounterReplayDrill(necto: true), new CounterReplayDrill(1, necto: true),
         new ClosePossessionDrill(), new ClosePossessionDrill(1),
         new CarrierPressureDrill(), new CarrierPressureDrill(1),
         new CarrierPressureDrill(fast: true), new CarrierPressureDrill(1, fast: true),

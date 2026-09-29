@@ -77,9 +77,11 @@ public abstract class Drill : Scenario
                 $"ball=({local.X,5:F0},{local.Y,5:F0},{local.Z,5:F0}) rel=({relative.Dot(car.Physics.Forward),5:F0},{relative.Dot(car.Physics.Right),5:F0},{relative.Dot(car.Physics.Up),5:F0}) " +
                 $"thr={c.Throttle,5:F2} steer={c.Steer,5:F2} boost={(c.Boost ? 1 : 0)} jump={(c.Jump ? 1 : 0)} p/y/r=({c.Pitch:F1},{c.Yaw:F1},{c.Roll:F1}) " +
                 $"fuel={car.Boost:F0} action={Subject.Action?.GetType().Name ?? "-"} decision={Subject.Decision} " +
-                $"world car={car.Physics.Position} ball={session.Ball.Physics.Position}") +
+                $"world car={car.Physics.Position} ball={session.Ball.Physics.Position} " +
+                $"threat={Subject.EmergencyThreatTime:F2} counter={Subject.CounterThreatTime:F2}") +
                 (session.Cars.Length > 1 ? $" other={session.Cars[1].Physics.Position} v={session.Cars[1].Physics.Velocity.Length:F0}" : "") +
                 (Subject.Action is global::Bot.DefensiveDrive guard ? $" guard-target={guard.Target} rank={Subject.Situation.TeamRank} eta={Subject.Situation.MyEta:F2} mate-eta={Subject.Situation.TeammateEta:F2}" : "") +
+                (Subject.Action is RedUtils.Drive drive ? $" drive-target={drive.Target}" : "") +
                 (Subject.Action is RedUtils.Block block ? $" block={block.Status} {block.Plan} point={block.Point}" : ""));
         }
         Measure(session, trace);
