@@ -32,12 +32,6 @@ namespace RedUtils
 		/// <summary>This action's subaction, which could be a dodge, halfflip, speedflip, etc</summary>
 		public IAction Action;
 
-		/// <summary>
-		/// Boost whenever the target speed is not yet reached and the car faces its target, as
-		/// <see cref="DrivePhysics.TravelTime"/> assumes, instead of only once already above 1200 uu/s.
-		/// </summary>
-		public static bool EagerBoost = false;
-
 		/// <summary>How long we have spent driving on the ground</summary>
 		private float timeOnGround = 0;
 
@@ -150,7 +144,7 @@ namespace RedUtils
 				}
 
 				// Only boost when we are facing our target, and when we really need to
-				bot.Controller.Boost = bot.Controller.Boost && (angleToTarget < 0.35f || (angleToTarget < 0.85f && !bot.Me.IsGrounded)) && !Backwards && (WasteBoost || EagerBoost || (TargetSpeed > 1800 && forwardSpeed > 1200));
+				bot.Controller.Boost = bot.Controller.Boost && (angleToTarget < 0.35f || (angleToTarget < 0.85f && !bot.Me.IsGrounded)) && !Backwards && (WasteBoost || (TargetSpeed > 1800 && forwardSpeed > 1200));
 				// Drift if the target is behind us, or when we need to turn really sharply
 				bot.Controller.Handbrake = AllowHandbrake &&
 					(MathF.Abs(angleToTarget) > 2.2f || (Field.DistanceBetweenPoints(nearestTurnCenter, Target) < turnRadius - 40 && SpeedFromTurnRadius(TurnRadius(bot.Me, Target)) < 350)) &&

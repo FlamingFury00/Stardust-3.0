@@ -474,7 +474,7 @@ namespace Bot
             if (decision.Contains("second-man", StringComparison.Ordinal) ||
                 decision.Contains("wide lane", StringComparison.Ordinal))
                 return "support";
-            if (decision.Contains("pad", StringComparison.Ordinal) ||
+            if (decision.StartsWith("boost /", StringComparison.Ordinal) ||
                 decision.Contains("boost run", StringComparison.Ordinal))
                 return "boost";
             if (decision.Contains("demolition", StringComparison.Ordinal))

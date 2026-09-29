@@ -21,15 +21,26 @@ namespace RedUtils
 
 		/// <summary>Whether or not this action was initially set as interruptible</summary>
 		private readonly bool _initiallyInterruptible = true;
+		/// <summary>Whether the trip may dodge for speed; a speed flip or dodge cannot be called off midway</summary>
+		private readonly bool _allowDodges = true;
+
+		/// <summary>Whether the trip may dodge for speed. Can be changed while the trip runs.</summary>
+		public bool AllowDodges
+		{
+			get => DriveAction?.AllowDodges ?? _allowDodges;
+			set { if (DriveAction != null) DriveAction.AllowDodges = value; }
+		}
 
 		/// <summary>Initializes a GetBoost.</summary>
 		/// <param name="boostIndex">Index of boost pad to go for. If set to -1 it will attempt to find the best big boost pad automatically</param>
 		/// <param name="interruptible">Whether or not this shot can be interrupted</param>
-		public GetBoost(Car car, int boostIndex = -1, bool interruptible = true)
+		/// <param name="allowDodges">Whether the drive may dodge or speed-flip to gain speed</param>
+		public GetBoost(Car car, int boostIndex = -1, bool interruptible = true, bool allowDodges = true)
 		{
 			Finished = false;
 			Interruptible = interruptible;
 			_initiallyInterruptible = interruptible;
+			_allowDodges = allowDodges;
 
 			if (boostIndex == -1)
 			{
@@ -57,11 +68,12 @@ namespace RedUtils
 		/// <summary>Initializes a GetBoost action which will go for the soonest reachable boost of the supplied boosts</summary>
 		/// <param name="boosts">Which boosts to consider</param>
 		/// <param name="interruptible">Whether or not this action can be interrupted</param>
-		public GetBoost(Car car, IEnumerable<Boost> boosts, bool interruptible = true)
+		public GetBoost(Car car, IEnumerable<Boost> boosts, bool interruptible = true, bool allowDodges = true)
 		{
 			Finished = false;
 			Interruptible = interruptible;
 			_initiallyInterruptible = interruptible;
+			_allowDodges = allowDodges;
 
 			float fastestEta = 999;
 			// Loop through the given boost pads, and finds the one we can get to soonest
@@ -99,7 +111,7 @@ namespace RedUtils
 			}
 			BoostIndex = index;
 			ChosenBoost = Field.Boosts[index];
-			DriveAction = new Drive(car, ChosenBoost.Location, Car.MaxSpeed, true, ChosenBoost.IsLarge);
+			DriveAction = new Drive(car, ChosenBoost.Location, Car.MaxSpeed, _allowDodges, ChosenBoost.IsLarge);
 		}
 
 		private void FinishWithoutPad()

@@ -164,7 +164,7 @@ Test("demolition: a run is planned only where supersonic contact is reachable", 
 {
     Car car = Runner(1400f, 60f);
     Car ahead = Runaway(new Vec3(0, -1200, 17), new Vec3(0, 500, 0));
-    Demolition.Run? run = Demolition.Plan(car, ahead);
+    Demolition.DemoRun? run = Demolition.Plan(car, ahead);
     Check(run.HasValue && run.Value.Speed >= Demolition.ContactSpeed && run.Value.Time <= Demolition.MaxTime,
         "no run to an opponent 1800 uu ahead of a fast, boosted car");
     Check(Demolition.Plan(Runner(1400f, 5f), ahead) == null, "a car with 5 boost planned a run it cannot finish");
@@ -175,11 +175,19 @@ Test("demolition: a run is planned only where supersonic contact is reachable", 
     Car teammate = Runaway(new Vec3(0, -1200, 17), new Vec3(0, 500, 0));
     teammate.Team = 0;
     Check(Demolition.Plan(car, teammate) == null, "a teammate was chosen as a target");
-    Car behind = Runner(1400f, 60f);
-    behind.Orientation = new Mat3x3(new Vec3(0, -MathF.PI / 2, 0));
-    Check(Demolition.Plan(behind, ahead) == null, "a car facing away from the opponent planned a run");
-    Car wall = Runaway(new Vec3(3900, 0, 17), new Vec3(1200, 0, 0));
-    Check(Demolition.Plan(car, wall) == null, "the meeting point was inside the wall");
+    // The launch-angle gate on its own: same distance and speed, the target dead ahead or well off the nose.
+    Car dead = Runaway(new Vec3(0, -1200, 17), Vec3.Zero);
+    Car aside = Runaway(new Vec3(1100, -1900, 17), Vec3.Zero);
+    Check(Demolition.Plan(car, dead).HasValue, "a stationary opponent dead ahead was not chased");
+    Check(Demolition.Plan(car, aside) == null, "an opponent 65 degrees off the nose was chased");
+    // The wall gate on its own: 1800 uu ahead in both cases, one target inside the pitch and one beyond the edge margin.
+    Car wallRunner = Runner(1400f, 60f, new Vec3(1900, 0, 17));
+    wallRunner.Orientation = new Mat3x3(new Vec3(0, 0, 0));
+    wallRunner.Velocity = new Vec3(1400, 0, 0);
+    Check(Demolition.Plan(wallRunner, Runaway(new Vec3(3700, 0, 17), Vec3.Zero)).HasValue,
+        "a stationary opponent inside the field was not chased");
+    Check(Demolition.Plan(wallRunner, Runaway(new Vec3(3950, 0, 17), Vec3.Zero)) == null,
+        "the meeting point was inside the wall margin");
 });
 
 Test("demolition: the opponent on the ball outranks one far from it, and a quick run outranks a slow one", () =>
@@ -187,8 +195,8 @@ Test("demolition: the opponent on the ball outranks one far from it, and a quick
     Vec3 ball = new(0, 500, 93), goal = new(0, -5120, 0);
     Car near = Runaway(new Vec3(100, 600, 17), new Vec3(0, -600, 0));
     Car far = Runaway(new Vec3(3000, 3000, 17), new Vec3(0, 200, 0));
-    var quick = new Demolition.Run(Vec3.Zero, 0.6f, 2300f, 0f);
-    var slow = new Demolition.Run(Vec3.Zero, 1.2f, 2300f, 0f);
+    var quick = new Demolition.DemoRun(Vec3.Zero, 0.6f, 2300f);
+    var slow = new Demolition.DemoRun(Vec3.Zero, 1.2f, 2300f);
     Check(Demolition.Value(near, ball, goal, quick) > Demolition.Value(far, ball, goal, quick),
         "an opponent far from the ball was worth as much as the carrier");
     Check(Demolition.Value(near, ball, goal, quick) > Demolition.Value(near, ball, goal, slow),
@@ -196,6 +204,28 @@ Test("demolition: the opponent on the ball outranks one far from it, and a quick
     var carrier = Runaway(new Vec3(0, 700, 17), new Vec3(0, -1500, 0));
     Check(Demolition.Value(carrier, ball, goal, quick) > Demolition.Value(near, ball, goal, quick),
         "a carrier heading for our goal was not worth more");
+});
+
+Test("demolition: an idle opponent far from the ball is left alone, and a teammate standing nearer owns the target", () =>
+{
+    Vec3 goal = new(0, -5120, 0);
+    Car car = Runner(1400f, 60f);
+    Car ahead = Runaway(new Vec3(0, -1200, 17), new Vec3(0, 500, 0));
+    var opponents = new[] { ahead };
+    Check(Demolition.Choose(car, opponents, new Vec3(0, -1000, 93), goal)?.Target == ahead,
+        "an opponent beside the ball was not chosen");
+    Check(Demolition.Choose(car, opponents, new Vec3(0, 4200, 93), goal) == null,
+        "an opponent 5000 uu from the ball was chased");
+    Car mate = Runaway(new Vec3(0, -1500, 17), Vec3.Zero);
+    mate.Team = 0;
+    mate.Index = 2;
+    Check(Demolition.Choose(car, opponents, new Vec3(0, -1000, 93), goal, new[] { mate }) == null,
+        "a teammate 300 uu from the target did not own it");
+    Car distant = Runaway(new Vec3(0, -5000, 17), Vec3.Zero);
+    distant.Team = 0;
+    distant.Index = 2;
+    Check(Demolition.Choose(car, opponents, new Vec3(0, -1000, 93), goal, new[] { distant })?.Target == ahead,
+        "a distant teammate took the target away");
 });
 
 Console.WriteLine($"MOVEMENT RESULT: {passed} passed, {failed} failed.");

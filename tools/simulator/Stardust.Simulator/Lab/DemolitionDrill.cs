@@ -8,13 +8,13 @@ namespace Stardust.Simulator.Lab;
 /// <summary>
 /// An opponent runs at a loose ball it reaches well before we do. A pro closes the gap at supersonic
 /// speed and takes the car out instead of trailing it to the ball. Judged on whether the full bot
-/// starts a run when one is possible and whether the runs it starts end in a demolition (needs
-/// STARDUST_DEMOLITIONS=1). The runner is a plain ground chaser, so the fixture measures the run,
-/// not the opponent's evasion.
+/// starts a run when one is possible and whether the runs it starts end in a demolition. The drill
+/// switches <c>Stardust.DemolitionRuns</c> on for the episode. The runner is a plain ground chaser,
+/// so the fixture measures the run, not the opponent's evasion.
 /// </summary>
 public sealed class DemolitionDrill : Drill
 {
-    private bool attempted, demolished;
+    private bool attempted, demolished, runsWereEnabled;
     private float demolishedAt;
 
     public override string Name => "demolition";
@@ -49,6 +49,8 @@ public sealed class DemolitionDrill : Drill
     protected override void Start(MatchSession session, EpisodeSetup setup)
     {
         Subject.Director = null;
+        runsWereEnabled = global::Bot.Stardust.DemolitionRuns;
+        global::Bot.Stardust.DemolitionRuns = true;
         attempted = demolished = false;
         demolishedAt = float.NaN;
     }
@@ -65,6 +67,7 @@ public sealed class DemolitionDrill : Drill
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
+        global::Bot.Stardust.DemolitionRuns = runsWereEnabled;
         trace.Notes.Insert(0, attempted ? (demolished ? "demolished" : "missed") : "no run");
         trace.Metrics["attempted"] = attempted ? 1 : 0;
         if (attempted)

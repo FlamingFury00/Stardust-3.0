@@ -13,14 +13,18 @@ namespace Bot
     /// </summary>
     public static class Demolition
     {
-        /// <summary>Boost needed to be worth the run: reaching and holding supersonic burns about a third of a tank.</summary>
+        /// <summary>Boost needed to be worth the run: about two thirds of a second of thrust, enough to reach supersonic from cruising speed.</summary>
         public static float MinBoost = 22f;
         /// <summary>Flat distance (uu) beyond which no run is planned.</summary>
         public static float MaxRange = 2600f;
         /// <summary>Longest run (s) planned: an opponent's path is only predictable over about a second.</summary>
         public static float MaxTime = 1.25f;
-        /// <summary>Speed (uu/s) required at contact: supersonic starts at 2200.</summary>
+        /// <summary>Speed (uu/s) at which a car turns supersonic and its bumper demolishes.</summary>
+        public const float SupersonicSpeed = 2200f;
+        /// <summary>Speed (uu/s) required at contact: supersonic with a margin for the bump itself.</summary>
         public static float ContactSpeed = 2260f;
+        /// <summary>Lowest <see cref="Value"/> worth a run: a target far from the ball and not attacking is left alone.</summary>
+        public static float MinValue = 0.15f;
         /// <summary>Largest angle (rad) between the nose and the run when it starts.</summary>
         public static float MaxLaunchAngle = 0.4f;
         /// <summary>Centre-to-centre distance (uu) at which two hitboxes meet head on.</summary>
@@ -29,7 +33,7 @@ namespace Bot
         public const float MaxTargetHeight = 190f;
 
         /// <summary>A run: the meeting point, the time to it and the speed the car arrives with.</summary>
-        public readonly record struct Run(Vec3 Point, float Time, float Speed, float Angle);
+        public readonly record struct DemoRun(Vec3 Point, float Time, float Speed);
 
         /// <summary>
         /// Distance covered and speed reached after driving flat out for <paramref name="time"/>
@@ -61,7 +65,7 @@ namespace Bot
         /// or null. The target is assumed to keep its velocity; the car drives flat out along a heading
         /// that is at most <see cref="MaxLaunchAngle"/> from its nose.
         /// </summary>
-        public static Run? Plan(Car car, Car target)
+        public static DemoRun? Plan(Car car, Car target)
         {
             if (car == null || target == null || car.IsDemolished || target.IsDemolished ||
                 !car.IsGrounded || car.Up.z < 0.85f || car.Boost < MinBoost ||
@@ -100,20 +104,20 @@ namespace Bot
                 float angle = MathF.Acos(System.Math.Clamp(forward.Dot(ControlMath.FlatUnit(route, forward)), -1f, 1f));
                 if (angle > MaxLaunchAngle)
                     return null;
-                return new Run(meeting, t, speed, angle);
+                return new DemoRun(meeting, t, speed);
             }
 
             return null;
         }
 
         /// <summary>
-        /// How much a demolition is worth against <paramref name="target"/>: opponents on the ball, or
-        /// carrying it toward our goal, matter most, and a quick run beats a slow one.
+        /// How much a demolition is worth against <paramref name="target"/>: only opponents on or near
+        /// the ball, or carrying it toward our goal, are worth a run, and a quick run beats a slow one.
         /// </summary>
-        public static float Value(Car target, Vec3 ball, Vec3 ownGoal, in Run run)
+        public static float Value(Car target, Vec3 ball, Vec3 ownGoal, in DemoRun run)
         {
             float toBall = target.Location.FlatDist(ball);
-            float value = 1f;
+            float value = 0f;
             if (toBall < 900f)
                 value += 1.2f;
             else if (toBall < 1800f)
@@ -125,15 +129,20 @@ namespace Bot
             return value - 0.35f * run.Time;
         }
 
-        /// <summary>The best target among <paramref name="opponents"/>, with its run, or null.</summary>
-        public static (Car Target, Run Run)? Choose(Car car, IEnumerable<Car> opponents, Vec3 ball, Vec3 ownGoal)
+        /// <summary>
+        /// The best target among <paramref name="opponents"/>, with its run, or null. An opponent a
+        /// teammate stands clearly nearer to is left to that teammate: two cars on one target leave
+        /// the rest of the pitch empty.
+        /// </summary>
+        public static (Car Target, DemoRun Run)? Choose(Car car, IEnumerable<Car> opponents, Vec3 ball, Vec3 ownGoal,
+            IEnumerable<Car> teammates = null)
         {
-            (Car, Run)? best = null;
-            float bestValue = float.NegativeInfinity;
+            (Car, DemoRun)? best = null;
+            float bestValue = MinValue;
             foreach (Car opponent in opponents)
             {
-                Run? run = Plan(car, opponent);
-                if (run == null)
+                DemoRun? run = Plan(car, opponent);
+                if (run == null || TeammateNearer(car, opponent, teammates))
                     continue;
                 float value = Value(opponent, ball, ownGoal, run.Value);
                 if (value > bestValue)
@@ -143,6 +152,20 @@ namespace Bot
                 }
             }
             return best;
+        }
+
+        /// <summary>Share of this car's own distance under which a teammate is nearer enough to own the target.</summary>
+        private const float TeammateNearShare = 0.85f;
+
+        private static bool TeammateNearer(Car car, Car target, IEnumerable<Car> teammates)
+        {
+            if (teammates == null)
+                return false;
+            float mine = car.Location.FlatDist(target.Location);
+            foreach (Car mate in teammates)
+                if (mate != null && !mate.IsDemolished && mate.Location.FlatDist(target.Location) < mine * TeammateNearShare)
+                    return true;
+            return false;
         }
     }
 
@@ -160,7 +183,11 @@ namespace Bot
         /// <summary>Time to contact (s) from which the run can no longer be interrupted.</summary>
         public static float CommitTime = 0.5f;
         /// <summary>How long (s) a run without a valid plan is kept before the car gives up.</summary>
-        public static float Patience = 0.18f;
+        public static float Patience = 0.72f;
+        /// <summary>Alignment (cosine), closing speed (uu/s) and distance (uu) that keep a run alive without a plan.</summary>
+        private const float HoldAlignment = 0.92f, HoldClosingSpeed = 900f, HoldRange = 2000f;
+        /// <summary>Boost is only fed while the nose is within this many radians of the aim.</summary>
+        private const float BoostAlignment = 0.32f;
         /// <summary>Longest a single run lasts (s).</summary>
         public static float MaxDuration = 1.9f;
 
@@ -177,7 +204,7 @@ namespace Bot
                 return;
             }
 
-            Demolition.Run? run = Demolition.Plan(car, target);
+            Demolition.DemoRun? run = Demolition.Plan(car, target);
             if (run == null)
             {
                 // Once under way the run is judged on the geometry alone: the planner needs time to
@@ -189,16 +216,18 @@ namespace Bot
                 // Only a run that can still be supersonic at contact is worth finishing: a bump below
                 // 2200 uu/s costs the car its speed and demolishes nothing.
                 bool supersonicAtContact = car.IsSupersonic ||
-                    Demolition.Advance(car.Velocity.Dot(heading), car.Boost, 0.2f).Speed >= 2205f;
-                bool closingIn = alignment > 0.92f && closing > 900f && toTarget.Length() < 2000f &&
+                    Demolition.Advance(car.Velocity.Dot(heading), car.Boost, 0.2f).Speed >= Demolition.SupersonicSpeed + 5f;
+                float distance = toTarget.Length();
+                bool closingIn = alignment > HoldAlignment && closing > HoldClosingSpeed && distance < HoldRange &&
                     supersonicAtContact;
                 lostSince = float.IsNaN(lostSince) ? Game.Time : lostSince;
-                if (!closingIn || Game.Time - lostSince > Patience * 4f)
+                if (!closingIn || Game.Time - lostSince > Patience)
                 {
                     Finished = true;
                     return;
                 }
-                run = new Demolition.Run(target.Location + target.Velocity * 0.12f, 0.12f, car.Velocity.Length(), 0f);
+                float contact = MathF.Max(0f, distance - Demolition.ContactReach) / closing;
+                run = new Demolition.DemoRun(target.Location + target.Velocity * contact, contact, car.Velocity.Length());
             }
             else
                 lostSince = float.NaN;
@@ -208,7 +237,7 @@ namespace Bot
             float[] angles = bot.AimAt(aim);
             float error = MathF.Abs(angles[1]);
             bot.Controller.Throttle = 1f;
-            bot.Controller.Boost = car.Boost > 0f && error < 0.32f && car.Velocity.Length() < Car.MaxSpeed - 10f;
+            bot.Controller.Boost = car.Boost > 0f && error < BoostAlignment && car.Velocity.Length() < Car.MaxSpeed - 10f;
             bot.Controller.Handbrake = false;
             bot.Controller.Jump = false;
         }

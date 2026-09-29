@@ -13,7 +13,6 @@ namespace Bot
         public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
         public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
         public bool AirDribbles { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AIR_DRIBBLES") == "1";
-        public bool Demolitions { get; init; } = Environment.GetEnvironmentVariable("STARDUST_DEMOLITIONS") == "1";
         public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
         /// <summary>Also log the save options weighed on every planning tick (verbose).</summary>
         public bool TraceSaves { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE_SAVES") == "1";
@@ -47,8 +46,14 @@ namespace Bot
         public static float PlanInterval = 0.12f, UrgentPlanInterval = 0.05f;
         /// <summary>The car furthest back at a team kickoff refills at its own corner's big pad instead of cheating forward.</summary>
         public static bool KickoffPadRun = true;
-        /// <summary>Longest flat distance (uu) of that run.</summary>
-        public static float KickoffPadReach = 2800f;
+        /// <summary>Longest flat distance (uu) of that run: from the back-centre spawn to its own corner pad is 3114.</summary>
+        public static float KickoffPadReach = 3300f;
+        /// <summary>Run supersonic into an opponent worth a demolition. Off until measured in full matches.</summary>
+        public static bool DemolitionRuns = false;
+        /// <summary>Ball speed (uu/s) above which a pad detour before a touch is not considered.</summary>
+        private const float PadBeforeShotBallSpeed = 1800f;
+        /// <summary>Time (s) a first man must still have before the ball to start a demolition run instead.</summary>
+        private const float DemolitionFreeTime = 0.15f;
 
         private float nextPlan = float.NegativeInfinity;
         private float challengeCommitUntil = float.NegativeInfinity;
@@ -126,6 +131,7 @@ namespace Bot
                 return;
             }
 
+            BoostSlack = 0f;
             float threat = Defense.GoalThreat(Ball.Prediction.Slices, OurGoal.Location,
                 Game.Time, 2.5f, out Vec3 crossing);
             float counterThreat = threat;
@@ -308,9 +314,6 @@ namespace Bot
                 return;
             }
 
-            if (Options.Demolitions && TryDemolition(controlledPossession))
-                return;
-
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
@@ -321,6 +324,9 @@ namespace Bot
                 : null;
             bool finishNow = Tactics.PreferImmediateShot(
                 this, priorityAttack, Situation);
+
+            if (DemolitionRuns && TryDemolition(controlledPossession, finishNow))
+                return;
 
             if (Action is IPossessionAction possession)
             {
@@ -355,7 +361,7 @@ namespace Bot
             }
 
             // A pad trip in progress stays alive across plans; the routing below keeps or drops it.
-            if (Action is GetBoost refill && refill.Finished)
+            if (Action is GetBoost { Finished: true })
                 Action = null;
 
             if (!(Action is Drive) && !(Action is DefensiveDrive) && !(Action is GetBoost))
@@ -424,7 +430,7 @@ namespace Bot
             if (attack != null &&
                 (underPressure || catchPlan == null || attack.Slice.Time - Game.Time <= 0.72f))
             {
-                if (TryPadBeforeShot(attack, underPressure))
+                if (TryPadBeforeShot(attack, pressureTime))
                     return;
                 Action = attack;
                 SetDecision(underPressure
@@ -453,7 +459,7 @@ namespace Bot
 
             if (attack != null)
             {
-                if (TryPadBeforeShot(attack, underPressure))
+                if (TryPadBeforeShot(attack, pressureTime))
                     return;
                 Action = attack;
                 SetDecision("attack / economical intercept");
@@ -607,21 +613,26 @@ namespace Bot
         }
 
         /// <summary>Runs a supersonic car into the opponent that matters most, when one can be met in time.</summary>
-        private bool TryDemolition(bool controlledPossession)
+        private bool TryDemolition(bool controlledPossession, bool finishNow)
         {
             if (Action is DemoAttack running && !running.Finished)
             {
-                SetDecision("attack / demolition");
-                return true;
+                if (!finishNow)
+                {
+                    SetDecision("attack / demolition");
+                    return true;
+                }
+                Action = null;
             }
 
-            if (controlledPossession || !Me.IsGrounded || Me.Boost < Demolition.MinBoost)
+            // A touch this car is about to make or is making outranks any demolition.
+            if (finishNow || controlledPossession || Action is IPossessionAction || Action is Shot ||
+                !Me.IsGrounded || Me.Boost < Demolition.MinBoost)
                 return false;
-            // A ball this car is about to win outranks any demolition.
-            if (Situation.TeamRank == 0 && Situation.FreeTime > 0.15f)
+            if (Situation.TeamRank == 0 && Situation.FreeTime > DemolitionFreeTime)
                 return false;
 
-            var pick = Demolition.Choose(Me, LivingOpponents, Ball.Location, OurGoal.Location);
+            var pick = Demolition.Choose(Me, LivingOpponents, Ball.Location, OurGoal.Location, LivingTeammates);
             if (pick == null)
                 return false;
 
@@ -634,46 +645,52 @@ namespace Bot
         /// Spends the time a won race leaves before a planned touch on a pad along the way. The shot
         /// is re-planned once the pad is taken, so the touch is only ever delayed within the slack.
         /// </summary>
-        private bool TryPadBeforeShot(Shot shot, bool pressured)
+        private bool TryPadBeforeShot(Shot shot, float pressureTime)
         {
-            if (!Me.IsGrounded || shot?.Slice == null || Ball.Velocity.Length() > 1800f)
+            if (!Me.IsGrounded || shot?.Slice == null || Ball.Velocity.Length() > PadBeforeShotBallSpeed)
                 return false;
 
             float contact = shot.Slice.Time - Game.Time;
             float slack = BoostEconomy.SlackBeforeContact(Situation, contact,
-                Ball.Location.y * Field.Side(Team), pressured);
-            BoostSlack = slack;
-            Boost current = Action is GetBoost running && !running.Finished ? running.ChosenBoost : null;
+                Ball.Location.y * Field.Side(Team), pressureTime);
             Boost pad = BoostEconomy.Choose(Me, Field.Boosts, Ball.Location, shot.Slice.Location, Team, slack,
-                LivingOpponents, null, current);
-            if (pad == null)
-                return false;
-
-            if (!(Action is GetBoost trip) || trip.Finished || trip.ChosenBoost?.Index != pad.Index)
-                Action = new GetBoost(Me, pad.Index, interruptible: true);
-            SetDecision(pad.IsLarge ? "support / full-pad refill" : "support / small-pad route");
-            return true;
+                LivingOpponents, null, CurrentPad, LivingTeammates);
+            return FollowPad(pad, slack, "boost / pad before touch");
         }
 
         /// <summary>Bends the trip to <paramref name="destination"/> through a pad when the play leaves time for it.</summary>
         private bool TryBoostRoute(Vec3 destination, bool recovering, float pressureTime)
         {
-            if (!Me.IsGrounded)
+            if (!Me.IsGrounded || !BoostEconomy.Wanted(Me.Boost))
                 return false;
 
             float toDestination = Drive.GetEta(Me, destination);
             float slack = BoostEconomy.Slack(Situation, toDestination,
                 Ball.Location.y * Field.Side(Team), recovering, pressureTime);
-            BoostSlack = slack;
-            Boost current = Action is GetBoost running && !running.Finished ? running.ChosenBoost : null;
             Boost pad = BoostEconomy.Choose(Me, Field.Boosts, Ball.Location, destination, Team, slack,
-                LivingOpponents, null, current);
+                LivingOpponents, null, CurrentPad, LivingTeammates);
+            return FollowPad(pad, slack, "boost / pad on route");
+        }
+
+        /// <summary>The pad this car is driving to, when a trip is under way.</summary>
+        private Boost CurrentPad => Action is GetBoost { Finished: false } trip ? trip.ChosenBoost : null;
+
+        /// <summary>
+        /// Drives to <paramref name="pad"/>, keeping a trip already headed there. A trip may only dodge
+        /// while the slack covers the flip, because a flip cannot be called off.
+        /// </summary>
+        private bool FollowPad(Boost pad, float slack, string decision)
+        {
+            BoostSlack = slack;
             if (pad == null)
                 return false;
 
+            bool dodges = slack >= BoostEconomy.DodgeSlack;
             if (!(Action is GetBoost trip) || trip.Finished || trip.ChosenBoost?.Index != pad.Index)
-                Action = new GetBoost(Me, pad.Index, interruptible: true);
-            SetDecision(pad.IsLarge ? "support / full-pad refill" : "support / small-pad route");
+                Action = new GetBoost(Me, pad.Index, interruptible: true, allowDodges: dodges);
+            else
+                trip.AllowDodges = dodges;
+            SetDecision(decision);
             return true;
         }
 

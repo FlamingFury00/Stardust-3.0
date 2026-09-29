@@ -251,9 +251,15 @@ public sealed class StatsTracker
         }
     }
 
+    /// <summary>Distance (uu) within which a team's car must be to start holding the ball, and beyond which it lets go.</summary>
+    private const float HoldEnterRadius = 650f, HoldExitRadius = 800f;
+    /// <summary>Time (s) after its latest touch that a team is still holding the ball.</summary>
+    private const double HoldWindow = 2.5;
+
     /// <summary>
     /// Space, contest and response measures for each team defending against a possession. A team holds
-    /// the ball while it made the latest touch within 2.5 s and one of its cars is still within 650 uu of it.
+    /// the ball while it made the latest touch within 2.5 s and one of its cars is still near it: within
+    /// 650 uu to start, and until it drifts beyond 800 uu, so a ball hovering at the edge is one possession.
     /// </summary>
     private void SamplePossession(RsbCarState[] cars, RsbVec ballPos, float[] closestDistance, float dt)
     {
@@ -262,7 +268,9 @@ public sealed class StatsTracker
         {
             int defender = 1 - holder;
             PossessionTracker hold = possession[holder];
-            bool holding = lastToucherTeam == holder && clock - lastTouchClock < 2.5 && closestDistance[holder] < 650f;
+            float radius = hold.Holding ? HoldExitRadius : HoldEnterRadius;
+            bool holding = lastToucherTeam == holder && clock - lastTouchClock < HoldWindow &&
+                closestDistance[holder] < radius;
             if (holding && !hold.Holding)
             {
                 hold.Started = clock;

@@ -188,9 +188,12 @@ Test("boost economy: pads upfield of the ball, dark pads and pads the opponent r
 {
     Car car = GroundCar(new Vec3(0, -1000, 17), 5);
     Vec3 ball = new(0, -2000, 100), destination = new(0, -1200, 17);
-    Boost ahead = PadAt(0, 0, -3000, true);
+    // The pad is a cheap detour on any route (0.5 s for a full tank's worth), so only the goal-side rule can refuse it.
+    Boost ahead = PadAt(0, 0, -1500, true);
     Check(BoostEconomy.Choose(car, new[] { ahead }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight()) == null,
-        "a pad upfield of the ball was taken as a refill");
+        "a pad 500 uu upfield of the ball was taken as a refill");
+    Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { ahead }, new Vec3(0, -500, 100), destination, 0, 3f,
+        Array.Empty<Car>(), Straight()), ahead), "the same pad goal-side of the ball was refused");
 
     Boost pad = PadAt(1, 300, -800, true);
     ball = new Vec3(0, 1500, 100);
@@ -200,12 +203,29 @@ Test("boost economy: pads upfield of the ball, dark pads and pads the opponent r
     Check(BoostEconomy.Choose(car, new[] { dark }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight()) == null,
         "a pad dark for another nine seconds was chosen");
 
+    // 0.26 s away: a pad lit 0.30 s from now is still dark on arrival, one lit in 0.20 s is not.
+    var lateLit = PadAt(3, 300, -800, true);
+    lateLit.Update(new BoostPadStateT { IsActive = false, Timer = 9.7f });
+    Check(BoostEconomy.Choose(car, new[] { lateLit }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight()) == null,
+        "a pad still dark on arrival was chosen");
+    var earlyLit = PadAt(4, 300, -800, true);
+    earlyLit.Update(new BoostPadStateT { IsActive = false, Timer = 9.8f });
+    Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { earlyLit }, ball, destination, 0, 3f, Array.Empty<Car>(),
+        Straight()), earlyLit), "a pad lit before arrival was refused");
+
     Car rival = GroundCar(new Vec3(330, -800, 17), 50, index: 1);
     rival.Team = 1;
     Check(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, new[] { rival }, Straight()) == null,
         "a pad the opponent reaches first was contested");
     Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight()), pad),
         "the same pad without a rival was refused");
+
+    Car mate = GroundCar(new Vec3(330, -800, 17), 50, index: 2);
+    Check(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight(), null,
+        new[] { mate }) == null, "a pad a teammate reaches first was duplicated");
+    Car farMate = GroundCar(new Vec3(3000, 3000, 17), 50, index: 2);
+    Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(),
+        Straight(), null, new[] { farMate }), pad), "a distant teammate blocked the pad");
 });
 
 Test("boost economy: a pad being driven to is kept unless another is clearly better", () =>
@@ -218,6 +238,39 @@ Test("boost economy: a pad being driven to is kept unless another is clearly bet
     Check(ReferenceEquals(kept, current), "a pad in progress lost to an equivalent one");
     Boost? unbiased = BoostEconomy.Choose(car, pads, ball, destination, 0, 3f, Array.Empty<Car>(), Straight());
     Check(unbiased != null, "the fixture offered no pad at all");
+
+    // A pad 1200 uu off the route is a poor trip (net 0.06 s); the one on the route is worth 0.8 s.
+    Boost sidetrack = PadAt(2, 1200, 0, true), onRoute = PadAt(3, 0, 0, true);
+    Boost? displaced = BoostEconomy.Choose(car, new[] { sidetrack, onRoute }, ball, destination, 0, 3f,
+        Array.Empty<Car>(), Straight(), sidetrack);
+    Check(ReferenceEquals(displaced, onRoute), "a clearly better pad did not displace the trip in progress");
+
+    // Seven equivalent pads along the route: the one in progress is the last in the ranking and must still keep its place.
+    var crowd = new List<Boost>();
+    for (int i = 0; i < 6; i++)
+        crowd.Add(PadAt(10 + i, 10 * i, 0, false));
+    Boost trailing = PadAt(20, 70, 0, false);
+    crowd.Add(trailing);
+    Boost? crowded = BoostEconomy.Choose(car, crowd, ball, destination, 0, 3f, Array.Empty<Car>(), Straight(), trailing);
+    Check(ReferenceEquals(crowded, trailing), "a crowded shortlist dropped the pad in progress");
+});
+
+Test("boost economy: slack before a touch follows the opponent, the pressure and the teammate", () =>
+{
+    var frame = new TacticalFrame { OpponentEta = 3f, TeamCount = 1 };
+    float open = BoostEconomy.SlackBeforeContact(frame, 1f, 0f);
+    Check(open > 1.4f && open < 1.7f, $"open-ball slack before a touch was {open:F2} s");
+    Check(BoostEconomy.SlackBeforeContact(frame, 1f, 4500f) < open - 0.4f, "a ball deep in our half left the same slack");
+    Check(BoostEconomy.SlackBeforeContact(frame, 1f, 0f, 1.2f) == 0f, "an opponent about to touch left slack before the touch");
+    Check(BoostEconomy.SlackBeforeContact(frame, 1f, 0f, 2.4f) < open - 0.5f, "a later pressure touch did not shrink the slack");
+    Check(BoostEconomy.SlackBeforeContact(frame, 4f, 0f) == 0f, "a touch later than the opponent's arrival left slack");
+    frame.TeamCount = 2;
+    frame.TeammateEta = 1.5f;
+    float shared = BoostEconomy.SlackBeforeContact(frame, 1f, 0f);
+    Check(shared > 0.2f && shared < 0.3f, $"a teammate 0.5 s behind left {shared:F2} s before the ball changed hands");
+    frame.TeammateEta = 6f;
+    Check(BoostEconomy.SlackBeforeContact(frame, 1f, 0f) == open, "a distant teammate still capped the slack");
+    Check(BoostEconomy.SlackBeforeContact(frame, float.NaN, 0f) == 0f, "a nonfinite contact time produced slack");
 });
 
 Test("kickoff: only the back car of a team takes its own corner's big pad", () =>

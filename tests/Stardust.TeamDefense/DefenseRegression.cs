@@ -296,18 +296,20 @@ internal static class DefenseRegression
         test("defense-v3: reference ball only leads movement toward own goal", () =>
         {
             Vec3 ball = new(200, -2000, 100);
+            // The second slice sits at twice the lead, so the reference is the midpoint whatever the lead.
+            float later = 10f + 2f * Defense.ReferenceLead;
             var incoming = new RedUtils.BallPrediction
             {
                 Slices = new[]
                 {
                     new BallSlice(10f, ball, new Vec3(0, -1000, 0)),
-                    new BallSlice(10.4f, new Vec3(200, -2400, 100), new Vec3(0, -1000, 0))
+                    new BallSlice(later, new Vec3(200, -2400, 100), new Vec3(0, -1000, 0))
                 }
             };
             Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f).y, -2200f, 0.01f);
 
             incoming.Slices[1] = new BallSlice(
-                10.4f, new Vec3(200, -1600, 100), new Vec3(0, 1000, 0));
+                later, new Vec3(200, -1600, 100), new Vec3(0, 1000, 0));
             Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f).y, -2000f, 0.01f);
         });
 

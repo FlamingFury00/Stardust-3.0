@@ -104,10 +104,13 @@ internal static class PressureRegression
                 // Near our net an uncovered defender must already be close; the midfield reach is
                 // covered by its own test below.
                 float neutralReach = Defense.NeutralCarrierRange;
-                Defense.NeutralCarrierRange = Defense.CarrierRange;
-                Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
-                    "uncovered defender took a long speculative lunge");
-                Defense.NeutralCarrierRange = neutralReach;
+                try
+                {
+                    Defense.NeutralCarrierRange = Defense.CarrierRange;
+                    Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
+                        "uncovered defender took a long speculative lunge");
+                }
+                finally { Defense.NeutralCarrierRange = neutralReach; }
                 frame.HasCover = true;
                 frame.TeamRank = 1;
                 Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
@@ -134,11 +137,14 @@ internal static class PressureRegression
                 // The interception time of a car moving away must include braking: judged against the
                 // near-net horizon, where the meeting has to come within 0.6 s.
                 float neutralHorizon = Defense.NeutralHorizon;
-                Defense.NeutralHorizon = 0.6f;
-                us.Velocity.y = -1300 * sign;
-                Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
-                    "retreating defender was given a stationary car's interception time");
-                Defense.NeutralHorizon = neutralHorizon;
+                try
+                {
+                    Defense.NeutralHorizon = 0.6f;
+                    us.Velocity.y = -1300 * sign;
+                    Check(!Defense.TryChallengeCarrier(frame, us, ball, new[] { opponent }, goal, out _),
+                        "retreating defender was given a stationary car's interception time");
+                }
+                finally { Defense.NeutralHorizon = neutralHorizon; }
             }
         });
     }
