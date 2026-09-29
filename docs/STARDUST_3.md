@@ -291,6 +291,7 @@ Nexto. None survived:
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 | Shadow matches the attacker's full speed, up to 1800 uu/s (instead of 0.8 of it, up to 1350) | self-play, 85 games | +0.07 ± 0.29 |
 | Planning rollouts keep driving a directed approach past a misaligned pass, as the controller does | roller, save and clear drills | 130 / 125 / 63 vs 130 / 125 / 66: in an emergency the clear planner finds a clear on under 3 % of planning ticks either way, because against an incoming ball no approach arrives at the contact with the right heading in time |
+| Ground blocks that would push a rolling ball in are skipped, and an overshot block point is backed onto (`BlockPlanner.RejectPushes`, `Block.ReverseOntoPoint`) | roller drill, 150; self-play on the September build: 1v1 144, 2v2 72, 3v3 36 games; an earlier 1v1 series, 144 | 135 vs 133 kept out; own goals 142 vs 191 over the three sizes, but goals per game +0.25 ± 0.21, −0.14 ± 0.33, +0.17 ± 0.30, and +0.29 ± 0.27 earlier: +0.18 ± 0.13 pooled. Most balls the fix stops pushing in still go in another way. Left off (switches kept) |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
 goal-side with 20–100 boost. The gap to Nexto is not one misjudged threshold: each rule above fixes
