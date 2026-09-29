@@ -29,6 +29,8 @@ public static class MechanicsLab
         new GoalwardSlipDrill(), new GoalwardSlipDrill(1),
         new CounterReplayDrill(), new CounterReplayDrill(1),
         new CounterReplayDrill(necto: true), new CounterReplayDrill(1, necto: true),
+        new TeamKickoffDrill(), new TeamKickoffDrill(1),
+        new DodgeDirectionDrill(),
         new ClosePossessionDrill(), new ClosePossessionDrill(1),
         new CarrierPressureDrill(), new CarrierPressureDrill(1),
         new CarrierPressureDrill(fast: true), new CarrierPressureDrill(1, fast: true),

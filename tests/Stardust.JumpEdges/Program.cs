@@ -1,6 +1,7 @@
 using System.Reflection;
 using RedUtils;
 using RedUtils.Math;
+using RedUtils.Physics;
 using RLBot.Flat;
 
 Cars.Initialize(new GamePacketT { Players = new() });
@@ -116,6 +117,34 @@ Test("dodge: airborne invocation preserves immediate flip availability", () =>
     action.Run(bot);
     Check(bot.Controller.Jump && MathF.Abs(bot.Controller.Pitch) + MathF.Abs(bot.Controller.Yaw) > 0.2f,
         "airborne dodge inserted an unnecessary release delay");
+});
+
+Test("dodge: mirrored car headings produce mirrored controls and the intended impulse", () =>
+{
+    foreach (float speed in new[] { -900f, 0f, 1000f, 2000f })
+    foreach (float angle in new[] { 0.25f, 0.7854f, 1.9f, 2.6f })
+    {
+        var outputs = new List<ControllerStateT>();
+        foreach (int mirror in new[] { -1, 1 })
+        {
+            SetGameTime(0);
+            var bot = MakeBot();
+            Car car = Cars.AllCars[0];
+            car.IsGrounded = false;
+            car.Orientation = new Mat3x3(new Vec3(0, MathF.PI / 2 + mirror * angle, 0));
+            car.Velocity = car.Forward * speed;
+            var action = new Dodge(Vec3.Y);
+            action.Run(bot);
+            var controls = bot.Controller;
+            Vec3 impulse = DodgeModel.Impulse(car.Forward, controls.Pitch, controls.Yaw, speed);
+            Check(impulse.Normalize().Dot(Vec3.Y) > 0.999f,
+                $"dodge impulse missed direction at speed {speed}, heading {angle * mirror}: {impulse}");
+            outputs.Add(controls);
+        }
+        Check(MathF.Abs(outputs[0].Pitch - outputs[1].Pitch) < 0.0001f &&
+            MathF.Abs(outputs[0].Yaw + outputs[1].Yaw) < 0.0001f,
+            $"mirrored directions gave unequal controls at speed {speed}, angle {angle}");
+    }
 });
 
 Console.WriteLine($"JUMP EDGE RESULT: {passed} passed, {failed} failed.");

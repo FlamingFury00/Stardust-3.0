@@ -1,6 +1,8 @@
 using Stardust.Simulator;
 using Stardust.Simulator.Match;
 using Stardust.Simulator.Protocol;
+using Stardust.Simulator.Lab;
+using Stardust.Simulator.Scenarios;
 using RLBot.Flat;
 using System.Net;
 using System.Net.Sockets;
@@ -43,6 +45,19 @@ void Test(string name, Action action)
     try { action(); passed++; Console.WriteLine($"PASS {name}"); }
     catch (Exception error) { failed++; Console.WriteLine($"FAIL {name}: {error.Message}"); }
 }
+
+Test("kickoff outcome accepts a direct goal without requiring a later touch", () =>
+{
+    foreach (int team in new[] { 0, 1 })
+    {
+        var drill = new TeamKickoffDrill(team);
+        var setup = drill.Generate(new Random(3));
+        Check(drill.Judge(setup, new EpisodeTrace { GoalTeam = team }),
+            "a scored kickoff was labelled a failed follow-up");
+        Check(!drill.Judge(setup, new EpisodeTrace { GoalTeam = 1 - team }),
+            "a conceded kickoff was labelled successful");
+    }
+});
 
 string directory = Path.Combine(Path.GetTempPath(), $"stardust-sim-check-{Guid.NewGuid():N}");
 Directory.CreateDirectory(directory);
