@@ -273,28 +273,6 @@ Test("boost economy: slack before a touch follows the opponent, the pressure and
     Check(BoostEconomy.SlackBeforeContact(frame, float.NaN, 0f) == 0f, "a nonfinite contact time produced slack");
 });
 
-Test("kickoff: only the back car of a team takes its own corner's big pad", () =>
-{
-    var pads = new List<Boost>
-    {
-        PadAt(0, 3072, -4096, true), PadAt(1, -3072, -4096, true), PadAt(2, 3072, 4096, true),
-        PadAt(3, -3072, 4096, true), PadAt(4, 3584, 0, true), PadAt(5, 1788, -2300, false),
-    };
-    Vec3 spawn = new(2048, -2560, 17);
-    Check(BoostEconomy.KickoffPad(spawn, 0, pads, 0, 3, 2800f) == null, "the taker went for a pad");
-    Check(BoostEconomy.KickoffPad(spawn, 0, pads, 1, 3, 2800f) == null, "the cheat car of three went for a pad");
-    Boost? corner = BoostEconomy.KickoffPad(spawn, 0, pads, 2, 3, 2800f);
-    Check(corner != null && corner.Index == 0, "the back car of three did not take its own corner's pad");
-    Check(BoostEconomy.KickoffPad(spawn, 0, pads, 1, 2, 2800f)?.Index == 0, "the second car of two did not take a pad");
-    Check(BoostEconomy.KickoffPad(spawn, 0, pads, 1, 1, 2800f) == null, "a lone car took a pad");
-    Check(BoostEconomy.KickoffPad(spawn, 0, pads, 2, 3, 1500f) == null, "a pad beyond the reach was chosen");
-    Vec3 orangeSpawn = new(-2048, 2560, 17);
-    Check(BoostEconomy.KickoffPad(orangeSpawn, 1, pads, 2, 3, 2800f)?.Index == 3,
-        "orange's back car did not take its own corner");
-    pads[0].Update(new BoostPadStateT { IsActive = false, Timer = 0 });
-    Check(BoostEconomy.KickoffPad(spawn, 0, pads, 2, 3, 2800f) == null, "a taken pad was chosen");
-});
-
 Test("goal return: drive exposes a handbrake safety switch", () =>
 {
     System.Reflection.FieldInfo? allow = typeof(Drive).GetField("AllowHandbrake", BindingFlags.Public | BindingFlags.Instance);

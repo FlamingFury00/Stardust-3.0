@@ -44,10 +44,6 @@ namespace Bot
         public static bool FirstManShadow = true;
         /// <summary>Seconds between full re-plans while calm, and while an opponent or the ball is about to strike.</summary>
         public static float PlanInterval = 0.12f, UrgentPlanInterval = 0.05f;
-        /// <summary>The car furthest back at a team kickoff refills at its own corner's big pad instead of cheating forward.</summary>
-        public static bool KickoffPadRun = true;
-        /// <summary>Longest flat distance (uu) of that run: from the back-centre spawn to its own corner pad is 3114.</summary>
-        public static float KickoffPadReach = 3300f;
         /// <summary>Run supersonic into an opponent worth a demolition. Off until measured in full matches.</summary>
         public static bool DemolitionRuns = false;
         /// <summary>Ball speed (uu/s) above which a pad detour before a touch is not considered.</summary>
@@ -113,12 +109,6 @@ namespace Bot
                 {
                     Action = new Kickoff();
                     SetDecision("kickoff / taker");
-                }
-                else if (KickoffPadRun && BoostEconomy.KickoffPad(Me.Location, Team, Field.Boosts, rank,
-                    LivingTeammates.Count + 1, KickoffPadReach) is Boost corner)
-                {
-                    Action = new GetBoost(Me, corner.Index, interruptible: true);
-                    SetDecision("kickoff / boost run");
                 }
                 else
                 {
