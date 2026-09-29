@@ -90,6 +90,9 @@ public abstract class Drill : Scenario
     /// <summary>Per-episode setup: reset measurements and set the director.</summary>
     protected virtual void Start(MatchSession session, EpisodeSetup setup) { }
 
+    /// <summary>Called once after the drill's episodes, also when one throws: undo anything <see cref="Start"/> changed globally.</summary>
+    public virtual void Finish() { }
+
     /// <summary>Per-tick measurement.</summary>
     protected virtual void Measure(MatchSession session, EpisodeTrace trace) { }
 

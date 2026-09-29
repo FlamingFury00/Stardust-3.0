@@ -177,7 +177,7 @@ Test("demolition: a run is planned only where supersonic contact is reachable", 
     Check(Demolition.Plan(car, teammate) == null, "a teammate was chosen as a target");
     // The launch-angle gate on its own: same distance and speed, the target dead ahead or well off the nose.
     Car dead = Runaway(new Vec3(0, -1200, 17), Vec3.Zero);
-    Car aside = Runaway(new Vec3(1100, -1900, 17), Vec3.Zero);
+    Car aside = Runaway(new Vec3(1631, -2239, 17), Vec3.Zero); // the same 1800 uu, 65 degrees off the nose
     Check(Demolition.Plan(car, dead).HasValue, "a stationary opponent dead ahead was not chased");
     Check(Demolition.Plan(car, aside) == null, "an opponent 65 degrees off the nose was chased");
     // The wall gate on its own: 1800 uu ahead in both cases, one target inside the pitch and one beyond the edge margin.

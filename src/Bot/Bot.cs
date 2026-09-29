@@ -48,7 +48,7 @@ namespace Bot
         public static bool DemolitionRuns = false;
         /// <summary>Ball speed (uu/s) above which a pad detour before a touch is not considered.</summary>
         private const float PadBeforeShotBallSpeed = 1800f;
-        /// <summary>Time (s) a first man must still have before the ball to start a demolition run instead.</summary>
+        /// <summary>Most spare time (s) before the ball a first man may have and still start a demolition run: with more, the ball is his to win.</summary>
         private const float DemolitionFreeTime = 0.15f;
 
         private float nextPlan = float.NegativeInfinity;
@@ -121,7 +121,6 @@ namespace Bot
                 return;
             }
 
-            BoostSlack = 0f;
             float threat = Defense.GoalThreat(Ball.Prediction.Slices, OurGoal.Location,
                 Game.Time, 2.5f, out Vec3 crossing);
             float counterThreat = threat;
@@ -165,6 +164,7 @@ namespace Bot
                 return;
 
             Assess(pressureTime);
+            BoostSlack = 0f;
             nextPlan = Game.Time + (underPressure || emergency || counterDanger ? UrgentPlanInterval : PlanInterval);
 
             bool challengeCarrier = Defense.TryChallengeCarrier(Situation, Me, Ball.MainBall,
@@ -675,7 +675,7 @@ namespace Bot
             if (pad == null)
                 return false;
 
-            bool dodges = slack >= BoostEconomy.DodgeSlack;
+            bool dodges = BoostEconomy.MayDodge(slack);
             if (!(Action is GetBoost trip) || trip.Finished || trip.ChosenBoost?.Index != pad.Index)
                 Action = new GetBoost(Me, pad.Index, interruptible: true, allowDodges: dodges);
             else

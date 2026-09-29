@@ -79,6 +79,20 @@ Test("boost action: valid active and soon-respawning selections retain their rou
     });
 });
 
+Test("boost action: a trip may be told whether it can dodge, before and while it runs", () =>
+{
+    WithPads(new List<Boost> { Pad(0) }, car =>
+    {
+        var cautious = new GetBoost(car, 0, true, allowDodges: false);
+        Check(!cautious.DriveAction.AllowDodges && !cautious.AllowDodges, "a trip built without dodges dodges");
+        cautious.AllowDodges = true;
+        Check(cautious.DriveAction.AllowDodges, "changing AllowDodges did not reach the drive");
+        Check(new GetBoost(car, 0).DriveAction.AllowDodges, "dodges are not the default");
+    });
+    Check(!BoostEconomy.MayDodge(BoostEconomy.DodgeSlack - 0.01f) && BoostEconomy.MayDodge(BoostEconomy.DodgeSlack),
+        "the dodge slack threshold moved");
+});
+
 Test("boost action: changed field or public index cancels before stale route execution", () =>
 {
     WithPads(new List<Boost> { Pad(0), Pad(1) }, car =>
@@ -226,6 +240,16 @@ Test("boost economy: pads upfield of the ball, dark pads and pads the opponent r
     Car farMate = GroundCar(new Vec3(3000, 3000, 17), 50, index: 2);
     Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(),
         Straight(), null, new[] { farMate }), pad), "a distant teammate blocked the pad");
+    Car fullMate = GroundCar(new Vec3(330, -800, 17), 100, index: 2);
+    Check(ReferenceEquals(BoostEconomy.Choose(car, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(),
+        Straight(), null, new[] { fullMate }), pad), "a teammate with a full tank blocked the pad");
+
+    // Two cars an equal distance from the pad: the lower index takes it, the other looks elsewhere.
+    Car high = GroundCar(new Vec3(0, -1000, 17), 5, index: 1), low = GroundCar(new Vec3(0, -1000, 17), 5, index: 0);
+    Check(BoostEconomy.Choose(high, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(), Straight(), null,
+        new[] { low }) == null, "the higher-indexed of two equal cars also went for the pad");
+    Check(ReferenceEquals(BoostEconomy.Choose(low, new[] { pad }, ball, destination, 0, 3f, Array.Empty<Car>(),
+        Straight(), null, new[] { high }), pad), "the lower-indexed of two equal cars gave the pad up");
 });
 
 Test("boost economy: a pad being driven to is kept unless another is clearly better", () =>
@@ -244,6 +268,13 @@ Test("boost economy: a pad being driven to is kept unless another is clearly bet
     Boost? displaced = BoostEconomy.Choose(car, new[] { sidetrack, onRoute }, ball, destination, 0, 3f,
         Array.Empty<Car>(), Straight(), sidetrack);
     Check(ReferenceEquals(displaced, onRoute), "a clearly better pad did not displace the trip in progress");
+
+    // A trip whose own net worth is below the floor is not kept for a marginally better pad that is above it.
+    Car low = GroundCar(new Vec3(0, -1000, 17), 25);
+    Boost weak = PadAt(4, 100, 0, false), better = PadAt(5, 0, 0, false);
+    Boost? floored = BoostEconomy.Choose(low, new[] { weak, better }, ball, destination, 0, 3f, Array.Empty<Car>(),
+        Straight(), weak);
+    Check(ReferenceEquals(floored, better), "a trip worth less than the floor was kept over a pad worth more");
 
     // Seven equivalent pads along the route: the one in progress is the last in the ranking and must still keep its place.
     var crowd = new List<Boost>();

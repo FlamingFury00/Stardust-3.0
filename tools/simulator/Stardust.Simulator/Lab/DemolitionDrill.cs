@@ -14,7 +14,7 @@ namespace Stardust.Simulator.Lab;
 /// </summary>
 public sealed class DemolitionDrill : Drill
 {
-    private bool attempted, demolished, runsWereEnabled;
+    private bool attempted, demolished, runsWereCaptured, runsWereEnabled;
     private float demolishedAt;
 
     public override string Name => "demolition";
@@ -49,7 +49,11 @@ public sealed class DemolitionDrill : Drill
     protected override void Start(MatchSession session, EpisodeSetup setup)
     {
         Subject.Director = null;
-        runsWereEnabled = global::Bot.Stardust.DemolitionRuns;
+        if (!runsWereCaptured)
+        {
+            runsWereEnabled = global::Bot.Stardust.DemolitionRuns;
+            runsWereCaptured = true;
+        }
         global::Bot.Stardust.DemolitionRuns = true;
         attempted = demolished = false;
         demolishedAt = float.NaN;
@@ -65,9 +69,14 @@ public sealed class DemolitionDrill : Drill
         }
     }
 
+    public override void Finish()
+    {
+        if (runsWereCaptured)
+            global::Bot.Stardust.DemolitionRuns = runsWereEnabled;
+    }
+
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
     {
-        global::Bot.Stardust.DemolitionRuns = runsWereEnabled;
         trace.Notes.Insert(0, attempted ? (demolished ? "demolished" : "missed") : "no run");
         trace.Metrics["attempted"] = attempted ? 1 : 0;
         if (attempted)

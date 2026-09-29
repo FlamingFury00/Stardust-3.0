@@ -78,7 +78,9 @@ public static class MechanicsLab
             string directory = Path.Combine(outputDirectory, drill.Name);
             using var session = new MatchSession(seats, new MatchOptions { Seed = seed, LogDirectory = directory });
             agent.Attach(session);
-            ScenarioOutcome outcome = ScenarioRunner.Run(drill, session, "stardust", episodes, seed, directory);
+            ScenarioOutcome outcome;
+            try { outcome = ScenarioRunner.Run(drill, session, "stardust", episodes, seed, directory); }
+            finally { drill.Finish(); }
 
             var verdicts = drill.Criteria.Select(c =>
             {

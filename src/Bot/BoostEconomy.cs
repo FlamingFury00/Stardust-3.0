@@ -15,9 +15,9 @@ namespace Bot
     public static class BoostEconomy
     {
         /// <summary>
-        /// Seconds of detour one unit of boost is worth for an empty tank. Driving a full tank
-        /// from empty is worth 100 times this (3 s at the default), of which a full pad from empty
-        /// realises <c>SecondsPerBoost * 100 / (ValueCurve + 1)</c>, about 1.25 s.
+        /// Seconds of detour one unit of boost is worth for an empty tank. The worth then falls as the
+        /// tank fills, so a full pad taken from empty is worth <c>SecondsPerBoost * 100 / (ValueCurve + 1)</c>,
+        /// about 1.25 s at the defaults.
         /// </summary>
         public static float SecondsPerBoost = 0.03f;
         /// <summary>How quickly the value of a unit of boost falls as the tank fills.</summary>
@@ -44,6 +44,9 @@ namespace Bot
         public static float MaxSlack = 3f;
         /// <summary>Slack (s) a trip needs before it may dodge: a flip commits the car for over a second.</summary>
         public static float DodgeSlack = 1.6f;
+
+        /// <summary>Whether a trip with <paramref name="slack"/> seconds to spare may dodge or speed-flip.</summary>
+        public static bool MayDodge(float slack) => slack >= DodgeSlack;
         /// <summary>A pad already being driven to keeps its place unless another is this much better.</summary>
         public static float Continuation = 1.4f;
         /// <summary>Net worth (s) below which a pad is not worth the decision.</summary>
@@ -203,7 +206,7 @@ namespace Bot
                 // A pad must be lit by the time the car arrives, which is also when the trip would end.
                 if (!pad.IsActive && pad.TimeUntilActive > toPad)
                     continue;
-                if (TakenFirst(opponents, pad, toPad, travelTime) || TakenFirst(teammates, pad, toPad, travelTime))
+                if (TakenFirst(opponents, pad, toPad, travelTime) || TakenFirst(teammates, pad, toPad, travelTime, car))
                     continue;
 
                 float onward = pad.Location.FlatDist(destination) / ExitSpeed + PadExitTime;
@@ -220,24 +223,34 @@ namespace Bot
 
             if (best.Pad == null)
                 return null;
-            if (float.IsFinite(currentNet) && currentNet > 0f && !ReferenceEquals(best.Pad, current) &&
+            if (float.IsFinite(currentNet) && currentNet >= MinimumNet && !ReferenceEquals(best.Pad, current) &&
                 best.Net < currentNet * Continuation)
                 return current;
             return best.Net >= MinimumNet ? best.Pad : null;
         }
 
-        /// <summary>Whether any of <paramref name="others"/> reaches the pad clearly before the car at <paramref name="mine"/> seconds.</summary>
+        /// <summary>
+        /// Whether any of <paramref name="others"/> reaches the pad clearly before the car at
+        /// <paramref name="mine"/> seconds. Among teammates (<paramref name="self"/> given) a car that
+        /// no longer wants boost is not on its way to the pad, and of two cars within the margin the
+        /// lower index takes it, so mirrored cars do not both go for it.
+        /// </summary>
         private static bool TakenFirst(IEnumerable<Car> others, Boost pad, float mine,
-            Func<Car, Vec3, float> travelTime)
+            Func<Car, Vec3, float> travelTime, Car self = null)
         {
             if (others == null)
                 return false;
             foreach (Car other in others)
             {
-                if (other == null || other.IsDemolished || !ControlMath.Finite(other.Location))
+                if (other == null || other.IsDemolished || !ControlMath.Finite(other.Location) ||
+                    (self != null && !Wanted(other.Boost)))
                     continue;
                 float theirs = travelTime(other, pad.Location);
-                if (float.IsFinite(theirs) && theirs + ContestMargin < mine)
+                if (!float.IsFinite(theirs))
+                    continue;
+                bool clearlyFirst = theirs + ContestMargin < mine;
+                bool tie = self != null && MathF.Abs(theirs - mine) <= ContestMargin && other.Index < self.Index;
+                if (clearlyFirst || tie)
                     return true;
             }
             return false;

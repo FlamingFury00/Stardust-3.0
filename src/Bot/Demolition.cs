@@ -13,7 +13,7 @@ namespace Bot
     /// </summary>
     public static class Demolition
     {
-        /// <summary>Boost needed to be worth the run: about two thirds of a second of thrust, enough to reach supersonic from cruising speed.</summary>
+        /// <summary>Boost needed to be worth the run: about two thirds of a second of thrust. <see cref="Plan"/> decides whether it is enough for a given run.</summary>
         public static float MinBoost = 22f;
         /// <summary>Flat distance (uu) beyond which no run is planned.</summary>
         public static float MaxRange = 2600f;
