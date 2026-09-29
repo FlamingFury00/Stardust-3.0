@@ -1,5 +1,8 @@
 # Recovery, finishing and transport follow-up
 
+The subsequent [corner-pressure evaluation](CORNER_PRESSURE.md) records the next iteration and
+its cross-platform CI results. Results below describe this earlier frozen build.
+
 This follows [the initial pressure/possession work](PRESSURE_POSSESSION.md). The objective remains
 competitive play comparable to professionals; passing isolated drills does not establish that.
 The original policy baseline is `8e99957`; the prior reviewed candidate is `fdf9d99`.

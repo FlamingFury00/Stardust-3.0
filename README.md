@@ -20,6 +20,8 @@ The September 2026 [pressure and possession evaluation](docs/PRESSURE_POSSESSION
 the telemetry-driven fixes, paired simulator results, Windows simulator support, and remaining gaps.
 The [recovery and finishing follow-up](docs/RECOVERY_FINISHING.md) covers reverse retreat,
 braking-aware interception, flight-aware flicks, and communication reliability.
+The [corner-pressure evaluation](docs/CORNER_PRESSURE.md) covers wider first-man positioning,
+near-goal turns, rejected boost-routing experiments, and cross-platform validation.
 
 ![Stardust Logo](./logo.png)
 
