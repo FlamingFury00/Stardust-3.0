@@ -114,7 +114,12 @@ so the run is not what carries the result. Each 24-game series carries roughly �
 | Previous build, final 1v1 behaviour, 48 games | 22–26 | −0.13 | 43.9 % / 52.4 % |
 | Previous build, boost economy only, 48 games | 27–21 | −0.08 | 49.3 % / 50.1 % |
 | Previous build, midfield press 0.75, 48 games | 23–25 | −0.10 | 36.1 % / 50.6 % |
+| PartyCannon, final defaults, 48 games | 22–26 | −0.25 | 42.0 % / 35.6 % |
 
+The previous build scored 18–30 (−0.65) and 16–8 (+0.54) against PartyCannon on two seeds, 34–38 pooled,
+so the final build is level with it there too. PartyCannon takes twice our shots (10.1 against 5.0
+per player per 5 minutes) and spends 31 % of its time in its attacking third against our 21 %,
+yet the score stays close (goals per 5 minutes 5.1 against 4.6; saves 4.8 against 1.9).
 A 48-game series resolves about ±0.45 goals per game, so 1v1 is level: the press takes away part of
 the free space at no measurable cost, and the boost economy does not lift the 1v1 zero-boost share
 (42 %), because a 1v1 car spends about 220 boost per minute and can pick up at most about 180 at
