@@ -1,5 +1,8 @@
 # Pressure and possession evaluation, September 2026
 
+The next iteration is recorded in [Recovery and finishing](RECOVERY_FINISHING.md); the results
+below remain the historical first-iteration evidence.
+
 This change addresses the passive 2v2 play in the two September 28 telemetry files ending in
 `pid1928.jsonl` and `pid9472.jsonl`. The baseline is commit
 `8e999576a4a4142c089596592c5febef57b98c26`. It is a measured improvement to that build, not evidence

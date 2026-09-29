@@ -18,6 +18,8 @@ See **[docs/STARDUST_3.md](docs/STARDUST_3.md)** for:
 
 The September 2026 [pressure and possession evaluation](docs/PRESSURE_POSSESSION.md) records
 the telemetry-driven fixes, paired simulator results, Windows simulator support, and remaining gaps.
+The [recovery and finishing follow-up](docs/RECOVERY_FINISHING.md) covers reverse retreat,
+braking-aware interception, flight-aware flicks, and communication reliability.
 
 ![Stardust Logo](./logo.png)
 
