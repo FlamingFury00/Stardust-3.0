@@ -194,6 +194,33 @@ namespace Bot
             return best.Net >= MinimumNet ? best.Pad : null;
         }
 
+        /// <summary>
+        /// The big pad in its own corner that the back car of a team kickoff (the last of two, or of
+        /// three) takes on its way back instead of cheating forward, or null for every other car.
+        /// </summary>
+        public static Boost KickoffPad(Vec3 car, int team, IEnumerable<Boost> pads, int rank, int teamSize, float reach)
+        {
+            bool backCar = teamSize == 2 ? rank == 1 : teamSize >= 3 && rank == teamSize - 1;
+            if (!backCar || pads == null)
+                return null;
+
+            float side = Field.Side(team);
+            Boost best = null;
+            float nearest = reach;
+            foreach (Boost pad in pads)
+            {
+                if (pad == null || !pad.IsLarge || !pad.IsActive || pad.Location.y * side < 1500f)
+                    continue;
+                float distance = pad.Location.FlatDist(car);
+                if (distance < nearest)
+                {
+                    nearest = distance;
+                    best = pad;
+                }
+            }
+            return best;
+        }
+
         private static bool OpponentTakesFirst(IEnumerable<Car> opponents, Boost pad, float mine,
             Func<Car, Vec3, float> travelTime)
         {

@@ -32,8 +32,9 @@ public sealed class DemolitionDrill : Drill
     {
         float x = Uniform(r, -1200, 1200);
         var ball = V(x, Uniform(r, 300, 900), 93.15f);
-        var runner = V(x + Uniform(r, -500, 500), Uniform(r, 2400, 3300), 17.01f);
-        var us = V(x + Uniform(r, -400, 400), Uniform(r, -2600, -1500), 17.01f);
+        // The runner is a second or so from the ball, we are well over a second further away: the race is lost.
+        var runner = V(x + Uniform(r, -400, 400), ball.Y + Uniform(r, 700, 1300), 17.01f);
+        var us = V(x + Uniform(r, -400, 400), ball.Y - Uniform(r, 2400, 3000), 17.01f);
         float toRunner = MathF.Atan2(runner.Y - us.Y, runner.X - us.X);
         float yaw = toRunner + Uniform(r, -0.12f, 0.12f);
         float speed = Uniform(r, 1000, 1600);

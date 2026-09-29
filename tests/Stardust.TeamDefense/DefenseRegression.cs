@@ -344,6 +344,15 @@ internal static class DefenseRegression
                     $"midfield gap {pressedNeutral:F0} did not close from {normalNeutral:F0}");
                 Check(MathF.Abs(pressedDeep - normalDeep) < 5f,
                     $"the gap near our net moved from {normalDeep:F0} to {pressedDeep:F0}");
+                Vec3 fast = new(0, -2000, 0), slow = new(0, -400, 0);
+                float pressedFast = attackerNeutral.FlatDist(
+                    Defense.ShadowTarget(attackerNeutral, blueGoal, DefensiveRole.Shadow, float.PositiveInfinity, fast));
+                float pressedSlow = attackerNeutral.FlatDist(
+                    Defense.ShadowTarget(attackerNeutral, blueGoal, DefensiveRole.Shadow, float.PositiveInfinity, slow));
+                Check(MathF.Abs(pressedFast - normalNeutral) < 5f,
+                    $"a fast attack was pressed: gap {pressedFast:F0} against {normalNeutral:F0}");
+                Check(MathF.Abs(pressedSlow - pressedNeutral) < 5f,
+                    $"a slow attack was not pressed: gap {pressedSlow:F0} against {pressedNeutral:F0}");
                 Check(Defense.Caution(-2000f) < 0.01f && Defense.Caution(4500f) > 0.99f,
                     "caution is not 0 in their half and 1 deep in ours");
                 float previous = 0f;

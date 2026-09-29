@@ -99,6 +99,9 @@ namespace Bot
             return frame.TeamCount == 2 || frame.DeepestSupport;
         }
 
+        /// <summary>How far ahead (s) of the ball the shadow reads it when the ball is heading for our net.</summary>
+        public static float ReferenceLead = 0.20f;
+
         /// <summary>
         /// Use a short future ball sample only when the untouched prediction is moving toward our goal.
         /// This compensates planning latency without letting a retreating ball drag the defense upfield.
@@ -108,7 +111,7 @@ namespace Bot
             if (!ControlMath.Finite(ball) || !ControlMath.Finite(goal))
                 return ball;
 
-            if (prediction.TrySample(now + 0.20f, out Ball sample) &&
+            if (prediction.TrySample(now + ReferenceLead, out Ball sample) &&
                 sample != null && ControlMath.Finite(sample.location) &&
                 GoalSideProgress(sample.location, ball, goal) > 20f)
                 return sample.location;
@@ -140,6 +143,8 @@ namespace Bot
         public static float NeutralGapScale = 1f;
         /// <summary>Ball depth (uu into our half) where pressure starts to give way to caution, and how far it takes.</summary>
         public static float PressureZoneStart = 800f, PressureZoneWidth = 2400f;
+        /// <summary>Goalward ball speed (uu/s) from which the first defender stops pressing, and how far that takes.</summary>
+        public static float PressureSpeedStart = 1000f, PressureSpeedWidth = 700f;
 
         /// <summary>0 in midfield and their half, 1 in our third: how much of the cautious near-net behaviour applies.</summary>
         public static float Caution(float ballDepth) => SmoothStep((ballDepth - PressureZoneStart) / PressureZoneWidth);
@@ -153,8 +158,12 @@ namespace Bot
         /// Continuous ball-to-goal defensive positioning. Every role is constrained to remain goal-side
         /// of the reference ball. The solo shadow compresses under imminent contact instead of parking.
         /// </summary>
+        /// <param name="ballVelocity">
+        /// The ball's velocity, when known. A fast attack is never pressed, wherever it is: a defender
+        /// that closes on a ball travelling faster than it can reverse is beaten by the first touch.
+        /// </param>
         public static Vec3 ShadowTarget(Vec3 ball, Vec3 goal, DefensiveRole role,
-            float pressureTime = float.PositiveInfinity)
+            float pressureTime = float.PositiveInfinity, Vec3? ballVelocity = null)
         {
             if (!ControlMath.Finite(goal))
                 goal = new Vec3(0, -5120, 0);
@@ -201,7 +210,11 @@ namespace Bot
                     break;
                 default:
                     // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
-                    float pressing = Lerp(NeutralGapScale, 1f, Caution(flatBall.y * side));
+                    float attackSpeed = ballVelocity.HasValue
+                        ? MathF.Max(0f, ballVelocity.Value.Dot(goalward))
+                        : 0f;
+                    float fast = SmoothStep((attackSpeed - PressureSpeedStart) / PressureSpeedWidth);
+                    float pressing = Lerp(NeutralGapScale, 1f, MathF.Max(Caution(flatBall.y * side), fast));
                     desiredGap = (Lerp(1425f, 900f, danger) - 420f * urgency) * ShadowGapScale * pressing;
                     desiredGap = System.Math.Clamp(desiredGap, MathF.Min(560f, ShadowMinGap), 1450f);
                     minimumProgress = 460f - 120f * urgency;

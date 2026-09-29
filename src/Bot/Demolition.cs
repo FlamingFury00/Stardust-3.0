@@ -20,9 +20,9 @@ namespace Bot
         /// <summary>Longest run (s) planned: an opponent's path is only predictable over about a second.</summary>
         public static float MaxTime = 1.25f;
         /// <summary>Speed (uu/s) required at contact: supersonic starts at 2200.</summary>
-        public static float ContactSpeed = 2215f;
+        public static float ContactSpeed = 2260f;
         /// <summary>Largest angle (rad) between the nose and the run when it starts.</summary>
-        public static float MaxLaunchAngle = 0.5f;
+        public static float MaxLaunchAngle = 0.4f;
         /// <summary>Centre-to-centre distance (uu) at which two hitboxes meet head on.</summary>
         public const float ContactReach = 118f;
         /// <summary>Tallest opponent (uu) worth chasing: an airborne car cannot be met with the bumper.</summary>
@@ -152,9 +152,13 @@ namespace Bot
         private readonly int targetIndex;
         private readonly float started = Game.Time;
         private float lostSince = float.NaN;
+        private bool imminent;
         public bool Finished { get; private set; }
-        public bool Interruptible => true;
+        /// <summary>A run within a moment of contact is not called off: a bump one tick early demolishes nothing.</summary>
+        public bool Interruptible => !imminent;
         public int TargetIndex => targetIndex;
+        /// <summary>Time to contact (s) from which the run can no longer be interrupted.</summary>
+        public static float CommitTime = 0.5f;
         /// <summary>How long (s) a run without a valid plan is kept before the car gives up.</summary>
         public static float Patience = 0.18f;
         /// <summary>Longest a single run lasts (s).</summary>
@@ -182,8 +186,12 @@ namespace Bot
                 Vec3 heading = ControlMath.FlatUnit(car.Forward, Vec3.X);
                 float alignment = heading.Dot(ControlMath.FlatUnit(toTarget, heading));
                 float closing = (car.Velocity - target.Velocity).Flatten().Dot(ControlMath.FlatUnit(toTarget, heading));
+                // Only a run that can still be supersonic at contact is worth finishing: a bump below
+                // 2200 uu/s costs the car its speed and demolishes nothing.
+                bool supersonicAtContact = car.IsSupersonic ||
+                    Demolition.Advance(car.Velocity.Dot(heading), car.Boost, 0.2f).Speed >= 2205f;
                 bool closingIn = alignment > 0.92f && closing > 900f && toTarget.Length() < 2000f &&
-                    car.Velocity.Length() > 1500f;
+                    supersonicAtContact;
                 lostSince = float.IsNaN(lostSince) ? Game.Time : lostSince;
                 if (!closingIn || Game.Time - lostSince > Patience * 4f)
                 {
@@ -195,6 +203,7 @@ namespace Bot
             else
                 lostSince = float.NaN;
 
+            imminent = run.Value.Time <= CommitTime && car.IsSupersonic;
             Vec3 aim = run.Value.Point;
             float[] angles = bot.AimAt(aim);
             float error = MathF.Abs(angles[1]);

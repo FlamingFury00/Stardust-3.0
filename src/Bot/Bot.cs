@@ -45,6 +45,10 @@ namespace Bot
         public static bool FirstManShadow = true;
         /// <summary>Seconds between full re-plans while calm, and while an opponent or the ball is about to strike.</summary>
         public static float PlanInterval = 0.12f, UrgentPlanInterval = 0.05f;
+        /// <summary>The car furthest back at a team kickoff refills at its own corner's big pad instead of cheating forward.</summary>
+        public static bool KickoffPadRun = true;
+        /// <summary>Longest flat distance (uu) of that run.</summary>
+        public static float KickoffPadReach = 2800f;
 
         private float nextPlan = float.NegativeInfinity;
         private float challengeCommitUntil = float.NegativeInfinity;
@@ -56,6 +60,8 @@ namespace Bot
         public bool ChallengeCommitted { get; private set; }
         public float EmergencyThreatTime { get; private set; } = float.PositiveInfinity;
         public float CounterThreatTime { get; private set; } = float.PositiveInfinity;
+        /// <summary>Extra travel (s) the last boost-routing decision could afford; for telemetry.</summary>
+        public float BoostSlack { get; private set; }
 
         public Stardust(string defaultAgentId = null) : base(defaultAgentId)
         {
@@ -82,6 +88,7 @@ namespace Bot
                 ChallengeCommitted = false;
                 EmergencyThreatTime = float.PositiveInfinity;
                 CounterThreatTime = float.PositiveInfinity;
+                BoostSlack = 0f;
                 telemetry.Reset();
             }
 
@@ -101,6 +108,12 @@ namespace Bot
                 {
                     Action = new Kickoff();
                     SetDecision("kickoff / taker");
+                }
+                else if (KickoffPadRun && BoostEconomy.KickoffPad(Me.Location, Team, Field.Boosts, rank,
+                    LivingTeammates.Count + 1, KickoffPadReach) is Boost corner)
+                {
+                    Action = new GetBoost(Me, corner.Index, interruptible: true);
+                    SetDecision("kickoff / boost run");
                 }
                 else
                 {
@@ -267,7 +280,7 @@ namespace Bot
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
-                            MathF.Min(pressureTime, 0.35f))
+                            MathF.Min(pressureTime, 0.35f), Ball.Velocity)
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
@@ -481,7 +494,7 @@ namespace Bot
 
             Vec3 rawSupport = recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
-                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime);
+                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime, Ball.Velocity);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
@@ -629,6 +642,7 @@ namespace Bot
             float contact = shot.Slice.Time - Game.Time;
             float slack = BoostEconomy.SlackBeforeContact(Situation, contact,
                 Ball.Location.y * Field.Side(Team), pressured);
+            BoostSlack = slack;
             Boost current = Action is GetBoost running && !running.Finished ? running.ChosenBoost : null;
             Boost pad = BoostEconomy.Choose(Me, Field.Boosts, Ball.Location, shot.Slice.Location, Team, slack,
                 LivingOpponents, null, current);
@@ -650,6 +664,7 @@ namespace Bot
             float toDestination = Drive.GetEta(Me, destination);
             float slack = BoostEconomy.Slack(Situation, toDestination,
                 Ball.Location.y * Field.Side(Team), recovering, pressureTime);
+            BoostSlack = slack;
             Boost current = Action is GetBoost running && !running.Finished ? running.ChosenBoost : null;
             Boost pad = BoostEconomy.Choose(Me, Field.Boosts, Ball.Location, destination, Team, slack,
                 LivingOpponents, null, current);
