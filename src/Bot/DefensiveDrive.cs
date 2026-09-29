@@ -1,6 +1,7 @@
 using System;
 using RedUtils;
 using RedUtils.Math;
+using RedUtils.Physics;
 
 namespace Bot
 {
@@ -11,6 +12,7 @@ namespace Bot
     /// </summary>
     public sealed class DefensiveDrive : IAction
     {
+        public static bool BoundedTurns = true;
         public bool Finished => false;
         public bool Interruptible => drive.Interruptible;
         public Vec3 Target
@@ -172,8 +174,10 @@ namespace Bot
             bool fastTravel = AllowDodges && !HoldPosition && onFloor &&
                 distance > 1350f && !drive.Backwards && CruiseSpeed >= 2050f;
 
+            float turnLimit = !drive.Backwards && onFloor && drive.Action == null && BoundedTurns
+                ? TurnSpeedLimit(car, Target, bot.OurGoal.Location, speed) : speed;
             drive.Target = Target;
-            drive.TargetSpeed = MathF.Max(1f, speed);
+            drive.TargetSpeed = MathF.Max(1f, turnLimit);
             drive.AllowDodges = fastTravel;
             drive.DodgeMinSpeed = fastTravel ? 650f : 850f;
             drive.AllowHandbrake = false;
@@ -186,6 +190,11 @@ namespace Bot
             // terminal regime while preserving its mature route/surface steering everywhere else.
             if (!mobilityCommitted && onFloor && speed < 430f)
                 bot.Throttle(speed, drive.Backwards);
+            if (!mobilityCommitted && turnLimit < speed)
+            {
+                bot.Throttle(turnLimit);
+                bot.Controller.Boost = false;
+            }
 
             // Normal defensive driving suppresses jump/powerslide so a parking controller cannot
             // accidentally leave the ground. Once Drive has intentionally committed a speedflip,
@@ -198,6 +207,50 @@ namespace Bot
 
             if (!mobilityCommitted && (speed < 1800f || distance < 950f || drive.Backwards))
                 bot.Controller.Boost = false;
+        }
+
+        /// <summary>
+        /// A short ground rollout bounds forward turns near our net. Generic Drive can accelerate
+        /// through a large turning circle into the goal while trying to reach a field-side point.
+        /// Brake enough to keep the swept turn shallow; normal aligned travel keeps its speed.
+        /// </summary>
+        public static float TurnSpeedLimit(Car car, Vec3 destination, Vec3 goal, float requested)
+        {
+            float side = goal.y < 0 ? -1f : 1f;
+            float depth = car.Location.y * side, line = MathF.Abs(goal.y);
+            Vec3 route = ControlMath.FlatUnit(destination - car.Location, car.Forward);
+            float heading = car.Forward.FlatNorm().Dot(route);
+            Vec3 lateral = car.Velocity.Flatten() - car.Forward.FlatNorm() * car.Velocity.Dot(car.Forward.FlatNorm());
+            bool sliding = lateral.Length() > 200f;
+            if (requested < 200f || depth < line - 900f || (heading > 0.75f && !sliding) || car.Forward.Dot(car.Velocity) < 0f)
+                return requested;
+
+            float maximumDepth = MathF.Max(depth + 20f,
+                MathF.Min(line + Defense.ShallowNetDepth, destination.y * side + 160f));
+            bool Clear(float targetSpeed)
+            {
+                var state = new GroundState(car.Location, car.Forward, car.Forward.Dot(car.Velocity),
+                    car.Boost, yawRate: car.AngularVelocity.z);
+                for (int step = 0; step < 48; step++)
+                {
+                    float angle = GroundModel.SignedAngle(state.Forward, destination - state.Position);
+                    float response = 35f * (angle - state.YawRate * 0.01f);
+                    float steer = System.Math.Clamp(response * response * response / 10f, -1f, 1f);
+                    float difference = targetSpeed - state.Speed;
+                    float throttle = System.Math.Clamp(difference * MathF.Abs(difference) / 1000f, -1f, 1f);
+                    GroundModel.Step(ref state, throttle, steer, false, 1f / 60f);
+                    // GroundModel has no lateral state. Preserve a coasting slip envelope rather
+                    // than treating a sideways landing as stationary; measured grip releases it.
+                    Vec3 swept = state.Position + lateral * state.Time;
+                    if (swept.y * side > maximumDepth || !Field.InField(swept, 70f))
+                        return false;
+                }
+                return true;
+            }
+            if (Clear(requested)) return requested;
+            for (float candidate = MathF.Min(1100f, requested - 150f); candidate >= 200f; candidate -= 150f)
+                if (Clear(candidate)) return candidate;
+            return MathF.Min(100f, requested);
         }
 
         private static bool ReverseFlightClear(Car car, Vec3 route, float flightDistance)

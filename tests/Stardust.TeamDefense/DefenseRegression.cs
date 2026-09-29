@@ -125,6 +125,40 @@ internal static class DefenseRegression
                 $"orange anchor missed far-post geometry: {orange}");
         });
 
+        test("corner pressure: first defender keeps a reachable shadow outside the posts", () =>
+        {
+            foreach (int side in new[] { -1, 1 })
+            foreach (int mirror in new[] { -1, 1 })
+            foreach (var point in new[] { new Vec3(2870, 4197, 100), new Vec3(2507, 4836, 100) })
+            {
+                Vec3 goal = new(0, side * 5120, 0);
+                Vec3 ball = new(point.x * mirror, point.y * side, point.z);
+                Vec3 shadow = Defense.ShadowTarget(ball, goal, DefensiveRole.Shadow, 0.08f);
+                Vec3 anchor = Defense.ShadowTarget(ball, goal, DefensiveRole.Anchor, 0.08f);
+                Check(shadow.FlatDist(ball) < 1200, $"corner shadow surrendered the lane: {ball} -> {shadow}");
+                Check(MathF.Abs(shadow.x) > Goal.Width / 2, $"first defender parked inside posts: {shadow}");
+                Check(Defense.IsGoalSide(shadow, ball, goal, 300), "wide pressure abandoned goal-side coverage");
+                Check(MathF.Abs(anchor.x) < Goal.Width / 2, "goal anchor followed the first defender out wide");
+            }
+        });
+
+        test("corner pressure: wide targets stay inside the field and behind-goal targets use the mouth", () =>
+        {
+            foreach (int side in new[] { -1, 1 })
+            foreach (int mirror in new[] { -1, 1 })
+            foreach (float x in new[] { 0f, 700f, 1800f, 3000f, 3900f })
+            foreach (float depth in new[] { 3800f, 4700f, 5000f, 5100f })
+            foreach (var role in new[] { DefensiveRole.Shadow, DefensiveRole.Support })
+            {
+                Vec3 ball = new(x * mirror, side * depth, 100);
+                Vec3 target = Defense.ShadowTarget(ball, new Vec3(0, side * 5120, 0), role, 0.1f);
+                Check(MathF.Abs(target.x) + MathF.Abs(target.y) <= Field.CornerIntersection - 100,
+                    $"target crossed corner wall: {target}");
+                Check(MathF.Abs(target.x) <= Goal.Width / 2 - 175 || MathF.Abs(target.y) <= 5000,
+                    $"target crossed back wall outside net: {target}");
+            }
+        });
+
         test("defense-v3: recovery waypoint goes behind the ball on the far-post side", () =>
         {
             Vec3 ball = new(1600, -3900, 100);

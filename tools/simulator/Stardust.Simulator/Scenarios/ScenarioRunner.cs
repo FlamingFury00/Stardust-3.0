@@ -32,6 +32,8 @@ public static class ScenarioRunner
     /// <summary>Seat 0 is the bot under test; further seats get the scenario's scripted agent, the opponent build, or idle.</summary>
     public static List<Seat> Seats(Scenario scenario, Seat underTest, BotBuild? opponent)
     {
+        if (scenario.RequiresOpponent && opponent == null)
+            throw new ArgumentException($"{scenario.Name} requires --opponent; idle opponents would invalidate this fixture.");
         var seats = new List<Seat> { underTest };
         for (int seat = 1; seat < scenario.SeatCount; seat++)
         {

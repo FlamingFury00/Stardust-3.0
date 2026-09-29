@@ -46,6 +46,7 @@ public abstract class Scenario
     public abstract string Name { get; }
     public abstract string Description { get; }
     public virtual int SeatCount => 1;
+    public virtual bool RequiresOpponent => false;
     public virtual int TeamOf(int seat) => seat == 0 ? 0 : 1;
 
     /// <summary>Optional in-process opponent for seats &gt; 0; null means the opponent build (if any) or idle.</summary>

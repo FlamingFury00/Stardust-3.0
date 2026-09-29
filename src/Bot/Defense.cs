@@ -129,6 +129,8 @@ namespace Bot
 
         /// <summary>Distance (uu) a support car keeps goal-side of the ball away from our goal; it closes by 290 uu near it.</summary>
         public static float SupportGap = 1050f;
+        /// <summary>Keep a first defender's field-side corner shadow outside the goal-mouth anchor bounds.</summary>
+        public static bool WideShadow = true;
 
         /// <summary>
         /// Continuous ball-to-goal defensive positioning. Every role is constrained to remain goal-side
@@ -215,7 +217,8 @@ namespace Bot
             float signedTargetDepth = target.y * side;
             float funnel = SmoothStep((signedTargetDepth - (goalDepth - 1200f)) / 950f);
             float safeHalfWidth = MathF.Max(0f, Goal.Width * 0.5f - 175f);
-            float halfWidth = Lerp(3200f, safeHalfWidth, funnel);
+            bool wideShadow = role == DefensiveRole.Shadow && WideShadow;
+            float halfWidth = wideShadow ? 3200f : Lerp(3200f, safeHalfWidth, funnel);
             target.x = System.Math.Clamp(target.x, goal.x - halfWidth, goal.x + halfWidth);
             target.y = side * System.Math.Clamp(target.y * side, -goalDepth + 180f, goalDepth + ShallowNetDepth);
 
@@ -225,9 +228,19 @@ namespace Bot
             if (availableProgress < requiredProgress)
                 target += goalward * (requiredProgress - availableProgress);
 
-            // Re-apply mouth bounds after the progress correction.
+            // A first defender must stay within reach of a corner carrier. The anchor protects
+            // the mouth; applying its width to a field-side shadow surrendered >2000 uu of space.
+            // Keep actual wall/corner clearance, smoothly restricting depth near either post.
             target.y = side * System.Math.Clamp(target.y * side, -goalDepth + 180f, goalDepth + ShallowNetDepth);
-            if (target.y * side > goalDepth - 1200f)
+            if (wideShadow)
+            {
+                float outsideMouth = SmoothStep((MathF.Abs(target.x - goal.x) - (safeHalfWidth - 140f)) / 140f);
+                float maximumDepth = Lerp(goalDepth + ShallowNetDepth, goalDepth - 120f, outsideMouth);
+                target.y = side * MathF.Min(target.y * side, maximumDepth);
+                float cornerWidth = MathF.Min(3200f, Field.CornerIntersection - MathF.Abs(target.y) - 120f);
+                target.x = System.Math.Clamp(target.x, goal.x - cornerWidth, goal.x + cornerWidth);
+            }
+            else if (target.y * side > goalDepth - 1200f)
                 target.x = System.Math.Clamp(target.x, goal.x - safeHalfWidth, goal.x + safeHalfWidth);
 
             return new Vec3(target.x, target.y, 17);

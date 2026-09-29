@@ -94,5 +94,17 @@ Test("goal return: deep-net car is routed out through the mouth before parking",
     Check(MathF.Abs(target.x) < Goal.Width / 2 - 100, $"exit waypoint is too close to a post: {target}");
 });
 
+Test("defensive turn: goalward lateral slip is not treated as a stationary aligned car", () =>
+{
+    foreach (int side in new[] { -1, 1 })
+    {
+        var car = new Car { Location = new Vec3(0, side * 4700, 17), Velocity = new Vec3(80, side * 1300, 0),
+            Orientation = new Mat3x3(Vec3.Zero), IsGrounded = true, Boost = 45 };
+        Vec3 target = new(1500, side * 4750, 17), goal = new(0, side * 5120, 0);
+        Check(DefensiveDrive.TurnSpeedLimit(car, target, goal, 2000) <= 200,
+            "sideways momentum cleared a full-speed sweep through the goal line");
+    }
+});
+
 Console.WriteLine($"BOOST/GOAL RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;

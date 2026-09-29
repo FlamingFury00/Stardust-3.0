@@ -79,6 +79,7 @@ public abstract class Drill : Scenario
                 $"fuel={car.Boost:F0} action={Subject.Action?.GetType().Name ?? "-"} decision={Subject.Decision} " +
                 $"world car={car.Physics.Position} ball={session.Ball.Physics.Position}") +
                 (session.Cars.Length > 1 ? $" other={session.Cars[1].Physics.Position} v={session.Cars[1].Physics.Velocity.Length:F0}" : "") +
+                (Subject.Action is global::Bot.DefensiveDrive guard ? $" guard-target={guard.Target} rank={Subject.Situation.TeamRank} eta={Subject.Situation.MyEta:F2} mate-eta={Subject.Situation.TeammateEta:F2}" : "") +
                 (Subject.Action is RedUtils.Block block ? $" block={block.Status} {block.Plan} point={block.Point}" : ""));
         }
         Measure(session, trace);

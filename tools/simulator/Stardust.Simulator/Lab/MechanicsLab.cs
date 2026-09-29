@@ -23,6 +23,10 @@ public static class MechanicsLab
     {
         new ActionProfileDrill(), new DefenseDrill(), new KickoffFollowDrill(), new ClearDrill(), new RollerDrill(),
         new CarryFinishDrill(),
+        new CornerPressureDrill(), new CornerPressureDrill(1),
+        new CornerPressureDrill(backwall: true), new CornerPressureDrill(1, backwall: true),
+        new SupportPadReplayDrill(), new SupportPadReplayDrill(1),
+        new GoalwardSlipDrill(), new GoalwardSlipDrill(1),
         new ClosePossessionDrill(), new ClosePossessionDrill(1),
         new CarrierPressureDrill(), new CarrierPressureDrill(1),
         new CarrierPressureDrill(fast: true), new CarrierPressureDrill(1, fast: true),
