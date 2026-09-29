@@ -68,6 +68,8 @@ jobs:
         run: tools/simulator/build.sh
       - name: Check physics models against RocketSim
         run: dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll physics-check --model all
+      - name: Check actual dodge impulses and mirror symmetry
+        run: dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll mechanics-lab --drill dodge-direction --episodes 120 --seed 1001500 --out "${{ runner.temp }}/dodge-direction"
   bot-pack:
     # The bot pack is built by bob from bob.toml: `docker build` of the dockerfile from the repository
     # root, then `docker run`, whose output is a tar of the binaries; bob points the bot config's run
