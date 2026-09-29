@@ -9,7 +9,7 @@ showed.
 
 | Layer | Where | What it does |
 |---|---|---|
-| Decision layer | `src/Bot` | Threat-first supervision, possession play (ground catches, hood carries, pressure flicks, aerial carries), shot selection, shadow/anchor/support defence, goal-line saves, boost refills, team claims |
+| Decision layer | `src/Bot` | Threat-first supervision, possession play (ground catches, hood carries, pressure flicks, aerial carries), shot selection, shadow/anchor/support defence with zone-aware pressing, goal-line saves, value-priced boost routing, team claims |
 | Kickoff | `src/RedUtils/Actions/Kickoff.cs`, `src/RedUtils/Bot.cs` | Speed-flip kickoffs; the kickoff lasts until the ball is first touched |
 | Scripted mechanics | `src/RedUtils/Actions` | Ground/jump/double-jump/aerial shots, dodges, speed flips, half flips, wavedashes, recovery |
 | Physics core | `src/RedUtils/Physics` | Ground dynamics and navigation, jumps, dodges, flips, air control, aerial guidance, car–ball impacts — each validated against RocketSim |
@@ -101,7 +101,9 @@ $SIM physics-check --model all
 $SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out tournament
 
 # Loose balls in our third (clear), slow balls rolling into our goal (roller), Nexto's attacks
-# (defense), kickoffs (kickoff-follow) and a time profile (profile) are extra drills, run by name.
+# (defense), kickoffs (kickoff-follow), a full 2v2 kickoff against --opponent (team-kickoff), a run
+# at a chaser that wins a loose ball (demolition) and a time profile (profile) are extra drills,
+# run by name.
 # Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
 # --set Type.Field=value (any command) overrides a tuning field (as STARDUST_TUNE does in a match)
 $SIM mechanics-lab --drill all --episodes 60
