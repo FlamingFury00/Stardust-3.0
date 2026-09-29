@@ -186,11 +186,14 @@ public abstract class Bot
         catch (Exception e)
         {
             Logger.LogError(
-                "Bot {0} encountered an error while processing game packet: {1}",
+                "Bot {0} failed on frame {1}; releasing controls: {2}",
                 Name,
+                packet.MatchInfo.FrameNum,
                 e
             );
-            return;
+            // Always reply to a valid frame. Retaining the preceding boost/jump input is unsafe,
+            // and a lockstep host cannot deliver the next frame until it receives this response.
+            controller = new ControllerStateT();
         }
 
         var playerInput = new PlayerInputT

@@ -89,14 +89,19 @@ public sealed class ExternalBotAgent : IAgent
     private readonly Process process;
     private readonly RLBotConnection connection;
     private readonly StreamWriter? log;
+    private readonly ProcessOutputDrain? output;
     private ControllerStateT last = new();
+    private uint? lastSentFrame;
+    private float lastSentTime;
 
-    public ExternalBotAgent(BotBuild build, Process process, RLBotConnection connection, StreamWriter? log)
+    public ExternalBotAgent(BotBuild build, Process process, RLBotConnection connection, StreamWriter? log,
+        ProcessOutputDrain? output = null)
     {
         Build = build;
         this.process = process;
         this.connection = connection;
         this.log = log;
+        this.output = output;
     }
 
     public BotBuild Build { get; }
@@ -112,6 +117,8 @@ public sealed class ExternalBotAgent : IAgent
             connection.WriteFramed(framedPrediction);
         connection.WriteFramed(framedPacket);
         connection.Flush();
+        lastSentFrame = packet.MatchInfo.FrameNum;
+        lastSentTime = packet.MatchInfo.SecondsElapsed;
     }
 
     public ControllerStateT Receive(Participant self, List<MatchCommT> outgoingComms)
@@ -125,23 +132,30 @@ public sealed class ExternalBotAgent : IAgent
             }
             catch (Exception e) when (e is IOException or SocketException or EndOfStreamException)
             {
-                throw new BotCrashedException($"{Description} stopped responding: {e.Message}", e);
+                throw new BotCrashedException($"{Context(self)} stopped responding: {e.Message}", e);
             }
 
             switch (message.Message.Type)
             {
                 case InterfaceMessage.PlayerInput:
-                    last = message.Message.AsPlayerInput().ControllerState ?? new ControllerStateT();
+                    PlayerInputT input = message.Message.AsPlayerInput();
+                    if (input.PlayerIndex != self.Index)
+                        throw new BotCrashedException($"{Context(self)} returned controls for seat {input.PlayerIndex}.");
+                    last = input.ControllerState ?? new ControllerStateT();
                     return last;
                 case InterfaceMessage.MatchComm:
                     if (connection.WantsComms)
                         outgoingComms.Add(message.Message.AsMatchComm());
                     break;
                 case InterfaceMessage.DisconnectSignal:
-                    throw new BotCrashedException($"{Description} disconnected.");
+                    throw new BotCrashedException($"{Context(self)} disconnected.");
             }
         }
     }
+
+    private string Context(Participant self) => lastSentFrame is { } frame
+        ? FormattableString.Invariant($"{Description}, seat {self.Index} ({self.Name}), frame {frame} at {lastSentTime:F3}s")
+        : $"{Description}, seat {self.Index} ({self.Name}), before the first frame";
 
     public void Dispose()
     {
@@ -156,12 +170,14 @@ public sealed class ExternalBotAgent : IAgent
         {
             try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
         }
-        // The timed overload does not wait for redirected-output callbacks. Drain them before
-        // disposing their log sink, including after killing a timed-out bot.
         process.WaitForExit();
-        connection.Dispose();
-        process.Dispose();
-        log?.Dispose();
+        try { output?.Complete(); }
+        finally
+        {
+            connection.Dispose();
+            process.Dispose();
+            log?.Dispose();
+        }
     }
 }
 
@@ -181,7 +197,7 @@ public static class BotLauncher
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var processes = new Dictionary<string, (Request Request, Process Process, StreamWriter? Log, Action CloseLog)>();
+        var processes = new Dictionary<string, (Request Request, Process Process, StreamWriter? Log, ProcessOutputDrain Output)>();
         var connections = new List<RLBotConnection>();
 
         try
@@ -204,23 +220,12 @@ public static class BotLauncher
                     log = new StreamWriter(Path.Combine(logDirectory, $"bot-{request.Index}-{request.Name}.log")) { AutoFlush = true };
                 }
 
-                var process = new Process { StartInfo = start, EnableRaisingEvents = true };
-                StreamWriter? sink = log;
-                process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (process) sink?.WriteLine(e.Data); };
-                process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (process) sink?.WriteLine("ERR " + e.Data); };
-                void CloseLog()
-                {
-                    lock (process)
-                    {
-                        sink = null;
-                        log?.Dispose();
-                    }
-                }
+                var process = new Process { StartInfo = start };
+                var output = new ProcessOutputDrain(process, log);
                 // Register before Start: an invalid executable must also release its opened log.
-                processes[agentId] = (request, process, log, CloseLog);
+                processes[agentId] = (request, process, log, output);
                 process.Start();
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
+                output.Start();
             }
 
             var agents = new ExternalBotAgent?[requests.Count];
@@ -271,7 +276,7 @@ public static class BotLauncher
                 }
 
                 agents[requests.ToList().IndexOf(request)] =
-                    new ExternalBotAgent(request.Build, owner.Process, connection, owner.Log);
+                    new ExternalBotAgent(request.Build, owner.Process, connection, owner.Log, owner.Output);
                 connected++;
             }
 
@@ -284,13 +289,17 @@ public static class BotLauncher
                 try
                 {
                     if (!entry.Process.HasExited) entry.Process.Kill(entireProcessTree: true);
-                    entry.Process.WaitForExit(); // drain redirected output before closing its sink
+                    entry.Process.WaitForExit();
                 }
                 catch (InvalidOperationException) { } // Start failed before a process existed.
                 finally
                 {
-                    entry.CloseLog();
-                    entry.Process.Dispose();
+                    try { entry.Output.Complete(); }
+                    finally
+                    {
+                        entry.Log?.Dispose();
+                        entry.Process.Dispose();
+                    }
                 }
             }
             foreach (var connection in connections) connection.Dispose();

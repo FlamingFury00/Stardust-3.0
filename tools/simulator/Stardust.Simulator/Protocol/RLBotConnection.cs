@@ -67,8 +67,10 @@ public sealed class RLBotConnection : IDisposable
 
     public void Dispose()
     {
-        try { reader.Dispose(); } catch (IOException) { }
-        try { writer.Dispose(); } catch (IOException) { }
+        try { reader.Dispose(); } catch (Exception e) when (e is IOException or ObjectDisposedException) { }
+        // Both buffers share the same network stream. Closing the reader closes that stream,
+        // so pending output during failed startup must not mask the original failure on cleanup.
+        try { writer.Dispose(); } catch (Exception e) when (e is IOException or ObjectDisposedException) { }
         client.Dispose();
     }
 }

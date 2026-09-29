@@ -11,6 +11,30 @@ if (args is ["--crash-output"])
     for (int line = 0; line < 1000; line++) Console.WriteLine($"startup line {line}");
     return 7;
 }
+if (args is ["--duplex-output"])
+{
+    string payload = new('x', 2048);
+    for (int line = 0; line < 256; line++)
+    {
+        Console.Out.WriteLine($"out {line} {payload}");
+        Console.Error.WriteLine($"err {line} {payload}");
+    }
+    return 7;
+}
+if (args is ["--pipe-holder"])
+{
+    Thread.Sleep(20000);
+    return 0;
+}
+if (args is ["--orphan-wrapper", var marker])
+{
+    var start = new System.Diagnostics.ProcessStartInfo("dotnet") { UseShellExecute = false, CreateNoWindow = true };
+    start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
+    start.ArgumentList.Add("--pipe-holder");
+    using var child = System.Diagnostics.Process.Start(start)!;
+    File.WriteAllText(marker, child.Id.ToString());
+    return 7;
+}
 
 int passed = 0, failed = 0;
 void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
@@ -99,6 +123,52 @@ try
         bot.SendMatchComm(2, 1, new List<byte> { 1, 2, 3 }, "claim", true);
         Check(received is { Index: 2, Team: 1, TeamOnly: true, Display: "claim" } &&
             received.Content.SequenceEqual(new byte[] { 1, 2, 3 }), "match communication was lost or changed");
+    });
+
+    Test("real manager handles fragmented lockstep frames and interleaved claims", () => ManagerTransportChecks.Run(false));
+    Test("real manager releases controls on a failed frame and processes the next frame", () => ManagerTransportChecks.Run(true));
+    Test("connection cleanup tolerates queued output after its shared wire closes", () =>
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            using var peer = new TcpClient();
+            peer.Connect((IPEndPoint)listener.LocalEndpoint);
+            var connection = new RLBotConnection(listener.AcceptTcpClient());
+            connection.Queue(CoreMessageUnion.FromPingRequest(new PingRequestT { Cookie = 42 }));
+            connection.Dispose();
+            connection.Dispose();
+        }
+        finally { listener.Stop(); }
+    });
+
+    Test("timeout reports identify the seat and last delivered frame", () =>
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            using var peer = new TcpClient();
+            peer.Connect((IPEndPoint)listener.LocalEndpoint);
+            using var connection = new RLBotConnection(listener.AcceptTcpClient());
+            using var process = new System.Diagnostics.Process();
+            var agent = new ExternalBotAgent(new BotBuild("fixture", "unused", [], directory, "test"), process, connection, null)
+                { TimeoutMilliseconds = 100 };
+            var self = new Participant { Index = 3, Team = 1, Name = "orange-2", PlayerId = 1003, Agent = agent };
+            byte[] bytes = RLBotConnection.Frame(CoreMessageUnion.FromPingRequest(new PingRequestT { Cookie = 42 }));
+            agent.Send(self, bytes, bytes, new GamePacketT
+            {
+                MatchInfo = new MatchInfoT { FrameNum = 654, SecondsElapsed = 42.625f }
+            }, new BallPredictionT(), []);
+            try { agent.Receive(self, []); throw new Exception("silent peer did not time out"); }
+            catch (BotCrashedException error)
+            {
+                Check(error.Message.Contains("seat 3 (orange-2)") && error.Message.Contains("frame 654 at 42.625s"),
+                    "timeout lost the seat/frame context");
+            }
+        }
+        finally { listener.Stop(); }
     });
 
     foreach (int split in new[] { 1, 2, 7 })
@@ -195,6 +265,85 @@ try
         Check(File.ReadAllLines(log).Length == 1000, "startup output was lost before cleanup completed");
         using var exclusive = new FileStream(log, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
     });
+    Test("stdout and stderr drain concurrently with a constrained thread pool", () =>
+    {
+        ThreadPool.GetMinThreads(out int minimum, out int minimumIo);
+        ThreadPool.GetMaxThreads(out int maximum, out int maximumIo);
+        try
+        {
+            Check(ThreadPool.SetMinThreads(1, minimumIo) && ThreadPool.SetMaxThreads(1, maximumIo),
+                "could not constrain the test pool");
+            var build = new BotBuild("duplex", "dotnet", [Assembly.GetExecutingAssembly().Location, "--duplex-output"], directory, "fixture");
+            try
+            {
+                BotLauncher.Launch([new BotLauncher.Request(build, 0, 0, "duplex", 1000)],
+                    new MatchConfigurationT(), new FieldInfoT(), directory, timeoutSeconds: 3);
+                throw new Exception("crashed bot was accepted");
+            }
+            catch (BotCrashedException error)
+            {
+                Check(error.Message.Contains("code 7"), $"output blocked process completion: {error.Message}");
+            }
+            Check(File.ReadAllLines(Path.Combine(directory, "bot-0-duplex.log")).Length == 512,
+                "both pipes were not completely drained");
+        }
+        finally
+        {
+            ThreadPool.SetMaxThreads(maximum, maximumIo);
+            ThreadPool.SetMinThreads(minimum, minimumIo);
+        }
+    });
+    Test("a failed log sink cannot block the bot process", () =>
+    {
+        var build = new BotBuild("log-failure", "dotnet", [Assembly.GetExecutingAssembly().Location, "--duplex-output"], directory, "fixture");
+        using var process = new System.Diagnostics.Process { StartInfo = build.CreateStartInfo() };
+        using var sink = new FailedLogWriter();
+        process.Start();
+        var output = new ProcessOutputDrain(process, sink);
+        output.Start();
+        try
+        {
+            Check(process.WaitForExit(3000), "failed sink stopped pipe drainage");
+            output.Complete();
+            Check(process.ExitCode == 7 && output.LogError is IOException, "log fault or child result was lost");
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+            output.Complete();
+        }
+    });
+    Test("an exited wrapper with inherited pipe handles has bounded output cleanup", () =>
+    {
+        string marker = Path.Combine(directory, "pipe-holder.pid");
+        var build = new BotBuild("wrapper", "dotnet", [Assembly.GetExecutingAssembly().Location, "--orphan-wrapper", marker], directory, "fixture");
+        using var process = new System.Diagnostics.Process { StartInfo = build.CreateStartInfo() };
+        using var sink = new StringWriter();
+        process.Start();
+        var output = new ProcessOutputDrain(process, sink);
+        output.Start();
+        try
+        {
+            Check(process.WaitForExit(5000) && process.ExitCode == 7, "wrapper did not exit");
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            Check(!output.Complete(100), "fixture did not preserve inherited pipe handles");
+            Check(elapsed.ElapsedMilliseconds < 2000, "output cleanup waited for the surviving child");
+        }
+        finally
+        {
+            // This PID is written by the fixture we launched; do not target unrelated processes.
+            if (File.Exists(marker))
+            {
+                using var child = System.Diagnostics.Process.GetProcessById(int.Parse(File.ReadAllText(marker)));
+                if (!child.HasExited) child.Kill(entireProcessTree: true);
+                child.WaitForExit();
+            }
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+            output.Complete();
+        }
+    });
     Test("an executable that cannot start still releases its log", () =>
     {
         var build = new BotBuild("missing", Path.Combine(directory, "not-an-executable"), [], directory, "fixture");
@@ -212,3 +361,9 @@ try
 finally { Directory.Delete(directory, true); }
 Console.WriteLine($"SIMULATOR CHECKS: {passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;
+
+sealed class FailedLogWriter : TextWriter
+{
+    public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+    public override void WriteLine(string? value) => throw new IOException("Deliberate log sink failure.");
+}
