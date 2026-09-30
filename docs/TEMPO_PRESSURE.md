@@ -127,6 +127,7 @@ adopted.
 | Final code, a second set of 3v3 seeds (8600–8603) | 18–6 (+1.58) | |
 | Final code, both 3v3 seed sets pooled (48 games) | **36–12 (+1.21)** | |
 | The same with the lookahead at 0.2 s, on the seeds of the rows above | 17–7 (+1.54) and 16–8 (+1.21) | 10–14 (−0.38) |
+| **Shipped build** (solo defence as above), fresh seeds | **22–2 (+1.12)** | **17–7 (+1.17)** |
 
 The final code's first 3v3 series is 0.8 goals per game below the 21–3 series on the same seeds
 (about 1.6 standard errors of the difference); the fixes between the two touch only which pad a
