@@ -14,6 +14,13 @@ namespace Bot
         Lob,
     }
 
+    /// <summary>What a flick adds to the carried ball's velocity (uu/s): along the aim, and upward.</summary>
+    public readonly struct FlickImpulse
+    {
+        public readonly float Push, Lift;
+        public FlickImpulse(float push, float lift) { Push = push; Lift = lift; }
+    }
+
     /// <summary>
     /// One flick recipe: where the ball must sit on the roof, then the open-loop inputs. Found by
     /// the simulator's flick search (RocketSim, carries at 1000 and 1400 uu/s): the exit heading
@@ -29,28 +36,38 @@ namespace Bot
         public readonly float TiltPitch, TiltYaw, TiltRoll;
         /// <summary>Dodge stick: pitch -1 is a front flip, +1 a back flip.</summary>
         public readonly float DodgePitch, DodgeYaw;
-        /// <summary>Measured exit speed above the carry speed, and heading offset from the car (deg).</summary>
-        public readonly float Gain, Heading;
+        /// <summary>
+        /// The weakest and strongest impulse the flick gave the ball in the mechanics lab (10th and
+        /// 90th percentile over carries at 900-1700 uu/s, ball placed on the spot): how hard the
+        /// ball leaves depends on which part of the car meets it. A shot must work at both ends.
+        /// </summary>
+        public readonly FlickImpulse Weakest, Strongest;
+        /// <summary>Exit heading offset from the car (deg).</summary>
+        public readonly float Heading;
         /// <summary>How far off the centre line (uu) the ball may sit when the jump starts.</summary>
         public readonly float Tolerance;
 
         public FlickRecipe(float spot, float tolerance, float hold, float wait, float tiltPitch, float tiltYaw, float tiltRoll,
-            float dodgePitch, float dodgeYaw, float gain, float heading)
+            float dodgePitch, float dodgeYaw, FlickImpulse weakest, FlickImpulse strongest, float heading)
         {
             Spot = spot; Tolerance = tolerance; Hold = hold; Wait = wait;
             TiltPitch = tiltPitch; TiltYaw = tiltYaw; TiltRoll = tiltRoll;
-            DodgePitch = dodgePitch; DodgeYaw = dodgeYaw; Gain = gain; Heading = heading;
+            DodgePitch = dodgePitch; DodgeYaw = dodgeYaw; Weakest = weakest; Strongest = strongest; Heading = heading;
         }
 
         public static FlickRecipe For(FlickKind kind) => kind switch
         {
             // Nose down and rolling through the jump, then a slightly diagonal front flip. Robust to a
-            // ball 6 uu off its spot: +1040 uu/s median (p10 +1000) from 950-1500 uu/s carries, 20° up.
-            FlickKind.Power => new FlickRecipe(50f, 8f, 0.17f, 1f / 120f, -0.82f, -0.93f, -0.5f, -1f, -0.28f, 1040f, -1.1f),
-            // Nose down, yawing and rolling, then a diagonal front flip from a centred ball: +509 uu/s
-            // median, 26° up. (Back-flip lobs reach 35-48° but need the ball within 3 uu of the centre
-            // line, which a carry does not hold reliably.)
-            _ => new FlickRecipe(10f, 8f, 0.2f, 1f / 120f, -1f, 1f, 1f, -1f, -0.41f, 509f, 0.9f),
+            // ball 6 uu off its spot: the ball leaves 20° up, 550-830 uu/s faster than the carry and
+            // lifted 640-930 uu/s.
+            FlickKind.Power => new FlickRecipe(50f, 8f, 0.17f, 1f / 120f, -0.82f, -0.93f, -0.5f, -1f, -0.28f,
+                new FlickImpulse(550f, 640f), new FlickImpulse(830f, 930f), -1.1f),
+            // Nose down, yawing and rolling, then a diagonal front flip from a centred ball: the ball
+            // keeps the carry's speed and leaves lifted 530-870 uu/s, so 20-31° up whatever the pace.
+            // (Back-flip lobs reach 35-48° but need the ball within 3 uu of the centre line, which
+            // a carry does not hold reliably.)
+            _ => new FlickRecipe(10f, 8f, 0.2f, 1f / 120f, -1f, 1f, 1f, -1f, -0.41f,
+                new FlickImpulse(5f, 530f), new FlickImpulse(270f, 870f), 0.9f),
         };
     }
 
@@ -64,7 +81,7 @@ namespace Bot
         /// <summary>Heading error (rad) at which the carry counts as turned onto the aim.</summary>
         private const float TurnedTolerance = 0.05f;
         /// <summary>Longest turn onto the aim, then longest centring, before the flick goes anyway.</summary>
-        private const float TurnLimit = 0.7f, CentreLimit = 0.35f, UrgentCentreLimit = 0.1f;
+        public static float TurnLimit = 0.7f, CentreLimit = 1.0f, UrgentCentreLimit = 0.1f;
         private readonly float turnLimit, centreLimit;
         private bool threatened;
         private readonly HoodCarry carry;
@@ -75,6 +92,12 @@ namespace Bot
         private float centring = float.NaN, jumped = float.NaN, released = float.NaN, dodged = float.NaN;
 
         public FlickKind Kind { get; }
+        /// <summary>Whether the ball sat on the recipe's spot, at rest on the roof, when the jump started.</summary>
+        public bool PlacedAtJump { get; private set; }
+        /// <summary>The ball's offset from the recipe's spot, in the car's frame, when the jump started.</summary>
+        public Vec3 OffsetAtJump { get; private set; }
+        /// <summary>Whether the jump has started: from here the flick runs open loop.</summary>
+        public bool HasJumped => float.IsFinite(jumped);
         public bool Finished { get; private set; }
         public bool Interruptible => !float.IsFinite(jumped);
         public float ClaimTime => Game.Time + 0.3f;
@@ -187,6 +210,8 @@ namespace Bot
                     relative.Flatten().Length() < 90f && MathF.Abs(relative.z) < 150f;
                 if (placed || now - centring > (threatened ? UrgentCentreLimit : centreLimit))
                 {
+                    PlacedAtJump = placed;
+                    OffsetAtJump = new Vec3(local.x - recipe.Spot, local.y, 0f);
                     jumped = now;
                     bot.Controller.Jump = true;
                     bot.Controller.Throttle = 1f;

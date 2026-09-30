@@ -741,11 +741,13 @@ namespace Bot
             if (!Options.Trace)
                 return;
 
-            if (tracedRun != null && !ReferenceEquals(Action, tracedRun))
+            DemoAttack run = Action as DemoAttack;
+            if (!ReferenceEquals(run, tracedRun))
             {
-                Console.WriteLine(FormattableString.Invariant(
-                    $"stardust t={Game.Time:F3} car={Index} demolition_run={tracedRun.Outcome}"));
-                tracedRun = null;
+                if (tracedRun != null)
+                    Console.WriteLine(FormattableString.Invariant(
+                        $"stardust t={Game.Time:F3} car={Index} demolition_run={tracedRun.Outcome}"));
+                tracedRun = run;
             }
 
             Type running = Action?.GetType();
@@ -753,7 +755,6 @@ namespace Bot
                 return;
 
             tracedAction = running;
-            tracedRun = Action as DemoAttack;
             Console.WriteLine(FormattableString.Invariant(
                 $"stardust t={Game.Time:F3} car={Index} action={running?.Name ?? "-"}"));
         }

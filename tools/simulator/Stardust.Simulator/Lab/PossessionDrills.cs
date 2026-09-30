@@ -138,11 +138,12 @@ public sealed class FlickDrill : RoofDrill
     private RsbVec lane, exitVelocity, ballAtExit;
 
     public override string Name => "flick";
-    public override string Description => "Flick a settled carry toward the far goal (power, lob): exit speed, aim error, elevation.";
+    public override string Description => "Flick a settled carry toward the far goal (power, lob): exit speed or lift, aim error.";
     public override IReadOnlyList<Criterion> Criteria => new[]
     {
-        Criterion.Rate(0.85), Criterion.Median("power-exit-speed", 2300), Criterion.Median("aim-error-deg", 3, atLeast: false),
-        Criterion.Quantile("aim-error-deg", 0.9, 6, atLeast: false), Criterion.Median("lob-elevation-deg", 24),
+        Criterion.Rate(0.85), Criterion.Median("power-gain", 850), Criterion.Median("aim-error-deg", 3, atLeast: false),
+        Criterion.Quantile("aim-error-deg", 0.9, 6, atLeast: false), Criterion.Median("lob-lift", 520),
+        Criterion.Quantile("lob-lift", 0.1, 450),
     };
 
     public override EpisodeSetup Generate(Random r)
@@ -151,7 +152,7 @@ public sealed class FlickDrill : RoofDrill
         var car = V(Uniform(r, -1800, 1800), Uniform(r, -1500, 1200), 17.01f);
         float yaw = MathF.Atan2(5120 - car.Y, -car.X) + Uniform(r, -0.3f, 0.3f);
         return CarryStart(car, yaw, Uniform(r, 900, 1500), Uniform(r, 0, 25), Uniform(r, -15, 15),
-            Uniform(r, 30, 100), Settle + 2.2f);
+            Uniform(r, 30, 100), Settle + 3.0f);
     }
 
     protected override void Start(MatchSession session, EpisodeSetup setup)
@@ -190,6 +191,19 @@ public sealed class FlickDrill : RoofDrill
         RsbCarState car = session.Cars[0];
         bool contact = contacts.Step(car);
         if (!flicked) return;
+        if (Subject.Action is Bot.Flick { HasJumped: true } flick && !trace.Metrics.ContainsKey("placed"))
+        {
+            trace.Metrics["placed"] = flick.PlacedAtJump ? 1 : 0;
+            trace.Metrics["offset-x"] = flick.OffsetAtJump.x;
+            trace.Metrics["offset-y"] = Math.Abs(flick.OffsetAtJump.y);
+            RsbCarState at = session.Cars[0];
+            RsbVec w = at.Physics.AngularVelocity;
+            trace.Metrics["yaw-rate"] = w.X * at.Physics.Up.X + w.Y * at.Physics.Up.Y + w.Z * at.Physics.Up.Z;
+            RsbVec rel = session.Ball.Physics.Velocity - at.Physics.Velocity;
+            trace.Metrics["rel-fwd"] = rel.X * at.Physics.Forward.X + rel.Y * at.Physics.Forward.Y + rel.Z * at.Physics.Forward.Z;
+            trace.Metrics["rel-side"] = rel.X * at.Physics.Right.X + rel.Y * at.Physics.Right.Y + rel.Z * at.Physics.Right.Z;
+            trace.Metrics["car-speed"] = at.Physics.Velocity.Length;
+        }
         if (float.IsNaN(flickAt))
         {
             flickAt = trace.Elapsed;
@@ -197,7 +211,14 @@ public sealed class FlickDrill : RoofDrill
             contacts.Reset(car);
             return;
         }
-        // Only contacts after the jump count: the set-up still carries the ball.
+        // Only contacts after the jump count: the set-up still carries the ball, and a bounce on the
+        // roof is not an exit.
+        if (!trace.Metrics.ContainsKey("placed"))
+        {
+            contacts.Reset(car);
+            carSpeedAtFlick = car.Physics.Velocity.Length;
+            return;
+        }
         if (car.IsOnGround != 0 && !haveExit && contacts.SinceContact < 2) return;
         if (!contact && contacts.SinceContact == 2)
         {
@@ -209,7 +230,7 @@ public sealed class FlickDrill : RoofDrill
 
     public override bool ShouldStop(MatchSession session, EpisodeTrace trace) =>
         unsettled || trace.GoalTeam >= 0 ||
-        (!float.IsNaN(flickAt) && trace.Elapsed - flickAt > 2.0f) ||
+        (!float.IsNaN(flickAt) && trace.Elapsed - flickAt > 2.8f) ||
         (haveExit && contacts.SinceContact > 36);
 
     public override bool Judge(EpisodeSetup setup, EpisodeTrace trace)
@@ -227,12 +248,22 @@ public sealed class FlickDrill : RoofDrill
         trace.Metrics["aim-error-deg"] = aimError;
         trace.Metrics[$"{key}-aim-error-deg"] = aimError;
         trace.Notes.Insert(1, string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"exit {speed:F0} aim {aimError:F1} up {elevation:F0}"));
+            $"exit {speed:F0} gain {speed - carSpeedAtFlick:F0} aim {aimError:F1} up {elevation:F0} " +
+            $"placed {trace.Metrics.GetValueOrDefault("placed")} off {trace.Metrics.GetValueOrDefault("offset-x"):F1},{trace.Metrics.GetValueOrDefault("offset-y"):F1} " +
+            $"yaw {trace.Metrics.GetValueOrDefault("yaw-rate"):F2} rel {trace.Metrics.GetValueOrDefault("rel-fwd"):F0},{trace.Metrics.GetValueOrDefault("rel-side"):F0} speed {trace.Metrics.GetValueOrDefault("car-speed"):F0}"));
         // On target if the flat path crosses the goal line between the posts.
         bool onTarget = exitVelocity.Y > 0 &&
             MathF.Abs(ballAtExit.X + exitVelocity.X / exitVelocity.Y * (5120 - ballAtExit.Y)) < 800;
         trace.Metrics["on-target"] = onTarget ? 1 : 0;
-        return speed >= carSpeedAtFlick + (kind == FlickKind.Power ? 700 : 350) && aimError <= 6;
+        float lift = exitVelocity.Z, push = exitVelocity.FlatLength - carSpeedAtFlick;
+        trace.Metrics[$"{key}-lift"] = lift;
+        trace.Metrics[$"{key}-push"] = push;
+        // A power flick is judged on speed. A lob is judged on what it is for: lift enough to clear a
+        // challenger (a car's roof is 140 uu up; 450 uu/s lifts the ball's centre past it in 0.3 s)
+        // without losing the carry's pace. Its speed gain shrinks as the carry gets faster, since most of
+        // the impulse goes upward.
+        bool strong = kind == FlickKind.Power ? speed >= carSpeedAtFlick + 700 : lift >= 450 && push >= -50;
+        return strong && aimError <= 6;
     }
 }
 

@@ -313,20 +313,14 @@ namespace Bot
                 foreach (FlickKind candidate in GoalFlicks)
                 {
                     FlickRecipe recipe = FlickRecipe.For(candidate);
-                    float speed = MathF.Max(ball.velocity.FlatLen(), car.Velocity.FlatLen()) + recipe.Gain;
-                    float elevation = (candidate == FlickKind.Power ? 23f : 26f) * MathF.PI / 180f;
-                    float horizontal = speed * MathF.Cos(elevation);
-                    // The jump carries the ball forward and raises its release point. Check the
-                    // whole ball against the crossbar, not just its flat goal lane. If the apex is
-                    // above the mouth, only an ascending crossing remains safe as setup moves us closer.
+                    float carrySpeed = MathF.Max(ball.velocity.FlatLen(), car.Velocity.FlatLen());
+                    // The jump carries the ball forward and raises its release point.
                     Vec3 release = ball.location + shot * ball.velocity.FlatLen() * (recipe.Hold + recipe.Wait) + Vec3.Up * 80f;
-                    Vec3 exit = shot * horizontal + Vec3.Up * (speed * MathF.Sin(elevation));
-                    GoalCrossing crossing = BallFlight.ToGoal(release, exit, theirGoal.y > 0 ? 1 : -1);
-                    float apexTime = exit.z / -RL.Gravity;
-                    float apex = release.z + exit.z * apexTime * 0.5f;
-                    if (!crossing.OnTarget || crossing.FrameMargin < 15f ||
-                        (apex > BallFlight.GoalHeight - RL.BallRadius && crossing.Time > apexTime) ||
-                        !LaneOpen(ball.location, theirGoal, opponents, horizontal))
+                    // How hard the ball leaves varies with where the flip meets it: the shot has to
+                    // score at the weak end and not fly over at the strong end.
+                    if (!FlickScores(release, shot, carrySpeed, recipe.Weakest, theirGoal) ||
+                        !FlickScores(release, shot, carrySpeed, recipe.Strongest, theirGoal) ||
+                        !LaneOpen(ball.location, theirGoal, opponents, carrySpeed + recipe.Weakest.Push))
                         continue;
                     aim = shot;
                     return candidate;
@@ -354,6 +348,21 @@ namespace Bot
         public const float ChallengeWindow = 0.45f;
         /// <summary>Distance to the opponent goal inside which a power flick is a shot.</summary>
         public const float ShotRange = 3000f;
+
+        /// <summary>
+        /// Whether a flick that gives the ball this impulse scores: the whole ball against the posts and
+        /// crossbar, not just its flat goal lane. If the apex is above the mouth, only an ascending
+        /// crossing remains safe as the setup moves us closer.
+        /// </summary>
+        private static bool FlickScores(Vec3 release, Vec3 shot, float carrySpeed, FlickImpulse impulse, Vec3 theirGoal)
+        {
+            Vec3 exit = shot * (carrySpeed + impulse.Push) + Vec3.Up * impulse.Lift;
+            GoalCrossing crossing = BallFlight.ToGoal(release, exit, theirGoal.y > 0 ? 1 : -1);
+            float apexTime = exit.z / -RL.Gravity;
+            float apex = release.z + exit.z * apexTime * 0.5f;
+            return crossing.OnTarget && crossing.FrameMargin >= 15f &&
+                !(apex > BallFlight.GoalHeight - RL.BallRadius && crossing.Time > apexTime);
+        }
 
         /// <summary>No defender near the line to goal who could arrive before the selected flick.</summary>
         private static bool LaneOpen(Vec3 from, Vec3 goal, IEnumerable<Car> opponents, float shotSpeed)
