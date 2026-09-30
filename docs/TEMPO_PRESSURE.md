@@ -91,23 +91,26 @@ series 0.32–0.38), so a 95 % interval is about twice that.
 
 ### Defence drill against Nexto
 
-The drill starts Nexto's attacks from midfield; each row is 200 attacks on one build, "saved" is
-an attack that did not end in a goal.
+The drill starts Nexto's attacks from midfield; each cell is 200 attacks on the final code, and
+"saved" is an attack that did not end in a goal.
 
-| Build and defaults | seed 7300 |
-|---|---|
-| Shipped: lookahead 0.6 s, press 0.75, covered margin −0.35 s | 150 / 200 = 75 % |
+| Defaults | seed 7300 | seed 7500 | pooled |
+|---|---|---|---|
+| Shipped: lookahead 0.6 s, press 0.75, covered margin −0.35 s | 150 | 139 | 289 / 400 = 72 % |
+| Lookahead 0.2 s, the rest shipped | 141 | 138 | 279 / 400 = 70 % |
+| Previous defence: lookahead 0.2 s, press 1.0, margin −0.12 s | 143 | 133 | 276 / 400 = 69 % |
 
-The same-build comparison with the previous defaults (0.2 s, press 1.0, margin −0.12 s) and the
-second seed are being re-measured on the final code.
-
-Earlier sweeps on an earlier build (0.2 s and 0.5 s lookahead; the press and the carrier reach
-untouched) gave 103 and 117 saved of 160 on seed 7100 and 131 and 143 of 200 on seed 7300; 0.7 s
-gave 117 and 139, 1.0 s 130 and 1.4 s 117 of 200 on seed 7300. Lookaheads of 0.5–0.7 s were the
-best of the range and 1.0 s or more overshoots, so 0.6 s is the default. Challenge margins
-(`SoloTieDeficit` 0.4, `ContinueDeficit` 0.6/0.5, both) saved 145, 131 and 146 against 151 on the
-same seed and build, and 136, 130 and 143 against 131 on the earlier build: not resolvable, in line
-with the earlier entries of [STARDUST_3.md](STARDUST_3.md). They are not adopted.
+The shipped defaults save 13 more attacks of 400 (+3 points, about one standard error) and are
+ahead on both seeds. An earlier sweep on an earlier build of the code gave a larger lookahead
+effect (0.2 s: 103 of 160 and 131 of 200; 0.5 s: 117 and 143; 0.7 s: 117 and 139; 1.0 s: 130 and
+1.4 s: 117 of 200 on seed 7300), which is where 0.6 s comes from: 0.5–0.7 s was the best of the
+range and 1.0 s or more overshoots. On the final build the previous defaults already save 143 of
+200 on seed 7300, so part of that earlier gain is now delivered by the other changes in the build,
+above all the pad trips that no longer commit the car to a flip. Challenge margins
+(`SoloTieDeficit` 0.4, `ContinueDeficit` 0.6/0.5, both) saved 145, 131 and 146 against 151 on an
+earlier build of the final defaults, and 136, 130 and 143 against 131 on the earlier build: not
+resolvable, in line with the earlier entries of [STARDUST_3.md](STARDUST_3.md). They are not
+adopted.
 
 ### Team series against the previous build
 
@@ -192,10 +195,10 @@ benefit at one reach and fails at another was removed rather than kept.
 - 1v1 is level with the previous build and with PartyCannon. The measured gains are in 2v2 and 3v3.
 - The covered midfield margin (−0.35 s) was adopted on 21–3 against 18–6 in 3v3, about 1.4 standard
   errors, level in 2v2, and the earlier 23–1. It cannot act in 1v1 (it needs a covering teammate).
-- Demolition runs are off. Its drill (a plain chaser that wins a loose ball, 60 episodes) required
-  75 % of the runs that start to end in a demolition and passed on none of its runs before the last
-  review's changes (0.26–0.50 converted); the run on the shipped code is being re-measured. The drill
-  does not say whether a run wins anything against an opponent that dodges.
+- Demolition runs are off. Its drill (a plain chaser that wins a loose ball, 60 episodes) starts a
+  run in 83 % of the episodes and ends 72 % of the runs in a demolition (36 of 50), against 75 %
+  required, without conceding; before the review's changes it converted 26–50 %. The drill does not
+  say whether a run wins anything against an opponent that dodges.
 - A pad trip near our own net still drives with the generic `Drive`. The slack reserve grows toward
   the net, and dodges are off unless there is time for a flip, but a `DefensiveDrive`-style
   controller inside the defensive third is not built.
