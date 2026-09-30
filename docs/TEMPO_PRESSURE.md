@@ -160,6 +160,8 @@ loses goals to both changes. On fresh seeds (8900–8903) the shipped solo defen
 |---|---|---|---|---|
 | Lookahead 0.2 s, no press, seeds 8100–8103 | previous build | 29–19 | −0.02 | 52.5 % / 53.4 % |
 | Shipped solo defence, seeds 9000–9003 | previous build | 25–23 | −0.27 | 55.5 % / 55.2 % |
+| The same over 180 s games | previous build | 21–27 | −0.35 | 55.3 % / 55.9 % |
+| The same over 180 s games, seeds 8900–8903 | PartyCannon | 33–15 | +1.75 | |
 | Team defaults in 1v1, seeds 8100–8103 | previous build | 25–23 | −0.38 | 43.5 % / 51.8 % |
 | The same, earlier build, 48 games | previous build | 22–26 | −0.13 | 43.9 % / 52.4 % |
 | Boost economy only, earlier build, 48 games | previous build | 27–21 | −0.08 | 49.3 % / 50.1 % |
@@ -205,21 +207,23 @@ connection timed out, a failure that belongs to that bot.
 
 | 1v1 | Elo | W–L | Goal difference per game | against the previous build |
 |---|---|---|---|---|
-| Nexto | 2344 | 24–0 | +13.83 | +12.00 |
-| Necto | 1960 | 20–4 | +6.58 | +8.75 |
-| Previous build | 1546 | 13–11 | −1.25 | |
-| PartyCannon | 1500 | 12–12 | −2.42 | −0.75 |
-| **Stardust** | **1454** | 11–13 | −2.25 | **−1.00** |
-| Phoenix | 1040 | 4–20 | −7.25 | −5.25 |
-| Beast | 656 | 0–24 | −7.25 | −6.25 |
+| Nexto | 2320 | 24–0 | +13.88 | +12.25 |
+| Necto | 1943 | 20–4 | +6.88 | +8.75 |
+| Previous build | 1531 | 13–11 | −1.42 | |
+| PartyCannon | 1531 | 13–11 | −2.46 | −0.75 |
+| **Stardust** | **1388** | 10–14 | −2.50 | **−0.50** |
+| Beast | 968 | 3–21 | −6.92 | −6.75 |
+| Phoenix | 820 | 1–23 | −7.46 | −4.50 |
 
-NoobBlack exited during startup in every game (28 games in the round robin failed and are
-excluded), so it has no rating and sits at the 1500 default. In 1v1 Stardust is fifth of seven
-rated bots, 92 Elo behind the previous build (1–3 on four games, −1.00 goals a game) and level
-with PartyCannon (2–2); it beats
-Phoenix and Beast 4–0 each and loses 0–4 to Nexto (−13.75) and to Necto (−7.25), as every other
-bot does. Excluding Nexto and Necto it is 11–5. The 48-game paired 1v1 series above are the better
-measure against the previous build and are level; nothing in these tables says that 1v1 improved.
+This is the shipped build with its solo defence; a first run with the team defence in 1v1 gave
+Stardust 11–13 and 1454 Elo (1–3 against the previous build and 2–2 against PartyCannon). NoobBlack
+exited during startup in every game (28 games in the round robin failed and are excluded), so it
+has no rating and sits at the 1500 default. In 1v1 Stardust is fifth of seven rated bots; it beats
+Phoenix and Beast 4–0 each and loses 0–4 to Nexto (−16.00) and to Necto (−7.75), as every other bot
+does. Against the previous build and PartyCannon it won one game of four each, which four games
+cannot separate from the 48-game series: over 180 s games (the tournament's length) on seeds
+8900–8903 it beat PartyCannon 33–15 (+1.75 goals a game) and lost to the previous build 21–27
+(−0.35). The round robin ranks ratings inside a thin sample; the paired series are the measure.
 
 ### Boost
 
