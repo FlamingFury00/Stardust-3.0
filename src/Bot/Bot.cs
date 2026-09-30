@@ -246,13 +246,13 @@ namespace Bot
                 if (!emergency)
                 {
                     Vec3 counterReference = Defense.ReferenceBall(
-                        Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time, Situation.TeamCount <= 1);
+                        Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time, LoneDefender);
                     bool counterGoalSide = Defense.IsGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
-                            MathF.Min(pressureTime, 0.35f), Ball.Velocity, solo: Situation.TeamCount <= 1 && Defense.SoloCaution)
+                            MathF.Min(pressureTime, 0.35f), Ball.Velocity, solo: LoneDefender)
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
@@ -459,14 +459,14 @@ namespace Bot
                     : DefensiveRole.Support;
 
             Vec3 reference = Defense.ReferenceBall(Ball.Prediction, Ball.Location,
-                OurGoal.Location, Game.Time, Situation.TeamCount <= 1);
+                OurGoal.Location, Game.Time, LoneDefender);
             bool goalSide = Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location, 20f);
             bool recoveringGoalSide = !goalSide;
 
             Vec3 rawSupport = recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
                 : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime, Ball.Velocity,
-                    solo: Situation.TeamCount <= 1 && Defense.SoloCaution);
+                    solo: LoneDefender);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
@@ -578,12 +578,18 @@ namespace Bot
             return true;
         }
 
+        /// <summary>A defender with no teammate keeps its room: nobody covers a miss (see <see cref="Defense.SoloCaution"/>).</summary>
+        private bool LoneDefender => Situation.TeamCount <= 1 && Defense.SoloCaution;
+
         /// <summary>Runs a supersonic car into the opponent that matters most, when one can be met in time.</summary>
         private bool TryDemolition(bool controlledPossession, bool finishNow)
         {
+            // The first man who leads the race to the ball owns the touch: no demolition starts, and
+            // none continues, while it does.
+            bool ownsTheTouch = Situation.TeamRank == 0 && Situation.FreeTime > DemolitionFreeTime;
             if (Action is DemoAttack running && !running.Finished)
             {
-                if (!finishNow)
+                if (!finishNow && !ownsTheTouch)
                 {
                     SetDecision("attack / demolition");
                     return true;
@@ -593,9 +599,7 @@ namespace Bot
 
             // A touch this car is about to make or is making outranks any demolition.
             if (finishNow || controlledPossession || Action is IPossessionAction || Action is Shot ||
-                !Me.IsGrounded || Me.Boost < Demolition.MinBoost)
-                return false;
-            if (Situation.TeamRank == 0 && Situation.FreeTime > DemolitionFreeTime)
+                !Me.IsGrounded || Me.Boost < Demolition.MinBoost || ownsTheTouch)
                 return false;
 
             var pick = Demolition.Choose(Me, LivingOpponents, Ball.Location, OurGoal.Location, LivingTeammates);

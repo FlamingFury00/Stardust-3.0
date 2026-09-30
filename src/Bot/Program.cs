@@ -24,6 +24,14 @@ static void ApplyTuning(string assignments)
         Console.WriteLine("stardust tune ignored: native build");
         return;
     }
-    foreach (string line in Tuning.Apply(assignments, typeof(Stardust).Assembly, typeof(Car).Assembly))
-        Console.WriteLine($"stardust tune {line}");
+    try
+    {
+        foreach (string line in Tuning.Apply(assignments, typeof(Stardust).Assembly, typeof(Car).Assembly))
+            Console.WriteLine($"stardust tune {line}");
+    }
+    catch (Exception e) when (e is ArgumentException or FormatException or InvalidCastException or OverflowException)
+    {
+        // A bad assignment must not keep a bot out of a match: play on with the values set so far.
+        Console.WriteLine($"stardust tune rejected: {e.Message}");
+    }
 }

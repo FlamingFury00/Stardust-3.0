@@ -307,20 +307,22 @@ namespace Bot
             }
 
             Vec3 toGoal = (theirGoal - ball.location).Flatten();
-            if (toGoal.Length() < ShotRange)
+            // The flick impulses were measured from carries at 900-1700 uu/s; a shot is only planned
+            // on them inside that range (a flick under a challenger has no better option).
+            float pace = MathF.Max(ball.velocity.FlatLen(), car.Velocity.FlatLen());
+            if (toGoal.Length() < ShotRange && pace >= ShotFlickSpeeds.Min && pace <= ShotFlickSpeeds.Max)
             {
                 Vec3 shot = toGoal.Normalize();
                 foreach (FlickKind candidate in GoalFlicks)
                 {
                     FlickRecipe recipe = FlickRecipe.For(candidate);
-                    float carrySpeed = MathF.Max(ball.velocity.FlatLen(), car.Velocity.FlatLen());
                     // The jump carries the ball forward and raises its release point.
                     Vec3 release = ball.location + shot * ball.velocity.FlatLen() * (recipe.Hold + recipe.Wait) + Vec3.Up * 80f;
                     // How hard the ball leaves varies with where the flip meets it: the shot has to
                     // score at the weak end and not fly over at the strong end.
-                    if (!FlickScores(release, shot, carrySpeed, recipe.Weakest, theirGoal) ||
-                        !FlickScores(release, shot, carrySpeed, recipe.Strongest, theirGoal) ||
-                        !LaneOpen(ball.location, theirGoal, opponents, carrySpeed + recipe.Weakest.Push))
+                    if (!FlickScores(release, shot, pace, recipe.Weakest, theirGoal) ||
+                        !FlickScores(release, shot, pace, recipe.Strongest, theirGoal) ||
+                        !LaneOpen(ball.location, theirGoal, opponents, pace + recipe.Weakest.Push))
                         continue;
                     aim = shot;
                     return candidate;
@@ -348,6 +350,8 @@ namespace Bot
         public const float ChallengeWindow = 0.45f;
         /// <summary>Distance to the opponent goal inside which a power flick is a shot.</summary>
         public const float ShotRange = 3000f;
+        /// <summary>Carry speeds (uu/s) a flick shot is planned at: the range the recipes' impulses were measured over.</summary>
+        public static readonly (float Min, float Max) ShotFlickSpeeds = (850f, 1800f);
 
         /// <summary>
         /// Whether a flick that gives the ball this impulse scores: the whole ball against the posts and

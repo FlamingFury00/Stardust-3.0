@@ -208,7 +208,15 @@ namespace Bot
                 Vec3 relative = car.Local(Ball.Velocity - car.Velocity);
                 bool placed = MathF.Abs(local.x - recipe.Spot) < 8f && MathF.Abs(local.y) < recipe.Tolerance &&
                     relative.Flatten().Length() < 90f && MathF.Abs(relative.z) < 150f;
-                if (placed || now - centring > (threatened ? UrgentCentreLimit : centreLimit))
+                bool timedOut = now - centring > (threatened ? UrgentCentreLimit : centreLimit);
+                // Nobody is on the ball yet and it will not settle on the spot: keep the carry and
+                // let the dribble plan again, rather than launch a flick the recipe never measured.
+                if (timedOut && !placed && !threatened)
+                {
+                    Finished = true;
+                    return;
+                }
+                if (placed || timedOut)
                 {
                     PlacedAtJump = placed;
                     OffsetAtJump = new Vec3(local.x - recipe.Spot, local.y, 0f);

@@ -208,6 +208,11 @@ public static class BotLauncher
                 var start = request.Build.CreateStartInfo();
                 start.Environment["RLBOT_AGENT_ID"] = agentId;
                 start.Environment["RLBOT_SERVER_PORT"] = port.ToString();
+                // Stardust builds that predate the start-up arguments log telemetry to files unless this
+                // variable says otherwise; it keeps them quiet as comparison opponents. The current bot
+                // reads no environment variable of its own and ignores it.
+                if (Environment.GetEnvironmentVariable("STARDUST_TELEMETRY") == null)
+                    start.Environment["STARDUST_TELEMETRY"] = "0";
 
                 StreamWriter? log = null;
                 if (logDirectory != null)
