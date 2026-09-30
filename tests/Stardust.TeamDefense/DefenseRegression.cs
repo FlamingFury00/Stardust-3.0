@@ -66,6 +66,42 @@ internal static class DefenseRegression
                 $"midfield solo shadow was too passive/aggressive: {target}");
         });
 
+        test("last-man line: only the team's last car is held behind it, and only when enabled", () =>
+        {
+            float previous = Defense.LastManLine;
+            try
+            {
+                var upfield = new Vec3(300, 1200, 17);   // in the orange half, blue defends -y
+                var blueGoal = new Vec3(0, -5120, 0);
+                var last = new TacticalFrame { TeamCount = 2, LastBack = true };
+                var ahead = new TacticalFrame { TeamCount = 2, LastBack = false };
+                var solo = new TacticalFrame { TeamCount = 1, LastBack = true };
+
+                Defense.LastManLine = float.NegativeInfinity;
+                Check(Defense.HoldLastLine(upfield, last, blueGoal).Equals(upfield), "disabled line moved a target");
+
+                Defense.LastManLine = 0f;
+                Vec3 held = Defense.HoldLastLine(upfield, last, blueGoal);
+                Check(held.y == 0f && held.x == upfield.x, $"last car not held at midfield: {held}");
+                Check(Defense.HoldLastLine(upfield, ahead, blueGoal).Equals(upfield), "a car with a teammate behind was held");
+                Check(Defense.HoldLastLine(upfield, solo, blueGoal).Equals(upfield), "a solo car was held");
+                var deep = new Vec3(0, -3000, 17);
+                Check(Defense.HoldLastLine(deep, last, blueGoal).Equals(deep), "a target already behind the line moved");
+
+                // Orange defends +y: its half is positive y, so an upfield target has negative y.
+                var orangeGoal = new Vec3(0, 5120, 0);
+                Vec3 orangeHeld = Defense.HoldLastLine(new Vec3(0, -1500, 17), last, orangeGoal);
+                Check(orangeHeld.y == 0f, $"orange last car not held at midfield: {orangeHeld}");
+                Check(Defense.BeyondLastLine(new Vec3(0, -1500, 70), last, orangeGoal) &&
+                      !Defense.BeyondLastLine(new Vec3(0, 1500, 70), last, orangeGoal),
+                    "boost pads past the line are not recognised");
+            }
+            finally
+            {
+                Defense.LastManLine = previous;
+            }
+        });
+
         test("defense-v3: deep-ball targets are always goal-side for every role and team", () =>
         {
             foreach (int side in new[] { -1, 1 })

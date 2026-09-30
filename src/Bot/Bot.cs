@@ -261,11 +261,12 @@ namespace Bot
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
                     bool counterGoalSide = Defense.IsGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
-                    Vec3 route = counterGoalSide
+                    Vec3 route = Defense.HoldLastLine(counterGoalSide
                         ? Defense.ShadowTarget(
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
                             MathF.Min(pressureTime, 0.35f))
-                        : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
+                        : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location),
+                        Situation, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
                     bool fastCounterRecovery = !counterGoalSide &&
@@ -337,7 +338,8 @@ namespace Bot
 
             if (Action is GetBoost refill)
             {
-                if (!Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure))
+                if (!Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure) ||
+                    (refill.ChosenBoost != null && Defense.BeyondLastLine(refill.ChosenBoost.Location, Situation, OurGoal.Location)))
                     Action = null;
                 else if (!refill.Finished)
                 {
@@ -480,9 +482,10 @@ namespace Bot
             bool goalSide = Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location, 20f);
             bool recoveringGoalSide = !goalSide;
 
-            Vec3 rawSupport = recoveringGoalSide
+            Vec3 rawSupport = Defense.HoldLastLine(recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
-                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime);
+                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime),
+                Situation, OurGoal.Location);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
@@ -603,7 +606,7 @@ namespace Bot
 
             Boost pad = RoutePlanner.SelectBoost(Me, Field.Boosts, Ball.Location,
                 destination, Team, Situation.OpponentEta);
-            if (pad == null)
+            if (pad == null || Defense.BeyondLastLine(pad.Location, Situation, OurGoal.Location))
                 return false;
 
             Action = new GetBoost(Me, pad.Index, interruptible: true);
