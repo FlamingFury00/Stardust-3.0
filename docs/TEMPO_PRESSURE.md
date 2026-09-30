@@ -67,14 +67,17 @@ first man goes for the ball, the deepest of the others anchors the net, and the 
 support. The split is a pure function with tests for two and three cars. For two cars it matches
 the old rule; for three the old rule could elect two anchors, and the new one elects exactly one.
 
-**Zone- and speed-aware pressing** (`src/Bot/Defense.cs`). Near our net the first man's gap, carrier
-reach, contact horizon and covered-race margin keep their previous values. From their half to our
-third they fade toward a pressing value with `Caution(depth)`: the gap is 0.75 of the old one, a
-carrier is met from 1500 uu (2200 uu when covered) within 1.0 s (1.5 s), and a covered first man
-commits to a 50/50 he is up to 0.35 s late for (0.12 s near the net). The shadow gap also stops
-closing when the ball comes at our goal faster than 1000 uu/s and is fully open at 1700 uu/s; the
-challenge gates use the depth only. At every depth the shadow reads the ball 0.6 s ahead when it is
-heading for our net.
+**Zone- and speed-aware pressing** (`src/Bot/Defense.cs`), for teams. Near our net the first man's
+gap, carrier reach, contact horizon and covered-race margin keep their previous values. From their
+half to our third they fade toward a pressing value with `Caution(depth)`: the gap is 0.75 of the
+old one, a carrier is met from 1500 uu (2200 uu when covered) within 1.0 s (1.5 s), and a covered
+first man commits to a 50/50 he is up to 0.35 s late for (0.12 s near the net). The shadow gap also
+stops closing when the ball comes at our goal faster than 1000 uu/s and is fully open at
+1700 uu/s; the challenge gates use the depth only. A defender in a team reads the ball 0.6 s ahead
+when it is heading for our net (0.2 s before). **A lone defender keeps the previous behaviour**:
+the full gap at every depth and the 0.2 s lookahead (`solo` in `ShadowTarget` and `ReferenceBall`),
+because nobody covers its miss and the 1v1 series below lose to both changes. It does use the wider
+midfield carrier reach.
 
 **Demolition run** (`src/Bot/Demolition.cs`). A planner and action for supersonic bumper contact
 on an opponent near the ball, at least 22 boost, that a teammate is not clearly nearer to and that
@@ -91,25 +94,25 @@ series 0.32–0.38), so a 95 % interval is about twice that.
 
 ### Defence drill against Nexto
 
-The drill starts Nexto's attacks from midfield; each cell is 200 attacks on the final code, and
-"saved" is an attack that did not end in a goal.
+The drill is a 1v1: Nexto's attacks start from midfield, and "saved" is an attack that did not end
+in a goal. Each cell is 200 attacks on the code of the commit that set the defaults.
 
-| Defaults | seed 7300 | seed 7500 | pooled |
+| Defence | seed 7300 | seed 7500 | pooled |
 |---|---|---|---|
-| Shipped: lookahead 0.6 s, press 0.75, covered margin −0.35 s | 150 | 139 | 289 / 400 = 72 % |
-| Lookahead 0.2 s, the rest shipped | 141 | 138 | 279 / 400 = 70 % |
+| Lookahead 0.6 s, press 0.75, covered margin −0.35 s | 150 | 139 | 289 / 400 = 72 % |
+| Lookahead 0.2 s, the rest the same | 141 | 138 | 279 / 400 = 70 % |
 | Previous defence: lookahead 0.2 s, press 1.0, margin −0.12 s | 143 | 133 | 276 / 400 = 69 % |
 
-The shipped defaults save 13 more attacks of 400 (+3 points, about one standard error) and are
-ahead on both seeds. An earlier sweep on an earlier build of the code gave a larger lookahead
-effect (0.2 s: 103 of 160 and 131 of 200; 0.5 s: 117 and 143; 0.7 s: 117 and 139; 1.0 s: 130 and
-1.4 s: 117 of 200 on seed 7300), which is where 0.6 s comes from: 0.5–0.7 s was the best of the
-range and 1.0 s or more overshoots. On the final build the previous defaults already save 143 of
-200 on seed 7300, so part of that earlier gain is now delivered by the other changes in the build,
-above all the pad trips that no longer commit the car to a flip. Challenge margins
-(`SoloTieDeficit` 0.4, `ContinueDeficit` 0.6/0.5, both) saved 145, 131 and 146 against 151 on an
-earlier build of the final defaults, and 136, 130 and 143 against 131 on the earlier build: not
-resolvable, in line with the earlier entries of [STARDUST_3.md](STARDUST_3.md). They are not
+The team defaults save 13 more attacks of 400 than the previous defence (+3 points, about one
+standard error). An earlier sweep on an earlier build gave a larger lookahead effect (0.2 s: 103 of
+160 and 131 of 200; 0.5 s: 117 and 143; 0.7 s: 117 and 139; 1.0 s: 130 and 1.4 s: 117 of 200 on
+seed 7300), which is where 0.6 s comes from: 0.5–0.7 s was the best of the range. The games
+disagree for a lone defender: against PartyCannon in 1v1 the 0.6 s lookahead and the press lost
+badly ([1v1 series](#1v1-series)), so a lone defender keeps the previous values whatever this
+drill says; the drill has no teammate and scores attacks, not goals and counterattacks. Challenge
+margins (`SoloTieDeficit` 0.4, `ContinueDeficit` 0.6/0.5, both) saved 145, 131 and 146 against 151
+on an earlier build of the same defaults, and 136, 130 and 143 against 131 on the earlier build:
+not resolvable, in line with the earlier entries of [STARDUST_3.md](STARDUST_3.md). They are not
 adopted.
 
 ### Team series against the previous build
@@ -123,6 +126,7 @@ adopted.
 | **Final code** after the second review (pad tie-break, hysteresis floor), same seeds | **18–6 (+0.83)** | **17–7 (+0.92)** |
 | Final code, a second set of 3v3 seeds (8600–8603) | 18–6 (+1.58) | |
 | Final code, both 3v3 seed sets pooled (48 games) | **36–12 (+1.21)** | |
+| The same with the lookahead at 0.2 s, on the seeds of the rows above | 17–7 (+1.54) and 16–8 (+1.21) | 10–14 (−0.38) |
 
 The final code's first 3v3 series is 0.8 goals per game below the 21–3 series on the same seeds
 (about 1.6 standard errors of the difference); the fixes between the two touch only which pad a
@@ -135,21 +139,38 @@ the free space fell from 53.7 % to 44.3 % (983 uu against 1062 uu).
 
 ### 1v1 series
 
-| Opponent and build | Record | Goals per game | Free space (ours / theirs) |
-|---|---|---|---|
-| Previous build; final 1v1 behaviour, 48 games | 22–26 | −0.13 | 43.9 % / 52.4 % |
-| Previous build; boost economy only, 48 games | 27–21 | −0.08 | 49.3 % / 50.1 % |
-| Previous build; midfield press 0.75, 48 games | 23–25 | −0.10 | 36.1 % / 50.6 % |
-| PartyCannon; final code before the second review, 48 games | 22–26 | −0.25 | 42.0 % / 35.6 % |
+**The midfield press and the 0.6 s lookahead lose in 1v1.** Four versions of the defence against
+PartyCannon, 48 games each on the same seeds (8800–8803), and the previous build on those seeds:
 
-The previous build scored 18–30 (−0.65) and 16–8 (+0.54) against PartyCannon on two seeds, 34–38
-pooled; on the seed the press builds shared (6000) the boost-economy build won 27–21, the 0.75
-press 23–25 and the 0.55 press 21–27 against the previous build's 18–30. The last build was
-played on one seed (8400) only, so its comparison is not paired. PartyCannon takes twice our shots
-(10.1 against 5.0 per player per 5 minutes) and spends 31 % of its time in its attacking third
-against our 21 %, yet the score stays close (goals per 5 minutes 5.1 against 4.6; saves 4.8
-against 1.9). A 48-game series resolves about ±0.35 goals per game, so 1v1 is level: the press
-takes away part of the free space at no measurable cost.
+| Defence of the lone defender | Record | Goals per game |
+|---|---|---|
+| Previous build | 21–27 | −0.50 |
+| Lookahead 0.6 s, press 0.75 (the team defaults) | 15–33 | −1.00 |
+| Lookahead 0.6 s, no press | 13–35 | −1.25 |
+| Lookahead 0.2 s, press 0.75 | 16–32 | −0.33 |
+| **Lookahead 0.2 s, no press (shipped for a lone defender)** | **32–16** | **+0.46** |
+
+Three of the four versions sit near 30 % wins and one at 67 %, which no amount of noise explains
+(a 48-game series has a standard deviation of 3.5 wins); a lone defender with no cover behind it
+loses goals to both changes. On fresh seeds (8900–8903) the shipped solo defence beat PartyCannon
+32–16 (+0.73), the same record again. Against the previous build the solo defence is level:
+
+| Build | Opponent | Record | Goals per game | Free space (ours / theirs) |
+|---|---|---|---|---|
+| Lookahead 0.2 s, no press, seeds 8100–8103 | previous build | 29–19 | −0.02 | 52.5 % / 53.4 % |
+| Shipped solo defence, seeds 9000–9003 | previous build | 25–23 | −0.27 | 55.5 % / 55.2 % |
+| Team defaults in 1v1, seeds 8100–8103 | previous build | 25–23 | −0.38 | 43.5 % / 51.8 % |
+| The same, earlier build, 48 games | previous build | 22–26 | −0.13 | 43.9 % / 52.4 % |
+| Boost economy only, earlier build, 48 games | previous build | 27–21 | −0.08 | 49.3 % / 50.1 % |
+| Midfield press 0.75, earlier build, 48 games | previous build | 23–25 | −0.10 | 36.1 % / 50.6 % |
+
+The previous build scored 18–30 (−0.65) and 16–8 (+0.54) against PartyCannon on two other seeds and
+21–27 (−0.50) on seeds 8800–8803. PartyCannon takes twice our shots (10–11 against 5 per player per
+5 minutes) and spends 31 % of its time in its attacking third against our 21 %, yet the score
+stays close. A 48-game series resolves about ±0.35 goals per game, so the 1v1 gain against the
+previous build is nil and against PartyCannon is about +1 goal a game, the largest 1v1 effect in
+this work. The press takes free space away in 1v1 (36–44 % against 51–53 %), and it costs goals
+there; free space is a measure, not a result.
 
 ### Tournament of the final code
 
@@ -247,13 +268,17 @@ benefit at one reach and fails at another was removed rather than kept.
 - Nexto still beats Stardust in every completed game, and the defence drill still concedes a
   quarter of Nexto's attacks and clears almost none. This change narrows how much room and time the
   previous build gave, in the builds it is measured against, and nothing more.
-- 1v1 is level with the previous build and with PartyCannon. The measured gains are in 2v2 and 3v3.
+- 1v1 is level with the previous build (29–19 and 25–23) and about +0.5 to +0.7 goals a game ahead
+  of PartyCannon. The large measured gains are in 2v2 and 3v3. The midfield press and the 0.6 s
+  lookahead, which carry the team results, are off for a lone defender because they lost 1v1 series;
+  the 2v2 series at 0.2 s (10–14) says the lookahead matters in teams.
 - The covered midfield margin (−0.35 s) was adopted on 21–3 against 18–6 in 3v3, about 1.4 standard
   errors, level in 2v2, and the earlier 23–1. It cannot act in 1v1 (it needs a covering teammate).
 - Demolition runs are off. Its drill (a plain chaser that wins a loose ball, 60 episodes) starts a
   run in 83 % of the episodes and ends 72 % of the runs in a demolition (36 of 50), against 75 %
   required, without conceding; before the review's changes it converted 26–50 %. The drill does not
-  say whether a run wins anything against an opponent that dodges.
+  say whether a run wins anything against an opponent that dodges, and in 1v1 against the previous
+  build, with runs on, the record was 22–26 (−0.56) against 25–23 (−0.38) with them off.
 - A pad trip near our own net still drives with the generic `Drive`. The slack reserve grows toward
   the net, and dodges are off unless there is time for a flip, but a `DefensiveDrive`-style
   controller inside the defensive third is not built.
@@ -275,6 +300,7 @@ $SIM match --a <build> --b <previous build> --size 3 --games 24 --seconds 120 --
 ```
 
 `--set Type.Field=value` (or `STARDUST_TUNE` for a bot process) sets any variant that still exists:
-`Defense.ReferenceLead`, `Defense.NeutralGapScale`, `Defense.NeutralCoveredMargin`,
-`BoostEconomy.SecondsPerBoost`, `Stardust.DemolitionRuns`. The kickoff pad run and the eager boost
+`Defense.ReferenceLead`, `Defense.SoloReferenceLead`, `Defense.NeutralGapScale`,
+`Defense.NeutralCoveredMargin`, `BoostEconomy.SecondsPerBoost`, `Stardust.DemolitionRuns`. A lone
+defender ignores `NeutralGapScale`; to press it, edit `solo` in `Defense.ShadowTarget`. The kickoff pad run and the eager boost
 switches were removed with their experiments.
