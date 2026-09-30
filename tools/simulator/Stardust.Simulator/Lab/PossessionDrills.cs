@@ -331,7 +331,6 @@ public sealed class CatchDrill : RoofDrill
                 {
                     bot.Action = new GroundCatch(plan);
                     attempted = true;
-                    Console.WriteLine($"DBG director installed at {RedUtils.Game.Time} action={bot.Action}");
                 }
                 else declined = true;
                 return;

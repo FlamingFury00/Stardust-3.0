@@ -252,7 +252,7 @@ namespace Bot
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
-                            MathF.Min(pressureTime, 0.35f), Ball.Velocity, solo: Situation.TeamCount <= 1)
+                            MathF.Min(pressureTime, 0.35f), Ball.Velocity, solo: Situation.TeamCount <= 1 && Defense.SoloCaution)
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
@@ -466,7 +466,7 @@ namespace Bot
             Vec3 rawSupport = recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
                 : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime, Ball.Velocity,
-                    solo: Situation.TeamCount <= 1);
+                    solo: Situation.TeamCount <= 1 && Defense.SoloCaution);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 

@@ -104,6 +104,11 @@ namespace Bot
         /// 0.6 s lookahead went 13-35 and 15-33 where 0.2 s went 32-16 (48 games on the same seeds).
         /// </summary>
         public static float SoloReferenceLead = 0.2f;
+        /// <summary>
+        /// Whether a lone defender keeps its room: the full gap at every depth and <see cref="SoloReferenceLead"/>.
+        /// Off gives it the team's press and lookahead, which only the lab switches on.
+        /// </summary>
+        public static bool SoloCaution = true;
 
         /// <summary>
         /// Use a short future ball sample only when the untouched prediction is moving toward our goal.
