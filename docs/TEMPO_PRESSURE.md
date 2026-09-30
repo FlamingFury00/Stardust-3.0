@@ -153,7 +153,7 @@ takes away part of the free space at no measurable cost.
 
 Round robin, four games per pair (two per side), 180 s games, Bradley–Terry Elo. Only four games
 per pair: the ratings are ordered, not separated, and a gap under about 100 Elo is not a result.
-The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto and Necto in 1v1.
+The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto, Necto and NoobBlack in 1v1.
 
 | 3v3 | Elo | W–L | Goal difference per game | against the previous build |
 |---|---|---|---|---|
@@ -173,11 +173,29 @@ The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto and
 
 In 3v3 Stardust is second, 337 Elo above the previous build, and beats it by 3.25 goals a game;
 PartyCannon is ahead (Stardust −0.33 goals a game against it, one win and two losses; a fourth
-game was excluded when PartyCannon's connection timed out with Stardust ahead 2–1). In 2v2 the previous build and Stardust are level (Stardust
-ahead head to head by 0.75 goals, 52 Elo behind in the table, four games each), which the 24-game
-paired series above resolves better: 17–7. PartyCannon leads in both. The 3v3 round robin
-excluded three games in which PartyCannon's connection timed out, a failure that belongs to that
-bot.
+game was excluded when PartyCannon's connection timed out with Stardust ahead 2–1). In 2v2 the
+previous build and Stardust are level (Stardust ahead head to head by 0.75 goals, 52 Elo behind in
+the table, four games each), which the 24-game paired series above resolves better: 17–7.
+PartyCannon leads in both. The 3v3 round robin excluded three games in which PartyCannon's
+connection timed out, a failure that belongs to that bot.
+
+| 1v1 | Elo | W–L | Goal difference per game | against the previous build |
+|---|---|---|---|---|
+| Nexto | 2344 | 24–0 | +13.83 | +12.00 |
+| Necto | 1960 | 20–4 | +6.58 | +8.75 |
+| Previous build | 1546 | 13–11 | −1.25 | |
+| PartyCannon | 1500 | 12–12 | −2.42 | −0.75 |
+| **Stardust** | **1454** | 11–13 | −2.25 | **−1.00** |
+| Phoenix | 1040 | 4–20 | −7.25 | −5.25 |
+| Beast | 656 | 0–24 | −7.25 | −6.25 |
+
+NoobBlack exited during startup in every game (28 games in the round robin failed and are
+excluded), so it has no rating and sits at the 1500 default. In 1v1 Stardust is fifth of seven
+rated bots, 92 Elo behind the previous build (1–3 on four games, −1.00 goals a game) and level
+with PartyCannon (2–2); it beats
+Phoenix and Beast 4–0 each and loses 0–4 to Nexto (−13.75) and to Necto (−7.25), as every other
+bot does. Excluding Nexto and Necto it is 11–5. The 48-game paired 1v1 series above are the better
+measure against the previous build and are level; nothing in these tables says that 1v1 improved.
 
 ### Boost
 
