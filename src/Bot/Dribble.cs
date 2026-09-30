@@ -131,7 +131,7 @@ namespace Bot
                 return;
             }
 
-            if (carried && Game.Time - stableSince >= 0.25f && bot is Stardust { Options.AirDribbles: true } &&
+            if (carried && Game.Time - stableSince >= 0.25f &&
                 PossessionControl.ShouldAirDribble(car, Ball.MainBall, lane, bot.LivingOpponents, bot.TheirGoal.Location))
             {
                 bot.Action = new AirDribbleSetup(lane, carry);

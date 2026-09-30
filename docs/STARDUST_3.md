@@ -105,7 +105,7 @@ $SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out t
 # at a chaser that wins a loose ball (demolition) and a time profile (profile) are extra drills,
 # run by name.
 # Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
-# --set Type.Field=value (any command) overrides a tuning field (as STARDUST_TUNE does in a match)
+# --set Type.Field=value (any command) overrides a tuning field (as `--tune` does in a match)
 $SIM mechanics-lab --drill all --episodes 60
 $SIM mechanics-lab --drill defense --opponent nexto.toml --episodes 60
 $SIM mechanics-lab --drill profile --opponent <bot> --episodes 12
@@ -122,7 +122,7 @@ non-zero when one fails.
 
 Series are paired: every seed is played twice with the builds swapping colours. Kickoff spawns are
 jittered by a few units so deterministic bots do not replay one identical game. Scenario episodes
-are generated from a seed, so two builds face identical fixtures. With `STARDUST_TRACE=1` the bot
+are generated from a seed, so two builds face identical fixtures. With `--trace` the bot
 logs its decisions, and the series report then attributes every goal to the decision the conceding
 car was running half a second before it (own goals marked), next to each build's time share per
 decision.
@@ -317,27 +317,27 @@ The native build plays identically to the JIT build (the same matches, frame for
 simulator). To check the packaging without Docker, run the dockerfile's two `dotnet publish`
 commands from `src/Bot`.
 
-## Runtime switches
+## Start-up arguments
 
-Set environment variables **before starting the bot process**:
+Every mechanic always runs: there is no switch for catches, carries, flicks, aerial carries, flip
+resets, air dribbles, demolition runs or pad routing, and the bot reads no `STARDUST_*` environment
+variable. (RLBot itself starts a bot with `RLBOT_AGENT_ID` and `RLBOT_SERVER_PORT`; those belong to
+the framework.) A bot process can be started with these arguments, which only add diagnostics or
+run a parameter variant in the simulator:
 
-| Variable | Default | Behavior |
+| Argument | Default | Behavior |
 |---|---|---|
-| `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable catch/carry/flick selection |
-| `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
-| `STARDUST_FLIP_RESETS` | disabled | Set `1` to let an aerial carry go for a flip reset (lab: 72 % acquired, 51 % used) |
-| `STARDUST_AIR_DRIBBLES` | disabled | Set `1` to pop a controlled hood carry into an air dribble (lab: 60/60 set up, 1.8 s carried; no match gain, see Results) |
-| `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
-| `STARDUST_TRACE_SAVES` | disabled | Set `1` to also log the clearance and block weighed on every emergency planning tick |
-| `STARDUST_TUNE` | unset | `Type.Field=value,...` overrides tuning fields (e.g. `Kickoff.DodgeJump=0.1`), so one build plays as several variants; a bot config whose run command sets it is a variant the `match` command can play. JIT builds only: the native build ignores it |
-| `STARDUST_TELEMETRY` | enabled | Structured `STARDUST_JSON` frame/decision telemetry, written to `logs/` next to the executable; set `0` to disable. Test and probe instances stay quiet unless it is set; the simulator sets `0` for bots it starts unless it is set in its own environment |
-| `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
-| `STARDUST_TELEMETRY_FILE` | `logs/stardust-telemetry-<time>-pid<pid>.jsonl` | Telemetry file; if it cannot be opened the bot falls back to the system temp directory, then to the console |
-| `STARDUST_TELEMETRY_CONSOLE` | disabled | Set `1` to also print every telemetry line |
+| `--trace` | off | Log strategy transitions and ETA estimates |
+| `--trace-saves` | off | Also log the clearance and block weighed on every emergency planning tick |
+| `--tune=Type.Field=value,...` | none | Override tuning fields (e.g. `--tune=Kickoff.DodgeJump=0.1`), so one build plays as several variants; a bot config whose run command carries it is a variant the `match` command can play. JIT builds only: the native build ignores it |
+| `--telemetry` / `--no-telemetry` | on in a real match | Structured `STARDUST_JSON` frame/decision telemetry, written to `logs/` next to the executable. Test instances and the bots the simulator starts (agent ids beginning `stardust-sim/`) stay quiet unless `--telemetry` is given |
+| `--telemetry-hz=N` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
+| `--telemetry-file=PATH` | `logs/stardust-telemetry-<time>-pid<pid>.jsonl` | Telemetry file; if it cannot be opened the bot falls back to the system temp directory, then to the console |
+| `--telemetry-console` | off | Also print every telemetry line |
 
 Structured telemetry is designed for real-match debugging without per-tick console spam. Each
 line is one JSON object (prefixed with `STARDUST_JSON ` on the console). Decision changes emit
-immediately; frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. Frames are recorded after
+immediately; frame snapshots are rate-limited by `--telemetry-hz`. Frames are recorded after
 the action runs and after controller sanitization, so `controller` is the command actually returned.
 A file rotates at 64 MB, and on opening one the bot deletes the oldest telemetry files in that
 directory beyond 256 MB, so a bot that plays many matches does not fill the disk.
@@ -382,7 +382,7 @@ the mechanics before this rework:
   challenger's roof), a lob closer in. It also flicks at the goal from within 3000 uu when no
   defender can reach the line. It keeps carrying against a defender who hangs back or a chaser from
   behind, with the ball already on the flick's spot once a challenger is on the way.
-- **Flip resets** (`FlipReset`, behind `STARDUST_FLIP_RESETS=1`). In RocketSim the wheels are
+- **Flip resets** (`FlipReset`). In RocketSim the wheels are
   suspension rays that also land on the ball. Three touching wheels count as grounded, which clears
   the used jump and flip, and they leave no ball touch. So the reset is confirmed from the packet
   flags alone: the flip was unavailable while airborne, then jump, double jump and dodge are all

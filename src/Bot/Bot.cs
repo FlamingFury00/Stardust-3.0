@@ -6,35 +6,12 @@ using RedUtils.Math;
 
 namespace Bot
 {
-    /// <summary>Independent feature switches support in-game ablation against the baseline.</summary>
-    public sealed class StardustOptions
-    {
-        public bool GroundControl { get; init; } = Environment.GetEnvironmentVariable("STARDUST_GROUND_CONTROL") != "0";
-        public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
-        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
-        public bool AirDribbles { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AIR_DRIBBLES") == "1";
-        public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
-        /// <summary>Also log the save options weighed on every planning tick (verbose).</summary>
-        public bool TraceSaves { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE_SAVES") == "1";
-        public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
-        public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
-        public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
-        public int TelemetryHz { get; init; } = ReadTelemetryHz();
-
-        public bool TelemetryDisabled => TelemetrySetting == "0";
-        public bool TelemetryExplicit => TelemetrySetting != null;
-
-        private static int ReadTelemetryHz()
-        {
-            string raw = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
-            return int.TryParse(raw, out int hz) ? System.Math.Clamp(hz, 1, 30) : 10;
-        }
-    }
-
     /// <summary>Threat-first planning with explicit goal-side recovery and moving shadow defense.</summary>
     public class Stardust : RUBot
     {
-        public StardustOptions Options { get; } = new();
+        /// <summary>Agent id prefix of the bot processes the simulator starts.</summary>
+        public const string SimulatedAgentPrefix = "stardust-sim/";
+        public StardustOptions Options { get; }
         public TacticalFrame Situation { get; private set; } = new();
         public string Decision { get; private set; } = "startup";
         public bool Shooting { get; set; }
@@ -44,8 +21,6 @@ namespace Bot
         public static bool FirstManShadow = true;
         /// <summary>Seconds between full re-plans while calm, and while an opponent or the ball is about to strike.</summary>
         public static float PlanInterval = 0.12f, UrgentPlanInterval = 0.05f;
-        /// <summary>Run supersonic into an opponent worth a demolition. Off until measured in full matches.</summary>
-        public static bool DemolitionRuns = false;
         /// <summary>Ball speed (uu/s) above which a pad detour before a touch is not considered.</summary>
         private const float PadBeforeShotBallSpeed = 1800f;
         /// <summary>Most spare time (s) before the ball a first man may have and still start a demolition run: with more, the ball is his to win.</summary>
@@ -64,13 +39,14 @@ namespace Bot
         /// <summary>Extra travel (s) the last boost-routing decision could afford; for telemetry.</summary>
         public float BoostSlack { get; private set; }
 
-        public Stardust(string defaultAgentId = null) : base(defaultAgentId)
+        public Stardust(string defaultAgentId = null, StardustOptions options = null) : base(defaultAgentId)
         {
-            // The packaged RLBot process enables file telemetry by default. Test/probe instances pass
-            // an explicit agent id and remain quiet unless STARDUST_TELEMETRY was explicitly provided.
-            bool productionEntry = defaultAgentId == null;
-            bool telemetryEnabled = !Options.TelemetryDisabled &&
-                (productionEntry || Options.TelemetryExplicit);
+            Options = options ?? new StardustOptions();
+            // A real match writes file telemetry by default. Instances the tests construct (they pass an
+            // explicit agent id) and the ones the simulator starts stay quiet unless asked to record.
+            bool quiet = defaultAgentId != null ||
+                AgentId.StartsWith(SimulatedAgentPrefix, StringComparison.Ordinal);
+            bool telemetryEnabled = Options.Telemetry ?? !quiet;
             telemetry = new StardustTelemetry(
                 telemetryEnabled, Options.TelemetryHz, Options.TelemetryConsole, Options.TelemetryFile);
         }
@@ -315,7 +291,7 @@ namespace Bot
             bool finishNow = Tactics.PreferImmediateShot(
                 this, priorityAttack, Situation);
 
-            if (DemolitionRuns && TryDemolition(controlledPossession, finishNow))
+            if (TryDemolition(controlledPossession, finishNow))
                 return;
 
             if (Action is IPossessionAction possession)
@@ -366,7 +342,7 @@ namespace Bot
                     return;
                 }
 
-                bool canPossessAir = Options.AerialCarry &&
+                bool canPossessAir =
                     PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
                 if (canPossessAir &&
                     AerialCarry.CanStart(Me, Ball.MainBall, Situation.OpponentEta))
@@ -386,9 +362,8 @@ namespace Bot
                 return;
             }
 
-            bool canPossessGround = Options.GroundControl &&
-                PossessionControl.CanAcquireGround(
-                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool canPossessGround = PossessionControl.CanAcquireGround(
+                Situation, Me, Ball.MainBall, OurGoal.Location);
             bool canDribble = canPossessGround &&
                 GroundDribble.CanStart(Me, Ball.MainBall, Situation.FreeTime);
 

@@ -38,7 +38,9 @@ internal static class DefenseRegression
         LastInput = new ControllerStateT()
     };
 
-    private static Stardust World(Vec3 ball, params Car[] cars)
+    private static Stardust World(Vec3 ball, params Car[] cars) => World(null, ball, cars);
+
+    private static Stardust World(StardustOptions? options, Vec3 ball, params Car[] cars)
     {
         Set(typeof(Cars), "AllCars", null!, cars.ToList());
         Set(typeof(Ball), "Location", null!, ball);
@@ -46,7 +48,7 @@ internal static class DefenseRegression
         Set(typeof(Ball), "Prediction", null!,
             new RedUtils.BallPrediction { Slices = Array.Empty<BallSlice>() });
 
-        var bot = new Stardust("defense-regression");
+        var bot = new Stardust("defense-regression", options);
         Set(typeof(RLBot.Manager.Bot), "Index", bot, 0);
         Set(typeof(RLBot.Manager.Bot), "Team", bot, (int)cars[0].Team);
         return bot;
@@ -827,76 +829,60 @@ internal static class DefenseRegression
 
         test("telemetry: file JSONL is rate-limited and includes actual control/target", () =>
         {
-            string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
-            string? oldHz = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
-            string? oldFile = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
             string path = Path.Combine(Path.GetTempPath(),
                 $"stardust-telemetry-regression-{Guid.NewGuid():N}.jsonl");
 
-            try
-            {
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", "10");
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", path);
-                Set(typeof(Game), nameof(Game.Time), null, 10f);
+            Set(typeof(Game), nameof(Game.Time), null, 10f);
 
-                var car = CarAt(0, -3000);
-                var bot = World(new Vec3(0, -2000, 100), car);
-                bot.Action = new DefensiveDrive(
-                    car, new Vec3(0, -4100, 17), 2200f, 500f,
-                    holdPosition: false, allowDodges: true);
-                bot.Controller.Throttle = 0.75f;
-                bot.Controller.Steer = -0.25f;
+            var car = CarAt(0, -3000);
+            var options = StardustOptions.FromArguments(new[] { "--telemetry", "--telemetry-hz=10", $"--telemetry-file={path}" });
+            var bot = World(options, new Vec3(0, -2000, 100), car);
+            bot.Action = new DefensiveDrive(
+                car, new Vec3(0, -4100, 17), 2200f, 500f,
+                holdPosition: false, allowDodges: true);
+            bot.Controller.Throttle = 0.75f;
+            bot.Controller.Steer = -0.25f;
 
-                MethodInfo hook = typeof(Stardust).GetMethod(
-                    "OnOutputReady", BindingFlags.NonPublic | BindingFlags.Instance)
-                    ?? throw new Exception("post-output telemetry hook not found");
+            MethodInfo hook = typeof(Stardust).GetMethod(
+                "OnOutputReady", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new Exception("post-output telemetry hook not found");
 
-                hook.Invoke(bot, null);
-                hook.Invoke(bot, null); // same timestamp: must be suppressed
-                Set(typeof(Game), nameof(Game.Time), null, 10.11f);
-                hook.Invoke(bot, null);
+            hook.Invoke(bot, null);
+            hook.Invoke(bot, null); // same timestamp: must be suppressed
+            Set(typeof(Game), nameof(Game.Time), null, 10.11f);
+            hook.Invoke(bot, null);
 
-                // Telemetry remains open for writing. Windows requires the reader to share that
-                // access too, even though the writer itself allows concurrent readers.
-                using var reader = new StreamReader(new FileStream(path, FileMode.Open,
-                    FileAccess.Read, FileShare.ReadWrite));
-                string[] lines = reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                Check(lines.Length == 2, $"10 Hz telemetry wrote {lines.Length} lines for 0.11 s");
+            // Telemetry remains open for writing. Windows requires the reader to share that
+            // access too, even though the writer itself allows concurrent readers.
+            using var reader = new StreamReader(new FileStream(path, FileMode.Open,
+                FileAccess.Read, FileShare.ReadWrite));
+            string[] lines = reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Check(lines.Length == 2, $"10 Hz telemetry wrote {lines.Length} lines for 0.11 s");
 
-                using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
-                var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 5, "telemetry schema missing");
-                Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
-                Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
-                    "telemetry did not capture actual sanitized controller output");
-                Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
-                    "telemetry did not capture defensive action target");
-                Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
-                    "telemetry omitted possession state");
-                Check(root.GetProperty("car_state").TryGetProperty("forward", out _),
-                    "telemetry omitted car orientation");
-                Check(root.GetProperty("tactics").TryGetProperty("raw_can_challenge", out _),
-                    "telemetry omitted raw challenge state");
-                Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
-                    "telemetry omitted committed challenge state");
-                Check(root.GetProperty("action_detail").GetProperty("allow_dodges").GetBoolean(),
-                    "telemetry omitted defensive fast-travel state");
-                Check(root.GetProperty("action_detail").TryGetProperty("mobility_action", out _),
-                    "telemetry omitted defensive mobility subaction");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", oldHz);
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
-            }
+            using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
+            var root = first.RootElement;
+            Check(root.GetProperty("schema").GetInt32() == 5, "telemetry schema missing");
+            Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
+            Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
+                "telemetry did not capture actual sanitized controller output");
+            Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
+                "telemetry did not capture defensive action target");
+            Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
+                "telemetry omitted possession state");
+            Check(root.GetProperty("car_state").TryGetProperty("forward", out _),
+                "telemetry omitted car orientation");
+            Check(root.GetProperty("tactics").TryGetProperty("raw_can_challenge", out _),
+                "telemetry omitted raw challenge state");
+            Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
+                "telemetry omitted committed challenge state");
+            Check(root.GetProperty("action_detail").GetProperty("allow_dodges").GetBoolean(),
+                "telemetry omitted defensive fast-travel state");
+            Check(root.GetProperty("action_detail").TryGetProperty("mobility_action", out _),
+                "telemetry omitted defensive mobility subaction");
         });
 
         test("telemetry: opening a file prunes the oldest telemetry beyond 256 MB", () =>
         {
-            string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
-            string? oldFile = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
             string directory = Path.Combine(Path.GetTempPath(), $"stardust-prune-{Guid.NewGuid():N}");
             Directory.CreateDirectory(directory);
             try
@@ -913,10 +899,11 @@ internal static class DefenseRegression
                 string other = Path.Combine(directory, "notes.jsonl");
                 File.WriteAllText(other, "{}");
 
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE",
-                    Path.Combine(directory, "stardust-telemetry-current.jsonl"));
-                World(new Vec3(0, 0, 100), CarAt(0, -3000));
+                var options = StardustOptions.FromArguments(new[]
+                {
+                    "--telemetry", $"--telemetry-file={Path.Combine(directory, "stardust-telemetry-current.jsonl")}",
+                });
+                World(options, new Vec3(0, 0, 100), CarAt(0, -3000));
 
                 Check(!File.Exists(matches[0]), "the oldest match beyond the budget was kept");
                 Check(File.Exists(matches[1]) && File.Exists(matches[2]),
@@ -925,8 +912,6 @@ internal static class DefenseRegression
             }
             finally
             {
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
                 try { Directory.Delete(directory, true); }
                 catch (IOException) { } // the bot's telemetry file stays open until exit
             }

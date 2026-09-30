@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace Stardust.Simulator.Match;
 
 /// <summary>
-/// Reads the decision transitions a bot prints with <c>STARDUST_TRACE=1</c>
+/// Reads the decision transitions a bot prints with <c>--trace</c>
 /// ("stardust t=12.345 car=0 decision=defend / block rank=...") from its seat log, and attributes
 /// a series' goals to the decision the conceding car was running just before each one.
 /// </summary>

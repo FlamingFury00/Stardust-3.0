@@ -137,7 +137,7 @@ switch (command)
                     Validates the physics models against RocketSim.
 
               Any command takes --set Type.Field=value,... to override tuning fields of the in-process
-              bot and planners (bots started as processes take STARDUST_TUNE instead).
+              bot and planners (bots started as processes take --tune=... in their run command instead).
             """);
         return command == "help" ? 0 : 1;
 }

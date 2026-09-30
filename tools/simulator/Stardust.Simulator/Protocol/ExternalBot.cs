@@ -208,10 +208,6 @@ public static class BotLauncher
                 var start = request.Build.CreateStartInfo();
                 start.Environment["RLBOT_AGENT_ID"] = agentId;
                 start.Environment["RLBOT_SERVER_PORT"] = port.ToString();
-                // Production builds log telemetry to files by default; keep simulated series quiet
-                // unless the caller explicitly asked for telemetry.
-                if (Environment.GetEnvironmentVariable("STARDUST_TELEMETRY") == null)
-                    start.Environment["STARDUST_TELEMETRY"] = "0";
 
                 StreamWriter? log = null;
                 if (logDirectory != null)
