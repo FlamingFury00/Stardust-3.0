@@ -270,13 +270,13 @@ namespace Bot
                 if (!emergency)
                 {
                     Vec3 counterReference = Defense.ReferenceBall(
-                        Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
+                        Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time, Situation.TeamCount <= 1);
                     bool counterGoalSide = Defense.IsGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
-                            MathF.Min(pressureTime, 0.35f), Ball.Velocity)
+                            MathF.Min(pressureTime, 0.35f), Ball.Velocity, solo: Situation.TeamCount <= 1)
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
@@ -484,13 +484,14 @@ namespace Bot
                     : DefensiveRole.Support;
 
             Vec3 reference = Defense.ReferenceBall(Ball.Prediction, Ball.Location,
-                OurGoal.Location, Game.Time);
+                OurGoal.Location, Game.Time, Situation.TeamCount <= 1);
             bool goalSide = Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location, 20f);
             bool recoveringGoalSide = !goalSide;
 
             Vec3 rawSupport = recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
-                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime, Ball.Velocity);
+                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime, Ball.Velocity,
+                    solo: Situation.TeamCount <= 1);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
