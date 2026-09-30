@@ -13,9 +13,9 @@ it (see [Limits](#limits)).
 
 `match` reports gained five pressure measures, each per team while the other team has the ball. A
 team has the ball for 2.5 s after its latest touch while one of its cars is within 650 uu of it, and
-keeps it until they drift beyond 800 uu (the 800 uu exit radius was added late: every series in
-this document except the ones marked otherwise ran with the single 650 uu radius, which counts a
-ball hovering at the edge as several short possessions):
+keeps it until they drift beyond 800 uu. The 800 uu exit radius was added before the second review:
+the possession measures quoted for the series played earlier ran with the single 650 uu radius,
+which counts a ball hovering at the edge as several short possessions.
 
 | Measure | Reads as |
 |---|---|
@@ -113,7 +113,7 @@ drill says; the drill has no teammate and scores attacks, not goals and countera
 margins (`SoloTieDeficit` 0.4, `ContinueDeficit` 0.6/0.5, both) saved 145, 131 and 146 against 151
 on an earlier build of the same defaults, and 136, 130 and 143 against 131 on the earlier build:
 not resolvable, in line with the earlier entries of [STARDUST_3.md](STARDUST_3.md). They are not
-adopted.
+adopted. The shipped defence of a lone defender is the last row of the table, 69 %.
 
 ### Team series against the previous build
 
@@ -179,7 +179,9 @@ there; free space is a measure, not a result.
 
 Round robin, four games per pair (two per side), 180 s games, Bradley–Terry Elo. Only four games
 per pair: the ratings are ordered, not separated, and a gap under about 100 Elo is not a result.
-The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto, Necto and NoobBlack in 1v1.
+The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto, Necto and NoobBlack in
+1v1. The 2v2 and 3v3 rounds were played before the lone defender's defence was separated out, which
+does not change how a team plays; the 1v1 round is the shipped build.
 
 | 3v3 | Elo | W–L | Goal difference per game | against the previous build |
 |---|---|---|---|---|
@@ -273,8 +275,8 @@ benefit at one reach and fails at another was removed rather than kept.
 - Nexto still beats Stardust in every completed game, and the defence drill still concedes a
   quarter of Nexto's attacks and clears almost none. This change narrows how much room and time the
   previous build gave, in the builds it is measured against, and nothing more.
-- 1v1 is level with the previous build (29–19 and 25–23) and about +0.5 to +0.7 goals a game ahead
-  of PartyCannon. The large measured gains are in 2v2 and 3v3. The midfield press and the 0.6 s
+- 1v1 is level with the previous build (29–19, 25–23 and 21–27) and about +0.5 to +1.8 goals a game
+  ahead of PartyCannon (32–16, 32–16 and, over 180 s games, 33–15). The large measured gains are in 2v2 and 3v3. The midfield press and the 0.6 s
   lookahead, which carry the team results, are off for a lone defender because they lost 1v1 series;
   the 2v2 series at 0.2 s (10–14) says the lookahead matters in teams.
 - The covered midfield margin (−0.35 s) was adopted on 21–3 against 18–6 in 3v3, about 1.4 standard
@@ -307,5 +309,6 @@ $SIM match --a <build> --b <previous build> --size 3 --games 24 --seconds 120 --
 `--set Type.Field=value` (or `STARDUST_TUNE` for a bot process) sets any variant that still exists:
 `Defense.ReferenceLead`, `Defense.SoloReferenceLead`, `Defense.NeutralGapScale`,
 `Defense.NeutralCoveredMargin`, `BoostEconomy.SecondsPerBoost`, `Stardust.DemolitionRuns`. A lone
-defender ignores `NeutralGapScale`; to press it, edit `solo` in `Defense.ShadowTarget`. The kickoff pad run and the eager boost
-switches were removed with their experiments.
+defender ignores `NeutralGapScale` (edit `solo` in `Defense.ShadowTarget` to press it) and uses
+`SoloReferenceLead`. The kickoff pad run and the eager boost switches were removed with their
+experiments.
