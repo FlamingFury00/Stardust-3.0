@@ -261,9 +261,14 @@ namespace Bot
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
                     bool counterGoalSide = Defense.IsGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
+                    // With a teammate first to the ball, the team's last car covers deeper instead of
+                    // shadowing the same line as the first man.
+                    DefensiveRole counterRole = CounterAnchor && Situation.TeamCount > 1 &&
+                        Situation.LastBack && Situation.FirstMan != Index
+                        ? DefensiveRole.Anchor : DefensiveRole.Shadow;
                     Vec3 route = Defense.HoldLastLine(counterGoalSide
                         ? Defense.ShadowTarget(
-                            counterReference, OurGoal.Location, DefensiveRole.Shadow,
+                            counterReference, OurGoal.Location, counterRole,
                             MathF.Min(pressureTime, 0.35f))
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location),
                         Situation, OurGoal.Location);
@@ -542,6 +547,11 @@ namespace Bot
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
 
+        /// <summary>
+        /// On a counter, the team's last car anchors deeper while a teammate is first to the ball, rather
+        /// than every car shadowing the same line near it (switch for A/B).
+        /// </summary>
+        public static bool CounterAnchor = false;
         /// <summary>Quality a planned clearance needs to be taken ahead of a block.</summary>
         public static float ComfortableClearQuality = 0.2f;
         /// <summary>Spare time a planned clearance needs to be taken ahead of a block.</summary>
