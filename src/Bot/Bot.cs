@@ -16,7 +16,7 @@ namespace Bot
         public string Decision { get; private set; } = "startup";
         public bool Shooting { get; set; }
 
-        /// <summary>Independent policy ablations; use STARDUST_TUNE for paired simulator experiments.</summary>
+        /// <summary>Independent policy ablations; set them with --tune for paired simulator experiments.</summary>
         public static bool CarrierChallenges = true;
         public static bool FirstManShadow = true;
         /// <summary>Seconds between full re-plans while calm, and while an opponent or the ball is about to strike.</summary>
