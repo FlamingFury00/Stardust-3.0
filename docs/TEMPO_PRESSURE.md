@@ -149,6 +149,36 @@ against our 21 %, yet the score stays close (goals per 5 minutes 5.1 against 4.6
 against 1.9). A 48-game series resolves about ±0.35 goals per game, so 1v1 is level: the press
 takes away part of the free space at no measurable cost.
 
+### Tournament of the final code
+
+Round robin, four games per pair (two per side), 180 s games, Bradley–Terry Elo. Only four games
+per pair: the ratings are ordered, not separated, and a gap under about 100 Elo is not a result.
+The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto and Necto in 1v1.
+
+| 3v3 | Elo | W–L | Goal difference per game | against the previous build |
+|---|---|---|---|---|
+| PartyCannon | 1899 | 12–1 | +3.31 | +2.67 |
+| **Stardust** | **1759** | 12–3 | +2.60 | **+3.25** |
+| Phoenix | 1478 | 7–8 | −1.13 | −0.50 |
+| Previous build | 1422 | 6–9 | −0.20 | |
+| Beast | 942 | 0–16 | −3.88 | −4.00 |
+
+| 2v2 | Elo | W–L | Goal difference per game | against the previous build |
+|---|---|---|---|---|
+| PartyCannon | 1826 | 13–3 | +3.25 | +1.50 |
+| Previous build | 1772 | 12–4 | +2.50 | |
+| **Stardust** | **1720** | 11–5 | +2.31 | **+0.75** |
+| Phoenix | 1283 | 4–12 | −2.00 | −4.50 |
+| Beast | 898 | 0–16 | −6.06 | −7.75 |
+
+In 3v3 Stardust is second, 337 Elo above the previous build, and beats it by 3.25 goals a game;
+PartyCannon is ahead (Stardust −0.33 against it, on one win, two losses and a game lost to
+PartyCannon's dropped connection). In 2v2 the previous build and Stardust are level (Stardust
+ahead head to head by 0.75 goals, 52 Elo behind in the table, four games each), which the 24-game
+paired series above resolves better: 17–7. PartyCannon leads in both. The 3v3 round robin
+excluded three games in which PartyCannon's connection timed out, a failure that belongs to that
+bot.
+
 ### Boost
 
 Boost per player, our build against the previous build:
