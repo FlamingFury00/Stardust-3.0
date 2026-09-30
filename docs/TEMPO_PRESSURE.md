@@ -121,13 +121,15 @@ adopted.
 | Final code before the second review, near-net covered margin everywhere (−0.12 s) | 18–6 (+0.96) | 18–6 (+1.00) |
 | The same with the shipped midfield covered margin (−0.35 s) | 21–3 (+1.63) | 19–5 (+1.04) |
 | **Final code** after the second review (pad tie-break, hysteresis floor), same seeds | **18–6 (+0.83)** | **17–7 (+0.92)** |
+| Final code, a second set of 3v3 seeds (8600–8603) | 18–6 (+1.58) | |
+| Final code, both 3v3 seed sets pooled (48 games) | **36–12 (+1.21)** | |
 
-The final code's 3v3 series is 0.8 goals per game below the 21–3 series on the same seeds
+The final code's first 3v3 series is 0.8 goals per game below the 21–3 series on the same seeds
 (about 1.6 standard errors of the difference); the fixes between the two touch only which pad a
 car takes, so the difference is most likely noise between two runs of non-deterministic bot
-processes, and a second 3v3 seed on the final code is recorded below. In the final code's 3v3
-series the opponent had the ball 21.5 % of the time against 26.6 %, our cars spent 25.7 % of the
-time in their third against 18.5 %, shots were 3.95 against 2.10 per player per 5 minutes, and the
+processes, and the second seed set gives 18–6 again. In the final code's first 3v3 series the
+opponent had the ball 21.5 % of the time against 26.6 %, our cars spent 25.7 % of the time in
+their third against 18.5 %, shots were 3.95 against 2.10 per player per 5 minutes, and the
 opponent's free space fell from 46.3 % to 39.6 % (gap to the ball 909 uu against 1022 uu). In 2v2
 the free space fell from 53.7 % to 44.3 % (983 uu against 1062 uu).
 
