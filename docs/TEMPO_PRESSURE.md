@@ -172,8 +172,8 @@ The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto and
 | Beast | 898 | 0–16 | −6.06 | −7.75 |
 
 In 3v3 Stardust is second, 337 Elo above the previous build, and beats it by 3.25 goals a game;
-PartyCannon is ahead (Stardust −0.33 against it, on one win, two losses and a game lost to
-PartyCannon's dropped connection). In 2v2 the previous build and Stardust are level (Stardust
+PartyCannon is ahead (Stardust −0.33 goals a game against it, one win and two losses; a fourth
+game was excluded when PartyCannon's connection timed out with Stardust ahead 2–1). In 2v2 the previous build and Stardust are level (Stardust
 ahead head to head by 0.75 goals, 52 Elo behind in the table, four games each), which the 24-game
 paired series above resolves better: 17–7. PartyCannon leads in both. The 3v3 round robin
 excluded three games in which PartyCannon's connection timed out, a failure that belongs to that
