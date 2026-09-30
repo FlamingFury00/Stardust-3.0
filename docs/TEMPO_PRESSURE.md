@@ -119,12 +119,17 @@ adopted.
 | Earlier build: boost economy, one anchor, kickoff pad run at 2800 uu, lookahead 0.2 s, no press | 15–9 (+0.42 goals per game) | |
 | The same with midfield press 0.75 and covered margin −0.35 s | 23–1 (+1.88) | |
 | Final code before the second review, near-net covered margin everywhere (−0.12 s) | 18–6 (+0.96) | 18–6 (+1.00) |
-| The same with the shipped midfield covered margin (−0.35 s) | **21–3 (+1.63)** | **19–5 (+1.04)** |
+| The same with the shipped midfield covered margin (−0.35 s) | 21–3 (+1.63) | 19–5 (+1.04) |
+| **Final code** after the second review (pad tie-break, hysteresis floor), same seeds | **18–6 (+0.83)** | **17–7 (+0.92)** |
 
-In the 21–3 series the opponent had the ball 19.2 % of the time against 24.8 %, our cars spent
-27.1 % of the time in their third against 16.6 %, shots were 4.22 against 1.58 per player per
-5 minutes, and the opponent's free space fell from 48.7 % to 39.1 % (gap to the ball 886 uu against
-1071 uu). The series on the code after the second review are being re-run.
+The final code's 3v3 series is 0.8 goals per game below the 21–3 series on the same seeds
+(about 1.6 standard errors of the difference); the fixes between the two touch only which pad a
+car takes, so the difference is most likely noise between two runs of non-deterministic bot
+processes, and a second 3v3 seed on the final code is recorded below. In the final code's 3v3
+series the opponent had the ball 21.5 % of the time against 26.6 %, our cars spent 25.7 % of the
+time in their third against 18.5 %, shots were 3.95 against 2.10 per player per 5 minutes, and the
+opponent's free space fell from 46.3 % to 39.6 % (gap to the ball 909 uu against 1022 uu). In 2v2
+the free space fell from 53.7 % to 44.3 % (983 uu against 1062 uu).
 
 ### 1v1 series
 
