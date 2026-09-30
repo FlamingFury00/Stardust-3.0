@@ -68,7 +68,7 @@ internal static class DefenseRegression
 
         test("last-man line: only the team's last car is held behind it, and only when enabled", () =>
         {
-            float previous = Defense.LastManLine;
+            float previous = Defense.LastManLine, previousPads = Defense.LastManPadLine;
             try
             {
                 var upfield = new Vec3(300, 1200, 17);   // in the orange half, blue defends -y
@@ -92,13 +92,24 @@ internal static class DefenseRegression
                 var orangeGoal = new Vec3(0, 5120, 0);
                 Vec3 orangeHeld = Defense.HoldLastLine(new Vec3(0, -1500, 17), last, orangeGoal);
                 Check(orangeHeld.y == 0f, $"orange last car not held at midfield: {orangeHeld}");
-                Check(Defense.BeyondLastLine(new Vec3(0, -1500, 70), last, orangeGoal) &&
-                      !Defense.BeyondLastLine(new Vec3(0, 1500, 70), last, orangeGoal),
+
+                // Pads have their own line: the target line alone leaves them alone, and the reverse.
+                var upfieldPad = new Vec3(0, -1500, 70);
+                Check(!Defense.PadPastLastLine(upfieldPad, last, orangeGoal), "the target line held a pad");
+                Defense.LastManLine = float.NegativeInfinity;
+                Defense.LastManPadLine = 0f;
+                Check(Defense.HoldLastLine(upfield, last, blueGoal).Equals(upfield), "the pad line moved a target");
+                Check(Defense.PadPastLastLine(upfieldPad, last, orangeGoal) &&
+                      !Defense.PadPastLastLine(new Vec3(0, 1500, 70), last, orangeGoal),
                     "boost pads past the line are not recognised");
+                Check(!Defense.PadPastLastLine(upfieldPad, ahead, orangeGoal) &&
+                      !Defense.PadPastLastLine(upfieldPad, solo, orangeGoal),
+                    "a pad was held for a car that is not the team's last");
             }
             finally
             {
                 Defense.LastManLine = previous;
+                Defense.LastManPadLine = previousPads;
             }
         });
 

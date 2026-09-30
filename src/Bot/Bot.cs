@@ -344,7 +344,7 @@ namespace Bot
             if (Action is GetBoost refill)
             {
                 if (!Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure) ||
-                    (refill.ChosenBoost != null && Defense.BeyondLastLine(refill.ChosenBoost.Location, Situation, OurGoal.Location)))
+                    (refill.ChosenBoost != null && Defense.PadPastLastLine(refill.ChosenBoost.Location, Situation, OurGoal.Location)))
                     Action = null;
                 else if (!refill.Finished)
                 {
@@ -616,7 +616,7 @@ namespace Bot
 
             Boost pad = RoutePlanner.SelectBoost(Me, Field.Boosts, Ball.Location,
                 destination, Team, Situation.OpponentEta);
-            if (pad == null || Defense.BeyondLastLine(pad.Location, Situation, OurGoal.Location))
+            if (pad == null || Defense.PadPastLastLine(pad.Location, Situation, OurGoal.Location))
                 return false;
 
             Action = new GetBoost(Me, pad.Index, interruptible: true);

@@ -135,17 +135,23 @@ namespace Bot
         /// Negative infinity disables it.
         /// </summary>
         public static float LastManLine = float.NegativeInfinity;
+        /// <summary>
+        /// Depth behind which the team's last car takes boost pads while a teammate is ahead of it; a
+        /// refuel past it is skipped or abandoned. Negative infinity disables it.
+        /// </summary>
+        public static float LastManPadLine = float.NegativeInfinity;
 
-        /// <summary>Whether <paramref name="point"/> is past <see cref="LastManLine"/> for a car that must hold it.</summary>
-        public static bool BeyondLastLine(Vec3 point, TacticalFrame frame, Vec3 goal) =>
-            HoldsLastLine(frame) && point.y * Side(goal) < LastManLine;
+        /// <summary>Whether the team's last car must leave the pad at <paramref name="pad"/> for now.</summary>
+        public static bool PadPastLastLine(Vec3 pad, TacticalFrame frame, Vec3 goal) =>
+            PastLine(pad, LastManPadLine, frame, goal);
 
         /// <summary><paramref name="target"/> pulled back to <see cref="LastManLine"/> for the team's last car.</summary>
         public static Vec3 HoldLastLine(Vec3 target, TacticalFrame frame, Vec3 goal) =>
-            BeyondLastLine(target, frame, goal) ? new Vec3(target.x, Side(goal) * LastManLine, target.z) : target;
+            PastLine(target, LastManLine, frame, goal) ? new Vec3(target.x, Side(goal) * LastManLine, target.z) : target;
 
-        private static bool HoldsLastLine(TacticalFrame frame) =>
-            float.IsFinite(LastManLine) && frame != null && frame.TeamCount > 1 && frame.LastBack;
+        private static bool PastLine(Vec3 point, float line, TacticalFrame frame, Vec3 goal) =>
+            float.IsFinite(line) && frame != null && frame.TeamCount > 1 && frame.LastBack &&
+            point.y * Side(goal) < line;
         /// <summary>Keep a first defender's field-side corner shadow outside the goal-mouth anchor bounds.</summary>
         public static bool WideShadow = true;
 
