@@ -180,6 +180,8 @@ namespace Bot
         /// <summary>A run within a moment of contact is not called off: a bump one tick early demolishes nothing.</summary>
         public bool Interruptible => !imminent;
         public int TargetIndex => targetIndex;
+        /// <summary>How the run ended, for the trace: demolished, expired, lost or abandoned.</summary>
+        public string Outcome { get; private set; } = "running";
         /// <summary>Time to contact (s) from which the run can no longer be interrupted.</summary>
         public static float CommitTime = 0.5f;
         /// <summary>How long (s) a run without a valid plan is kept before the car gives up.</summary>
@@ -201,6 +203,10 @@ namespace Bot
                 Game.Time - started > MaxDuration)
             {
                 Finished = true;
+                Outcome = target == null ? "target gone"
+                    : target.IsDemolished ? "demolished"
+                    : car.IsDemolished ? "car demolished"
+                    : !car.IsGrounded ? "car airborne" : "expired";
                 return;
             }
 
@@ -224,6 +230,7 @@ namespace Bot
                 if (!closingIn || Game.Time - lostSince > Patience)
                 {
                     Finished = true;
+                    Outcome = !closingIn ? "target escaped" : "plan lost";
                     return;
                 }
                 float contact = MathF.Max(0f, distance - Demolition.ContactReach) / closing;

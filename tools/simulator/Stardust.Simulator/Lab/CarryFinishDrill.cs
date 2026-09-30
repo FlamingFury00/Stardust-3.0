@@ -39,7 +39,7 @@ public sealed class CarryFinishDrill : RoofDrill
         Subject.Director = bot =>
         {
             if (installed) return;
-            bot.Action = new GroundDribble();
+            bot.Action = new GroundDribble(allowAirDribble: false);
             installed = true;
         };
     }

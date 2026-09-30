@@ -93,7 +93,7 @@ public sealed class CarryDrill : RoofDrill
         Subject.Director = bot =>
         {
             if (installed) return;
-            bot.Action = new GroundDribble();
+            bot.Action = new GroundDribble(allowAirDribble: false);
             installed = true;
         };
     }
@@ -166,7 +166,7 @@ public sealed class FlickDrill : RoofDrill
         {
             if (!installed)
             {
-                bot.Action = new GroundDribble(carry);
+                bot.Action = new GroundDribble(carry, allowAirDribble: false);
                 installed = true;
                 started = Game.Time;
                 return;
@@ -307,7 +307,7 @@ public sealed class CatchDrill : RoofDrill
             }
             // The catch hands over to the carry itself; this only covers a catch that ended on the roof.
             if (bot.Action == null && GroundDribble.CanStart(bot.Me, RedUtils.Ball.MainBall, 1))
-                bot.Action = new GroundDribble();
+                bot.Action = new GroundDribble(allowAirDribble: false);
         };
     }
 
@@ -379,7 +379,7 @@ public sealed class PickupDrill : RoofDrill
         Subject.Director = bot =>
         {
             if (bot.Action == null && GroundDribble.CanStart(bot.Me, RedUtils.Ball.MainBall, 1))
-                bot.Action = new GroundDribble();
+                bot.Action = new GroundDribble(allowAirDribble: false);
         };
     }
 

@@ -726,7 +726,37 @@ namespace Bot
             Situation.PressureTime = pressureTime;
         }
 
-        protected override void OnOutputReady() => telemetry.Sample(this);
+        protected override void OnOutputReady()
+        {
+            telemetry.Sample(this);
+            TraceAction();
+        }
+
+        private Type tracedAction;
+        private DemoAttack tracedRun;
+
+        /// <summary>With <c>--trace</c>, prints each change of the running action: the mechanics switch inside one decision.</summary>
+        private void TraceAction()
+        {
+            if (!Options.Trace)
+                return;
+
+            if (tracedRun != null && !ReferenceEquals(Action, tracedRun))
+            {
+                Console.WriteLine(FormattableString.Invariant(
+                    $"stardust t={Game.Time:F3} car={Index} demolition_run={tracedRun.Outcome}"));
+                tracedRun = null;
+            }
+
+            Type running = Action?.GetType();
+            if (running == tracedAction)
+                return;
+
+            tracedAction = running;
+            tracedRun = Action as DemoAttack;
+            Console.WriteLine(FormattableString.Invariant(
+                $"stardust t={Game.Time:F3} car={Index} action={running?.Name ?? "-"}"));
+        }
 
         // Retained for compatibility with the original Shadow action.
         public bool IsBack() => CanDefend(Me, OurGoal.Location) || Situation.FirstMan == Index;
