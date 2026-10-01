@@ -114,16 +114,19 @@ in a goal. Each cell is 200 independent attacks, so a pooled row of 400 resolves
 
 | Defence | seed 7300 | seed 7500 | pooled |
 |---|---|---|---|
-| Lookahead 0.6 s, press 0.75, covered margin −0.35 s, for a lone defender too (shipped) | 138 | 133 | 271 / 400 = 68 % |
-| The same with the lone defender keeping the full gap and a 0.2 s lookahead | 134 | 120 | 254 / 400 = 64 % |
+| Lookahead 0.6 s, press 0.75, covered margin −0.35 s, for a lone defender too (shipped) | 134 | 120 | 254 / 400 = 64 % |
+| The same with the lone defender keeping the full gap and a 0.2 s lookahead | 138 | 133 | 271 / 400 = 68 % |
 | Previous defence: lookahead 0.2 s, press 1.0, margin −0.12 s (an earlier build, 200 attacks per seed) | 143 | 133 | 276 / 400 = 69 % |
 
-The shipped defence saves 17 more attacks of 400 than the lone defender that keeps its room (+4
-points, about 1.3 standard errors of the difference), and the same as the previous defence on an
-earlier build. The drill cannot separate the three; it does say that nothing here makes Nexto's
-attacks easier to defend. An earlier sweep gave a larger lookahead effect (0.2 s: 103 of 160 and 131
-of 200; 0.5 s: 117 and 143; 0.7 s: 117 and 139; 1.0 s: 130 and 1.4 s: 117 of 200 on seed 7300),
-which is where 0.6 s comes from. Challenge margins (`SoloTieDeficit` 0.4, `ContinueDeficit`
+The shipped defence saves 17 fewer attacks of 400 than the lone defender that keeps its room (−4
+points, about 1.3 standard errors of the difference) and 22 fewer than the previous defence on an
+earlier build. The drill cannot separate the three, and it leans against the press for a lone
+defender; the match series, which the drill does not model (counterattacks, the rest of the pitch),
+lean the other way (see [1v1 series](#1v1-series)).
+
+An earlier sweep on an earlier build gave a larger lookahead effect (0.2 s: 103 of 160 and 131 of
+200; 0.5 s: 117 and 143; 0.7 s: 117 and 139; 1.0 s: 130 and 1.4 s: 117 of 200 on seed 7300), which is
+where 0.6 s comes from. Challenge margins (`SoloTieDeficit` 0.4, `ContinueDeficit`
 0.6/0.5, both) saved 145, 131 and 146 against 151 on an earlier build, and 136, 130 and 143 against
 131 on another: not resolvable. They are not adopted.
 
@@ -282,8 +285,8 @@ so only the large ones mean anything:
 
 ## Limits
 
-- Nexto still beats Stardust in every completed game, and the defence drill still concedes a third
-  of Nexto's attacks and clears almost none (the ball is back in our half six seconds after the
+- Nexto still beats Stardust in every completed game, and the defence drill still concedes more
+  than a third of Nexto's attacks and clears almost none (the ball is back in our half six seconds after the
   attack, because Nexto keeps it there). This change narrows how much room and time the previous
   build gave, in the builds it is measured against, and nothing more.
 - The measured gain is in 3v3 (35–13 against the previous build, +1.23 goals a game). 2v2 and 1v1
