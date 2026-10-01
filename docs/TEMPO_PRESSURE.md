@@ -251,13 +251,25 @@ benefit at one reach and fails at another was removed rather than kept.
 
 ## Tried and rejected
 
+Head to head against the shipped build, 1v1, 96 games each on independent seeds (21100–21400), the
+variant first. None beats the shipped values; each is within about one standard error of level or
+worse.
+
+| Change (`--tune`) | Record | Goals per game | What moved |
+|---|---|---|---|
+| Midfield press 0.55 instead of 0.75 (`Defense.NeutralGapScale=0.55`) | 51–45 | +0.09 | free space 31 % against 42.5 %, shots 5.8 against 5.1 per 5 minutes |
+| Wider carrier reach, 2200/3000 uu within 1.5/2.0 s (`Defense.NeutralCarrierRange` and the three others) | 52–44 | +0.18 | free space 41.9 % against 43.0 % |
+| More eager demolition runs (`Demolition.MinValue=0`, `MinBoost=12`, `MaxRange=3400`) | 50–45 (1 draw) | +0.07 | demolitions 0.21 against 0.18 per player per 5 minutes: runs need a supersonic approach, which needs boost the car rarely has |
+| More eager boost routing (`BoostEconomy.SecondsPerBoost=0.06`, `ReserveTime=0.25`, `MaxSlack=4`) | 46–50 | −0.36 | |
+
+Earlier experiments, each a defence drill or a 24-game series that resolves about ±0.5 goals a game,
+so only the large ones mean anything:
+
 | Change | Measure | Result |
 |---|---|---|
 | Boost whenever the target speed is not reached, in `Drive` and `DefensiveDrive` | defence drill 120 attacks; 24-game series against the previous build | 68 vs 75 saved; 5–18–1 (−1.25). The `Drive` switch alone: 12–12 against the candidate without it. Removed |
 | `SecondsPerBoost` 0.08 with free detour 0.2 s, or 0.2 with 0.3 s (default 0.03 and 0.08 s) | 24-game 1v1 series | 8–16 (−1.21) and 12–12 |
 | `ReserveTime` 0, `DepthReserve` 0.1, `SecondsPerBoost` 0.1, free detour 0.5 s, `MaxSlack` 4 s | 24-game 1v1 series | 11–13 (−0.46) |
-| Shadow gap ×0.65 (floor 380 uu) with carrier reach 1300/2000 uu at every depth | 1v1 series | free space 30 %, 12–12 against the previous build (+0.17) and 9–15 against PartyCannon (−0.46) |
-| Midfield press 0.55 instead of 0.75 | 1v1 series against the previous build | 12–12 (24 games), then 20–28 (−0.42, 48 games) |
 | Planning every 0.06 s instead of 0.12 s | defence drill 160 | 108 vs 103: inside noise, twice the planning cost |
 | Wider carrier reach in midfield (2200 uu, 1.4 s) | defence drill 160 | 105 vs 103 |
 
