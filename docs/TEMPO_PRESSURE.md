@@ -5,9 +5,20 @@ much space, it did not commit to challenge the opponent, and it waited for the o
 before responding. The telemetry files the report referred to were not supplied, so the symptoms
 were first turned into simulator measurements and the causes were found in the code. The result is
 a measured improvement to the previous build (the base of the pull request, `b515ee5`) in the
-RocketSim simulator, above all in 2v2 and 3v3. It is not evidence that Stardust matches
-professional human players: no professional replay reference was available, and Nexto still beats
-it (see [Limits](#limits)).
+RocketSim simulator in 3v3; in 1v1 and 2v2 it is level with it. It is not evidence that Stardust
+matches professional human players: no professional replay reference was available, and Nexto still
+beats it (see [Limits](#limits)).
+
+**How much to trust the numbers.** The results below are paired, side-swapped series on independent
+seeds, played on the build in this pull request after the last code change that affects play. A
+1v1 game's goal difference has a standard deviation of about 2.4 goals, so a 96-game series
+resolves a difference to about ±0.25 goals a game (one standard error) and a 48-game team series to
+about ±0.35; most differences between builds in 1v1 are smaller than that and are reported as level.
+An earlier version of this document quoted 24- and 48-game series from a runner that advanced the
+seed by one per chunk while each chunk played several seeds: a "48-game" 1v1 series held 18 distinct
+games and a "24-game" team series 12. Those series are not used here; the runner is fixed, and the
+conclusions they supported were re-tested on fresh seeds (one of them, that the press loses in 1v1,
+reversed). The drills (200 independent episodes each) are the firmer evidence for anything smaller.
 
 ## What was measured first
 
@@ -22,8 +33,8 @@ which counts a ball hovering at the edge as several short possessions.
 | Opponent has the ball, % of time | how long a team defends |
 | Gap to ball while they have it (uu) | how far the nearest car of the defending team stands |
 | Free space (nobody within 1000 uu) % | the share of the other team's possession time with no defender within 1000 uu: the "leaves the enemy too much space" symptom |
-| Possessions contested % | a defender within 400 uu in the first 1.5 s of a possession |
-| Response to a possession (s) | how long until a defender is closing on the ball at 600 uu/s or more |
+| Possessions contested % | a defender touches the ball, or comes within 400 uu of it, in the first 1.5 s of a possession |
+| Response to a possession (s) | how long until a defender is closing on the ball at 600 uu/s or more (or is within 400 uu), capped at 2 s; 0 when a defender is already within 400 uu when the possession starts |
 
 The previous build's own numbers, in the series where it was the opponent of a candidate: free
 space **49–55 %** in 1v1 (47–51 % in 3v3, 54–57 % in 2v2), the nearest defender **1010–1110 uu**
@@ -67,121 +78,112 @@ first man goes for the ball, the deepest of the others anchors the net, and the 
 support. The split is a pure function with tests for two and three cars. For two cars it matches
 the old rule; for three the old rule could elect two anchors, and the new one elects exactly one.
 
-**Zone- and speed-aware pressing** (`src/Bot/Defense.cs`), for teams. Near our net the first man's
-gap, carrier reach, contact horizon and covered-race margin keep their previous values. From their
-half to our third they fade toward a pressing value with `Caution(depth)`: the gap is 0.75 of the
-old one, a carrier is met from 1500 uu (2200 uu when covered) within 1.0 s (1.5 s), and a covered
-first man commits to a 50/50 he is up to 0.35 s late for (0.12 s near the net). The shadow gap also
-stops closing when the ball comes at our goal faster than 1000 uu/s and is fully open at
-1700 uu/s; the challenge gates use the depth only. A defender in a team reads the ball 0.6 s ahead
-when it is heading for our net (0.2 s before). **A lone defender keeps the previous behaviour**:
-the full gap at every depth and the 0.2 s lookahead (`solo` in `ShadowTarget` and `ReferenceBall`),
-because nobody covers its miss and the 1v1 series below lose to both changes. It does use the wider
-midfield carrier reach.
+**Zone- and speed-aware pressing** (`src/Bot/Defense.cs`). Near our net the first man's gap, carrier
+reach, contact horizon and covered-race margin keep their previous values. From their half to our
+third they fade toward a pressing value with `Caution(depth)`: the gap is 0.75 of the old one, a
+carrier is met from 1500 uu (2200 uu when covered) within 1.0 s (1.5 s), and a covered first man
+commits to a 50/50 he is up to 0.35 s late for (0.12 s near the net). The shadow gap also stops
+closing when the ball comes at our goal faster than 1000 uu/s and is fully open at 1700 uu/s; the
+challenge gates use the depth only. A defender reads the ball 0.6 s ahead when it is heading for our
+net (0.2 s before). **A lone defender does the same.** An earlier version kept the previous full gap
+and 0.2 s lookahead for a lone defender, because a 1v1 series at the time had the press losing; that
+series repeated seeds. On independent seeds the pressing lone defender beat the one that kept its
+room head to head (see [1v1 series](#1v1-series)), and the special case is removed. A lone
+defender's challenge margins (`SoloTieDeficit`, `SoloPressureMargin`, `SoloMargin`) are separate and
+stay.
 
 **Demolition run** (`src/Bot/Demolition.cs`). A planner and action for supersonic bumper contact
-on an opponent near the ball, at least 22 boost, that a teammate is not clearly nearer to and that
-does not pre-empt a finishing touch. Off by default (`Stardust.DemolitionRuns`); see
-[Limits](#limits).
+on an opponent near the ball, with at least 22 boost, that a teammate is not clearly nearer to and
+that is not started, or continued, while the first man leads the race to the ball. It runs in every
+match. In the lab's demolition drill (a plain chaser that wins a loose ball, 60 episodes) it
+started a run in 83 % of the episodes and ended 72 % of the runs in a demolition, against 75 %
+required. In traced 1v1 games it is rare (about one run in ten games) and nearly every run
+demolishes; its effect on results is below what a series resolves ([Limits](#limits)).
 
 ## Results
 
-All series are paired and side-swapped. "Previous build" is the base of the pull request. Each
-series names the build that played it; builds differ in the small fixes that followed each
-review, and the last section lists what each played. A goals-per-game difference between two
-series carries roughly ±0.35 (one standard error; 24-game team series 0.24–0.37, 48-game 1v1
-series 0.32–0.38), so a 95 % interval is about twice that.
+All series are paired and side-swapped, 120 s games unless noted, on independent seeds. "Previous
+build" is the base of the pull request. "Pre-activation build" is this branch before the possession
+mechanics and demolition were made unconditional (commit `2bfd962`). Each series states the build
+that played it; the seed ranges are in [Reproduce](#reproduce).
 
 ### Defence drill against Nexto
 
 The drill is a 1v1: Nexto's attacks start from midfield, and "saved" is an attack that did not end
-in a goal. Each cell is 200 attacks on the code of the commit that set the defaults.
+in a goal. Each cell is 200 independent attacks, so a pooled row of 400 resolves about ±2.3 points.
 
 | Defence | seed 7300 | seed 7500 | pooled |
 |---|---|---|---|
-| Lookahead 0.6 s, press 0.75, covered margin −0.35 s | 150 | 139 | 289 / 400 = 72 % |
-| Lookahead 0.2 s, the rest the same | 141 | 138 | 279 / 400 = 70 % |
-| Previous defence: lookahead 0.2 s, press 1.0, margin −0.12 s | 143 | 133 | 276 / 400 = 69 % |
+| Lookahead 0.6 s, press 0.75, covered margin −0.35 s, for a lone defender too (shipped) | 138 | 133 | 271 / 400 = 68 % |
+| The same with the lone defender keeping the full gap and a 0.2 s lookahead | 134 | 120 | 254 / 400 = 64 % |
+| Previous defence: lookahead 0.2 s, press 1.0, margin −0.12 s (an earlier build, 200 attacks per seed) | 143 | 133 | 276 / 400 = 69 % |
 
-The team defaults save 13 more attacks of 400 than the previous defence (+3 points, about one
-standard error). An earlier sweep on an earlier build gave a larger lookahead effect (0.2 s: 103 of
-160 and 131 of 200; 0.5 s: 117 and 143; 0.7 s: 117 and 139; 1.0 s: 130 and 1.4 s: 117 of 200 on
-seed 7300), which is where 0.6 s comes from: 0.5–0.7 s was the best of the range. The games
-disagree for a lone defender: against PartyCannon in 1v1 the 0.6 s lookahead and the press lost
-badly ([1v1 series](#1v1-series)), so a lone defender keeps the previous values whatever this
-drill says; the drill has no teammate and scores attacks, not goals and counterattacks. Challenge
-margins (`SoloTieDeficit` 0.4, `ContinueDeficit` 0.6/0.5, both) saved 145, 131 and 146 against 151
-on an earlier build of the same defaults, and 136, 130 and 143 against 131 on the earlier build:
-not resolvable, in line with the earlier entries of [STARDUST_3.md](STARDUST_3.md). They are not
-adopted. The shipped defence of a lone defender is the last row of the table, 69 %.
+The shipped defence saves 17 more attacks of 400 than the lone defender that keeps its room (+4
+points, about 1.3 standard errors of the difference), and the same as the previous defence on an
+earlier build. The drill cannot separate the three; it does say that nothing here makes Nexto's
+attacks easier to defend. An earlier sweep gave a larger lookahead effect (0.2 s: 103 of 160 and 131
+of 200; 0.5 s: 117 and 143; 0.7 s: 117 and 139; 1.0 s: 130 and 1.4 s: 117 of 200 on seed 7300),
+which is where 0.6 s comes from. Challenge margins (`SoloTieDeficit` 0.4, `ContinueDeficit`
+0.6/0.5, both) saved 145, 131 and 146 against 151 on an earlier build, and 136, 130 and 143 against
+131 on another: not resolvable. They are not adopted.
 
 ### Team series against the previous build
 
-| Build | 3v3 | 2v2 |
-|---|---|---|
-| Earlier build: boost economy, one anchor, kickoff pad run at 2800 uu, lookahead 0.2 s, no press | 15–9 (+0.42 goals per game) | |
-| The same with midfield press 0.75 and covered margin −0.35 s | 23–1 (+1.88) | |
-| Final code before the second review, near-net covered margin everywhere (−0.12 s) | 18–6 (+0.96) | 18–6 (+1.00) |
-| The same with the shipped midfield covered margin (−0.35 s) | 21–3 (+1.63) | 19–5 (+1.04) |
-| **Final code** after the second review (pad tie-break, hysteresis floor), same seeds | **18–6 (+0.83)** | **17–7 (+0.92)** |
-| Final code, a second set of 3v3 seeds (8600–8603) | 18–6 (+1.58) | |
-| Final code, both 3v3 seed sets pooled (48 games) | **36–12 (+1.21)** | |
-| The same with the lookahead at 0.2 s, on the seeds of the rows above | 17–7 (+1.54) and 16–8 (+1.21) | 10–14 (−0.38) |
-| **Shipped build** (solo defence as above), fresh seeds | **22–2 (+1.12)** | **17–7 (+1.17)** |
+| Series, 48 games each | Record | Goals per game | Free space (ours / theirs) | Time spent defending (ours / theirs) |
+|---|---|---|---|---|
+| 3v3 against the previous build | **35–13** | **+1.23** | 38.3 % / 49.6 % | 22.3 % / 26.4 % |
+| 2v2 against the previous build | 25–23 | +0.23 | 43.2 % / 51.5 % | 23.3 % / 25.5 % |
+| 3v3 against the pre-activation build | 26–22 | +0.33 | 39.5 % / 41.5 % | 24.1 % / 25.3 % |
+| 2v2 against the pre-activation build | 24–24 | +0.06 | 41.4 % / 41.2 % | 23.8 % / 24.1 % |
 
-The final code's first 3v3 series is 0.8 goals per game below the 21–3 series on the same seeds
-(about 1.6 standard errors of the difference); the fixes between the two touch only which pad a
-car takes, so the difference is most likely noise between two runs of non-deterministic bot
-processes, and the second seed set gives 18–6 again. In the final code's first 3v3 series the
-opponent had the ball 21.5 % of the time against 26.6 %, our cars spent 25.7 % of the time in
-their third against 18.5 %, shots were 3.95 against 2.10 per player per 5 minutes, and the
-opponent's free space fell from 46.3 % to 39.6 % (gap to the ball 909 uu against 1022 uu). In 2v2
-the free space fell from 53.7 % to 44.3 % (983 uu against 1062 uu).
+In 3v3 the gain is clear: 35–13 is about 3 standard errors from level, shots are 3.84 against 2.17 per
+player per 5 minutes, the gap to the ball while the opponent has it is 896 uu against 1033, and the
+opponent's free space falls from 49.6 % to 38.3 %. In 2v2 the build takes the same space away
+(43 % against 52 % free) and does not win more games than the previous build (25–23). The
+pre-activation rows say that making the possession mechanics and demolition unconditional did not
+change team results.
 
 ### 1v1 series
 
-**The midfield press and the 0.6 s lookahead lose in 1v1.** Four versions of the defence against
-PartyCannon, 48 games each on the same seeds (8800–8803), and the previous build on those seeds:
+96 games each. Free space and the other pressure measures are in the third column.
 
-| Defence of the lone defender | Record | Goals per game |
-|---|---|---|
-| Previous build | 21–27 | −0.50 |
-| Lookahead 0.6 s, press 0.75 (the team defaults) | 15–33 | −1.00 |
-| Lookahead 0.6 s, no press | 13–35 | −1.25 |
-| Lookahead 0.2 s, press 0.75 | 16–32 | −0.33 |
-| **Lookahead 0.2 s, no press (shipped for a lone defender)** | **32–16** | **+0.46** |
+| Series | Record | Goals per game | Free space (ours / theirs) |
+|---|---|---|---|
+| Shipped build against the previous build | 40–56 | −0.20 | 44.4 % / 50.6 % |
+| The same with the lone defender keeping its room (the earlier design) | 41–55 | −0.32 | 49.6 % / 52.3 % |
+| Shipped build against the pre-activation build | 46–50 | −0.04 | 50.1 % / 50.0 % |
+| Shipped build against PartyCannon | 51–45 | +0.18 | 43.3 % / 38.5 % |
+| The lone defender keeping its room, against PartyCannon | 56–40 | +0.26 | 47.3 % / 38.3 % |
+| **Shipped build against the lone defender that keeps its room** | **59–35 (2 draws)** | **+0.48** | 41.9 % / 49.0 % |
+| The same on a second seed set | 52–44 | +0.23 | 42.9 % / 51.1 % |
 
-Three of the four versions sit near 30 % wins and one at 67 %, which no amount of noise explains
-(a 48-game series has a standard deviation of 3.5 wins); a lone defender with no cover behind it
-loses goals to both changes. On fresh seeds (8900–8903) the shipped solo defence beat PartyCannon
-32–16 (+0.73), the same record again. Against the previous build the solo defence is level:
+The shipped build and the earlier design are level against both the previous build and PartyCannon
+(differences of 0.1 goals a game, a third of a standard error). Played against each other they are
+not: the pressing lone defender won 111 of 190 decided games over the two seed sets (+0.35 goals a
+game, 2.0 standard errors), took the opponent's free space from 49–51 % to 42–43 % and took more
+shots (6.15 against 5.11 and 5.80 against 4.52 per 5 minutes). That reverses the earlier conclusion
+that the press and the 0.6 s lookahead lose in 1v1, which came from series that repeated seeds, and
+it is why the lone defender now presses. The head-to-head is the most direct comparison here and
+was replicated; the two third-party series and the Nexto drill (above, −4 points) do not show the
+difference, so it is a moderate result.
 
-| Build | Opponent | Record | Goals per game | Free space (ours / theirs) |
-|---|---|---|---|---|
-| Lookahead 0.2 s, no press, seeds 8100–8103 | previous build | 29–19 | −0.02 | 52.5 % / 53.4 % |
-| Shipped solo defence, seeds 9000–9003 | previous build | 25–23 | −0.27 | 55.5 % / 55.2 % |
-| The same over 180 s games | previous build | 21–27 | −0.35 | 55.3 % / 55.9 % |
-| The same over 180 s games, seeds 8900–8903 | PartyCannon | 33–15 | +1.75 | |
-| Team defaults in 1v1, seeds 8100–8103 | previous build | 25–23 | −0.38 | 43.5 % / 51.8 % |
-| The same, earlier build, 48 games | previous build | 22–26 | −0.13 | 43.9 % / 52.4 % |
-| Boost economy only, earlier build, 48 games | previous build | 27–21 | −0.08 | 49.3 % / 50.1 % |
-| Midfield press 0.75, earlier build, 48 games | previous build | 23–25 | −0.10 | 36.1 % / 50.6 % |
+Against the previous build 1v1 is level to slightly behind (40–56 and 41–55: −0.2 and −0.3 goals a
+game, about one standard error). The two builds play almost the same 1v1 game (shots 5.7 against
+5.4 per 5 minutes, zero boost 39 % of the time against 37 %, 3.6 against 3.1 big pads per 5
+minutes), apart from the space the shipped build takes away (free space 44 % against 51 %), so this
+is a 1v1 that has not improved, not one that has regressed. In the series against PartyCannon it
+takes twice our shots (11.7 against 6.1 per 5 minutes) and spends 62 % of its time at zero boost
+against our 43 %, and the score stays close.
 
-The previous build scored 18–30 (−0.65) and 16–8 (+0.54) against PartyCannon on two other seeds and
-21–27 (−0.50) on seeds 8800–8803. PartyCannon takes twice our shots (10–11 against 5 per player per
-5 minutes) and spends 31 % of its time in its attacking third against our 21 %, yet the score
-stays close. A 48-game series resolves about ±0.35 goals per game, so the 1v1 gain against the
-previous build is nil and against PartyCannon is about +1 goal a game, the largest 1v1 effect in
-this work. The press takes free space away in 1v1 (36–44 % against 51–53 %), and it costs goals
-there; free space is a measure, not a result.
+### Tournament of an earlier build
 
-### Tournament of the final code
-
-Round robin, four games per pair (two per side), 180 s games, Bradley–Terry Elo. Only four games
-per pair: the ratings are ordered, not separated, and a gap under about 100 Elo is not a result.
-The roster is the previous build, PartyCannon, Phoenix and Beast, plus Nexto, Necto and NoobBlack in
-1v1. The 2v2 and 3v3 rounds were played before the lone defender's defence was separated out, which
-does not change how a team plays; the 1v1 round is the shipped build.
+Round robin, four games per pair (two per side), 180 s games, Bradley–Terry Elo, played on the
+build before the possession mechanics and demolition were made unconditional and before the lone
+defender pressed (the 1v1 round had the lone defender keeping its room). Only four games per pair:
+the ratings are ordered, not separated, and a gap under about 100 Elo is not a result. The roster is
+the previous build, PartyCannon, Phoenix and Beast, plus Nexto, Necto and NoobBlack in 1v1. It is
+kept as a picture of the field; the [final tournament](#tournament-of-the-final-build) below
+replaces it as the test of the shipped build.
 
 | 3v3 | Elo | W–L | Goal difference per game | against the previous build |
 |---|---|---|---|---|
@@ -199,14 +201,6 @@ does not change how a team plays; the 1v1 round is the shipped build.
 | Phoenix | 1283 | 4–12 | −2.00 | −4.50 |
 | Beast | 898 | 0–16 | −6.06 | −7.75 |
 
-In 3v3 Stardust is second, 337 Elo above the previous build, and beats it by 3.25 goals a game;
-PartyCannon is ahead (Stardust −0.33 goals a game against it, one win and two losses; a fourth
-game was excluded when PartyCannon's connection timed out with Stardust ahead 2–1). In 2v2 the
-previous build and Stardust are level (Stardust ahead head to head by 0.75 goals, 52 Elo behind in
-the table, four games each), which the 24-game paired series above resolves better: 17–7.
-PartyCannon leads in both. The 3v3 round robin excluded three games in which PartyCannon's
-connection timed out, a failure that belongs to that bot.
-
 | 1v1 | Elo | W–L | Goal difference per game | against the previous build |
 |---|---|---|---|---|
 | Nexto | 2320 | 24–0 | +13.88 | +12.25 |
@@ -217,31 +211,28 @@ connection timed out, a failure that belongs to that bot.
 | Beast | 968 | 3–21 | −6.92 | −6.75 |
 | Phoenix | 820 | 1–23 | −7.46 | −4.50 |
 
-This is the shipped build with its solo defence; a first run with the team defence in 1v1 gave
-Stardust 11–13 and 1454 Elo (1–3 against the previous build and 2–2 against PartyCannon). NoobBlack
-exited during startup in every game (28 games in the round robin failed and are excluded), so it
-has no rating and sits at the 1500 default. In 1v1 Stardust is fifth of seven rated bots; it beats
-Phoenix and Beast 4–0 each and loses 0–4 to Nexto (−16.00) and to Necto (−7.75), as every other bot
-does. Against the previous build and PartyCannon it won one game of four each, which four games
-cannot separate from the 48-game series: over 180 s games (the tournament's length) on seeds
-8900–8903 it beat PartyCannon 33–15 (+1.75 goals a game) and lost to the previous build 21–27
-(−0.35). The round robin ranks ratings inside a thin sample; the paired series are the measure.
+PartyCannon's connection timed out in four 3v3 games (excluded; a failure that belongs to that bot)
+and NoobBlack exited during startup in every 1v1 game (28 games excluded, no rating). Nexto and
+Necto beat every other bot, Stardust included, in nearly every game.
 
 ### Boost
 
-Boost per player, our build against the previous build:
+Boost per player, our build against the previous build, shipped build, 120 s games:
 
-| Series | Average boost | Zero boost % | Big pads per 5 min |
-|---|---|---|---|
-| 1v1, final 1v1 behaviour | 13 / 17 | 42.1 / 37.4 | 2.4 / 3.5 |
-| 2v2, final code, margin −0.12 s | 19 / 19 | | 2.2 / 2.6 |
-| 3v3, final code, margin −0.12 s | 21 / 21 | 32.3 / 29.5 | 1.6 / 1.7 |
-| 3v3, final code, margin −0.35 s | 19 / 21 | 33.4 / 29.5 | 1.9 / 1.5 |
-| 3v3, earlier build with the kickoff pad run | 27 / 21 | 28.9 / 29.6 | 3.7 / 1.2 |
+| Series | Average boost | Zero boost % | Big pads per 5 min | Boost used per min |
+|---|---|---|---|---|
+| 1v1, 96 games | 17.0 / 17.0 | 38.9 / 37.3 | 3.6 / 3.1 | 228 / 220 |
+| 2v2, 48 games | 18.3 / 18.5 | 34.0 / 34.5 | 2.0 / 1.9 | 176 / 170 |
+| 3v3, 48 games | 19.8 / 22.3 | 32.9 / 28.4 | 1.8 / 1.7 | 150 / 136 |
 
-Only the earlier build, with the kickoff pad run, collected more boost; the final code collects
-what the previous build did. A 1v1 car spends about 220 boost per minute and the pads it reaches
-give about 180, so a 1v1 tank stays low whichever way the pads are routed.
+The boost economy collects what the previous build did, and it did not raise the totals (an earlier
+build with a kickoff pad run did, and lost the kickoff drill). In 1v1 a car spends about 225 boost
+a minute and the pads it reaches give about as much, so a 1v1 tank stays low whichever way the pads
+are routed: both builds are at zero boost 37–39 % of the time, against Nexto's 24 % and 22.7 big
+pads per 5 minutes to our 3. Replays of 24 1v1 games show why: a car with an empty tank is at a
+median 750 uu from the ball and 2500 uu from the nearest big pad, in the thick of the play, and only
+about a twentieth of its empty time (0.18 × 0.25) has the ball more than 1500 uu away, the opponent
+nearer to it and a big pad within 1800 uu. There is little free time to spend on a pad.
 
 ### Kickoff drill
 
@@ -272,43 +263,56 @@ benefit at one reach and fails at another was removed rather than kept.
 
 ## Limits
 
-- Nexto still beats Stardust in every completed game, and the defence drill still concedes a
-  quarter of Nexto's attacks and clears almost none. This change narrows how much room and time the
-  previous build gave, in the builds it is measured against, and nothing more.
-- 1v1 is level with the previous build (29–19, 25–23 and 21–27) and about +0.5 to +1.8 goals a game
-  ahead of PartyCannon (32–16, 32–16 and, over 180 s games, 33–15). The large measured gains are in 2v2 and 3v3. The midfield press and the 0.6 s
-  lookahead, which carry the team results, are off for a lone defender because they lost 1v1 series;
-  the 2v2 series at 0.2 s (10–14) says the lookahead matters in teams.
-- The covered midfield margin (−0.35 s) was adopted on 21–3 against 18–6 in 3v3, about 1.4 standard
-  errors, level in 2v2, and the earlier 23–1. It cannot act in 1v1 (it needs a covering teammate).
-- Demolition runs are off. Its drill (a plain chaser that wins a loose ball, 60 episodes) starts a
-  run in 83 % of the episodes and ends 72 % of the runs in a demolition (36 of 50), against 75 %
-  required, without conceding; before the review's changes it converted 26–50 %. The drill does not
-  say whether a run wins anything against an opponent that dodges, and in 1v1 against the previous
-  build, with runs on, the record was 22–26 (−0.56) against 25–23 (−0.38) with them off.
+- Nexto still beats Stardust in every completed game, and the defence drill still concedes a third
+  of Nexto's attacks and clears almost none (the ball is back in our half six seconds after the
+  attack, because Nexto keeps it there). This change narrows how much room and time the previous
+  build gave, in the builds it is measured against, and nothing more.
+- The measured gain is in 3v3 (35–13 against the previous build, +1.23 goals a game). 2v2 and 1v1
+  are level with it (25–23 and 40–56) while taking the same space away, and a 1v1 car still runs at
+  zero boost 39 % of the time. Against PartyCannon, which takes twice our shots, 1v1 is 51–45.
+- 96 games resolve about ±0.25 goals a game in 1v1. Anything the mechanics or the demolition run
+  add to a game is smaller: they are measured by drills (`flick` 87 %, `carry` 92 %, the demolition
+  drill 72 % of runs) and by the games with every one of them switched on being level with the games
+  before (46–50 in 1v1, 26–22 in 3v3, 24–24 in 2v2).
+- The demolition drill converts 72 % of its runs against 75 % required, and it does not say whether
+  a run wins anything against an opponent that dodges.
+- The press's gain in 1v1 comes from one head-to-head comparison replicated once (111–79 over 192
+  games); it does not show against the previous build or PartyCannon, and the Nexto drill leans the
+  other way by 4 points (about 1.3 standard errors).
 - A pad trip near our own net still drives with the generic `Drive`. The slack reserve grows toward
   the net, and dodges are off unless there is time for a flip, but a `DefensiveDrive`-style
   controller inside the defensive third is not built.
 - The demolition planner leaves a target to a teammate that is nearer to it by flat distance,
   without knowing whether that teammate is chasing the ball or has boost.
 - The possession measures are simulator measures with fixed radii and windows.
+- Of the conceded goals in 24 replayed 1v1 games, 30 of 40 were struck while our car was upfield
+  of the ball (a median 1160 uu beyond it) and most were struck from within 2000 uu of the line
+  by a ball the car could not have reached in time. Recovering faster would need boost that the car
+  does not have; this is where the remaining gap to a player who keeps the tank full is.
 
 ## Reproduce
 
 ```bash
 SIM="dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll"
-# The defence defaults, and the previous ones on the same build:
+# Defence drill, shipped defence and the previous one on the same build:
 $SIM mechanics-lab --drill defense --opponent nexto.toml --episodes 200 --seed 7300
 $SIM mechanics-lab --drill defense --opponent nexto.toml --episodes 200 --seed 7300 \
   --set Defense.ReferenceLead=0.2,Defense.NeutralGapScale=1,Defense.NeutralCoveredMargin=-0.12
 $SIM mechanics-lab --drill team-kickoff --opponent <previous build> --episodes 120 --seed 9100
 $SIM mechanics-lab --drill demolition --episodes 60
-$SIM match --a <build> --b <previous build> --size 3 --games 24 --seconds 120 --parallel 2 --seed 8200
+# A paired series: 48 games use seeds 20300-20323. Two series must not share seeds unless they are
+# meant to be the same games.
+$SIM match --a <build> --b <previous build> --size 3 --games 48 --seconds 120 --parallel 2 --seed 20300
 ```
 
-`--set Type.Field=value` (or `STARDUST_TUNE` for a bot process) sets any variant that still exists:
-`Defense.ReferenceLead`, `Defense.SoloReferenceLead`, `Defense.NeutralGapScale`,
-`Defense.NeutralCoveredMargin`, `BoostEconomy.SecondsPerBoost`, `Stardust.DemolitionRuns`. A lone
-defender ignores `NeutralGapScale` (edit `solo` in `Defense.ShadowTarget` to press it) and uses
-`SoloReferenceLead`. The kickoff pad run and the eager boost switches were removed with their
-experiments.
+The series above used these first seeds: 1v1 against the previous build 20000, against PartyCannon
+20200, against the pre-activation build 20100, head to head 20700 and 20800; 3v3 against the
+previous build 20300 and the pre-activation build 20400; 2v2 20500 and 20600. A game takes
+`seed + game / 2`, so a run of N games covers `N / 2` consecutive seeds; split a long series into
+chunks only with a stride of `games / 2`.
+
+`--set Type.Field=value` (or `--tune=Type.Field=value` for a bot process, which makes one build play
+as several variants) sets any tuning field, such as `Defense.ReferenceLead`, `Defense.NeutralGapScale`,
+`Defense.NeutralCoveredMargin`, `BoostEconomy.SecondsPerBoost` or `Demolition.MinValue`. A bad
+assignment is reported and skipped. The kickoff pad run and the eager boost switches were removed with
+their experiments.
