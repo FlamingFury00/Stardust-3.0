@@ -42,6 +42,11 @@ namespace Bot
         /// <summary>Independent policy ablations; use STARDUST_TUNE for paired simulator experiments.</summary>
         public static bool CarrierChallenges = true;
         public static bool FirstManShadow = true;
+        /// <summary>
+        /// A selected challenge stays committed for as long as it is safe to continue, instead of for
+        /// 0.27–0.36 s after the race last looked won.
+        /// </summary>
+        public static bool ChallengeHold = true;
 
         private float nextPlan = float.NegativeInfinity;
         private float challengeCommitUntil = float.NegativeInfinity;
@@ -162,12 +167,8 @@ namespace Bot
                 Situation, Me, Ball.Location, OurGoal.Location);
             bool challengeSafe = Defense.CanContinueChallenge(
                 Situation, Me, Ball.Location, OurGoal.Location);
-            if (RawCanChallenge)
-                challengeCommitUntil = Game.Time + (underPressure ? 0.36f : 0.27f);
-            else if (Game.Time >= challengeCommitUntil || !challengeSafe)
-                challengeCommitUntil = float.NegativeInfinity;
-            ChallengeCommitted = RawCanChallenge ||
-                (Game.Time < challengeCommitUntil && challengeSafe);
+            ChallengeCommitted = Defense.CommitChallenge(RawCanChallenge, challengeSafe,
+                underPressure, ChallengeHold, Game.Time, ref challengeCommitUntil);
 
             if (emergency && PlannedSave(threat))
                 return;
@@ -261,11 +262,17 @@ namespace Bot
                         Ball.Prediction, Ball.Location, OurGoal.Location, Game.Time);
                     bool counterGoalSide = Defense.IsGoalSide(
                         Me.Location, Ball.Location, OurGoal.Location, 20f);
-                    Vec3 route = counterGoalSide
+                    // With a teammate first to the ball, the team's last car covers deeper instead of
+                    // shadowing the same line as the first man.
+                    DefensiveRole counterRole = CounterAnchor && Situation.TeamCount > 1 &&
+                        Situation.LastBack && Situation.FirstMan != Index
+                        ? DefensiveRole.Anchor : DefensiveRole.Shadow;
+                    Vec3 route = Defense.HoldLastLine(counterGoalSide
                         ? Defense.ShadowTarget(
-                            counterReference, OurGoal.Location, DefensiveRole.Shadow,
+                            counterReference, OurGoal.Location, counterRole,
                             MathF.Min(pressureTime, 0.35f))
-                        : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
+                        : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location),
+                        Situation, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
                     bool fastCounterRecovery = !counterGoalSide &&
@@ -337,7 +344,8 @@ namespace Bot
 
             if (Action is GetBoost refill)
             {
-                if (!Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure))
+                if (!Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure) ||
+                    (refill.ChosenBoost != null && Defense.PadPastLastLine(refill.ChosenBoost.Location, Situation, OurGoal.Location)))
                     Action = null;
                 else if (!refill.Finished)
                 {
@@ -480,9 +488,10 @@ namespace Bot
             bool goalSide = Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location, 20f);
             bool recoveringGoalSide = !goalSide;
 
-            Vec3 rawSupport = recoveringGoalSide
+            Vec3 rawSupport = Defense.HoldLastLine(recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
-                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime);
+                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime),
+                Situation, OurGoal.Location);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
@@ -522,23 +531,39 @@ namespace Bot
             bool fastRecovery = recoveringGoalSide && !exitingGoal &&
                 Defense.CanFastRecover(
                     Me, Ball.Location, support, OurGoal.Location);
-            GuardTo(support, cruise, terminal, hold,
-                allowDodges: fastRecovery);
 
-            if (exitingGoal)
-                SetDecision("defend / exit net");
-            else if (recoveringGoalSide)
-                SetDecision("defend / recover behind ball");
-            else if (role == DefensiveRole.Shadow)
-                SetDecision(underPressure ? "defend / solo shadow" : "defend / moving shadow");
-            else if (role == DefensiveRole.Anchor)
-                SetDecision(underPressure ? "defend / ball-goal anchor" : "support / goal-cover anchor");
+            // Drive over a pad lying almost on the route instead of past it, at cruise speed.
+            Boost passPad = RoutePlanner.PassPads && !exitingGoal && (recoveringGoalSide || !underPressure)
+                ? RoutePlanner.PassPad(Me, Field.Boosts, support)
+                : null;
+            if (passPad != null && Defense.PadPastLastLine(passPad.Location, Situation, OurGoal.Location))
+                passPad = null;
+            if (passPad != null)
+                GuardTo(passPad.Location, cruise, cruise, false, allowDodges: fastRecovery);
             else
-                SetDecision(underPressure ? "defend / second-man support" : "support / wide lane");
+                GuardTo(support, cruise, terminal, hold, allowDodges: fastRecovery);
+
+            string decision;
+            if (exitingGoal)
+                decision = "defend / exit net";
+            else if (recoveringGoalSide)
+                decision = "defend / recover behind ball";
+            else if (role == DefensiveRole.Shadow)
+                decision = underPressure ? "defend / solo shadow" : "defend / moving shadow";
+            else if (role == DefensiveRole.Anchor)
+                decision = underPressure ? "defend / ball-goal anchor" : "support / goal-cover anchor";
+            else
+                decision = underPressure ? "defend / second-man support" : "support / wide lane";
+            SetDecision(passPad != null ? decision + " via pad" : decision);
         }
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
 
+        /// <summary>
+        /// On a counter, the team's last car anchors deeper while a teammate is first to the ball, rather
+        /// than every car shadowing the same line near it (switch for A/B).
+        /// </summary>
+        public static bool CounterAnchor = false;
         /// <summary>Quality a planned clearance needs to be taken ahead of a block.</summary>
         public static float ComfortableClearQuality = 0.2f;
         /// <summary>Spare time a planned clearance needs to be taken ahead of a block.</summary>
@@ -603,7 +628,7 @@ namespace Bot
 
             Boost pad = RoutePlanner.SelectBoost(Me, Field.Boosts, Ball.Location,
                 destination, Team, Situation.OpponentEta);
-            if (pad == null)
+            if (pad == null || Defense.PadPastLastLine(pad.Location, Situation, OurGoal.Location))
                 return false;
 
             Action = new GetBoost(Me, pad.Index, interruptible: true);

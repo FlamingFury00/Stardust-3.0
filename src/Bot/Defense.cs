@@ -129,6 +129,29 @@ namespace Bot
 
         /// <summary>Distance (uu) a support car keeps goal-side of the ball away from our goal; it closes by 290 uu near it.</summary>
         public static float SupportGap = 1050f;
+        /// <summary>
+        /// Depth (uu from midfield toward our goal) behind which the team's last car keeps its target
+        /// while a teammate is ahead of it, so a long clearance cannot fly over the whole team.
+        /// Negative infinity disables it.
+        /// </summary>
+        public static float LastManLine = float.NegativeInfinity;
+        /// <summary>
+        /// Depth behind which the team's last car takes boost pads while a teammate is ahead of it; a
+        /// refuel past it is skipped or abandoned. Negative infinity disables it.
+        /// </summary>
+        public static float LastManPadLine = float.NegativeInfinity;
+
+        /// <summary>Whether the team's last car must leave the pad at <paramref name="pad"/> for now.</summary>
+        public static bool PadPastLastLine(Vec3 pad, TacticalFrame frame, Vec3 goal) =>
+            PastLine(pad, LastManPadLine, frame, goal);
+
+        /// <summary><paramref name="target"/> pulled back to <see cref="LastManLine"/> for the team's last car.</summary>
+        public static Vec3 HoldLastLine(Vec3 target, TacticalFrame frame, Vec3 goal) =>
+            PastLine(target, LastManLine, frame, goal) ? new Vec3(target.x, Side(goal) * LastManLine, target.z) : target;
+
+        private static bool PastLine(Vec3 point, float line, TacticalFrame frame, Vec3 goal) =>
+            float.IsFinite(line) && frame != null && frame.TeamCount > 1 && frame.LastBack &&
+            point.y * Side(goal) < line;
         /// <summary>Keep a first defender's field-side corner shadow outside the goal-mouth anchor bounds.</summary>
         public static bool WideShadow = true;
 
@@ -373,6 +396,22 @@ namespace Bot
                 requiredMargin += 0.04f;
 
             return frame.FreeTime >= requiredMargin;
+        }
+
+        /// <summary>
+        /// Commitment to a challenge across planning ticks. A race the car can win (re)commits it;
+        /// otherwise it stays committed while <paramref name="safeToContinue"/> holds, either until
+        /// <paramref name="until"/> (0.27 s after the last win, 0.36 s under pressure) or, held, until
+        /// the continuation becomes unsafe. Updates <paramref name="until"/> and returns the commitment.
+        /// </summary>
+        public static bool CommitChallenge(bool canChallenge, bool safeToContinue, bool pressure,
+            bool hold, float now, ref float until)
+        {
+            if (canChallenge)
+                until = hold ? float.PositiveInfinity : now + (pressure ? 0.36f : 0.27f);
+            else if (now >= until || !safeToContinue)
+                until = float.NegativeInfinity;
+            return canChallenge || (now < until && safeToContinue);
         }
 
         /// <summary>
