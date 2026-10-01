@@ -42,6 +42,11 @@ namespace Bot
         /// <summary>Independent policy ablations; use STARDUST_TUNE for paired simulator experiments.</summary>
         public static bool CarrierChallenges = true;
         public static bool FirstManShadow = true;
+        /// <summary>
+        /// A selected challenge stays committed for as long as it is safe to continue, instead of for
+        /// 0.27–0.36 s after the race last looked won (switch for A/B).
+        /// </summary>
+        public static bool ChallengeHold = false;
 
         private float nextPlan = float.NegativeInfinity;
         private float challengeCommitUntil = float.NegativeInfinity;
@@ -163,7 +168,8 @@ namespace Bot
             bool challengeSafe = Defense.CanContinueChallenge(
                 Situation, Me, Ball.Location, OurGoal.Location);
             if (RawCanChallenge)
-                challengeCommitUntil = Game.Time + (underPressure ? 0.36f : 0.27f);
+                challengeCommitUntil = ChallengeHold ? float.PositiveInfinity
+                    : Game.Time + (underPressure ? 0.36f : 0.27f);
             else if (Game.Time >= challengeCommitUntil || !challengeSafe)
                 challengeCommitUntil = float.NegativeInfinity;
             ChallengeCommitted = RawCanChallenge ||
