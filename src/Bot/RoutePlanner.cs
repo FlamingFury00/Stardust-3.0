@@ -16,6 +16,15 @@ namespace Bot
         /// <summary>Time (s) the opponent must still need to reach the ball after the pickup.</summary>
         public static float FullPadWindow = 1.0f;
 
+        /// <summary>Whether shadow and recovery drives pass over pads lying almost on their route.</summary>
+        public static bool PassPads = false;
+        /// <summary>Boost at or above which pads are no longer passed over.</summary>
+        public static float PassBelow = 70f;
+        /// <summary>Longest extra path (uu) a pass-over pad may add.</summary>
+        public static float PassDetour = 180f;
+        /// <summary>Largest turn (rad) off the car's heading toward a pass-over pad.</summary>
+        public static float PassTurn = 0.6f;
+
         public static float Detour(Vec3 start, Vec3 pad, Vec3 destination) =>
             MathF.Max(0, start.FlatDist(pad) + pad.FlatDist(destination) - start.FlatDist(destination));
 
@@ -61,6 +70,44 @@ namespace Bot
                 {
                     best = pad;
                     bestCost = cost;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// The nearest pad ahead of a grounded car that lies almost on its straight route to
+        /// <paramref name="destination"/> and is active when the car gets there: driving over it costs
+        /// under a tenth of a second, where a pro takes every such pad on the way back.
+        /// </summary>
+        public static Boost PassPad(Car car, IEnumerable<Boost> pads, Vec3 destination)
+        {
+            if (pads == null || car == null || car.IsDemolished || !car.IsGrounded ||
+                car.Boost >= PassBelow || !ControlMath.Finite(destination))
+                return null;
+
+            float routeLength = car.Location.FlatDist(destination);
+            Vec3 velocity = car.Velocity.Flatten();
+            Vec3 heading = velocity.Length() > 500f ? velocity : car.Forward.Flatten();
+            float speed = MathF.Max(velocity.Length(), 1000f);
+            Boost best = null;
+            float bestDistance = float.PositiveInfinity;
+
+            foreach (Boost pad in pads)
+            {
+                if (pad == null || !ControlMath.Finite(pad.Location)) continue;
+                Vec3 toPad = (pad.Location - car.Location).Flatten();
+                float distance = toPad.Length();
+                // Close enough to be collected already, or at/after the end of the route.
+                if (distance < 100f || distance > routeLength - 150f) continue;
+                if (!pad.IsActive && pad.TimeUntilActive > distance / speed) continue;
+                if (heading.Angle(toPad) > PassTurn) continue;
+                if (Detour(car.Location, pad.Location, destination) > PassDetour) continue;
+
+                if (distance < bestDistance)
+                {
+                    best = pad;
+                    bestDistance = distance;
                 }
             }
             return best;

@@ -530,19 +530,30 @@ namespace Bot
             bool fastRecovery = recoveringGoalSide && !exitingGoal &&
                 Defense.CanFastRecover(
                     Me, Ball.Location, support, OurGoal.Location);
-            GuardTo(support, cruise, terminal, hold,
-                allowDodges: fastRecovery);
 
-            if (exitingGoal)
-                SetDecision("defend / exit net");
-            else if (recoveringGoalSide)
-                SetDecision("defend / recover behind ball");
-            else if (role == DefensiveRole.Shadow)
-                SetDecision(underPressure ? "defend / solo shadow" : "defend / moving shadow");
-            else if (role == DefensiveRole.Anchor)
-                SetDecision(underPressure ? "defend / ball-goal anchor" : "support / goal-cover anchor");
+            // Drive over a pad lying almost on the route instead of past it, at cruise speed.
+            Boost passPad = RoutePlanner.PassPads && !exitingGoal && (recoveringGoalSide || !underPressure)
+                ? RoutePlanner.PassPad(Me, Field.Boosts, support)
+                : null;
+            if (passPad != null && Defense.PadPastLastLine(passPad.Location, Situation, OurGoal.Location))
+                passPad = null;
+            if (passPad != null)
+                GuardTo(passPad.Location, cruise, cruise, false, allowDodges: fastRecovery);
             else
-                SetDecision(underPressure ? "defend / second-man support" : "support / wide lane");
+                GuardTo(support, cruise, terminal, hold, allowDodges: fastRecovery);
+
+            string decision;
+            if (exitingGoal)
+                decision = "defend / exit net";
+            else if (recoveringGoalSide)
+                decision = "defend / recover behind ball";
+            else if (role == DefensiveRole.Shadow)
+                decision = underPressure ? "defend / solo shadow" : "defend / moving shadow";
+            else if (role == DefensiveRole.Anchor)
+                decision = underPressure ? "defend / ball-goal anchor" : "support / goal-cover anchor";
+            else
+                decision = underPressure ? "defend / second-man support" : "support / wide lane";
+            SetDecision(passPad != null ? decision + " via pad" : decision);
         }
 
         private bool HasClaim(float sliceTime) => HasTeammateEarlierShot(sliceTime);
