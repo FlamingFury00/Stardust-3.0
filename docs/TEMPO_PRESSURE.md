@@ -146,6 +146,18 @@ opponent's free space falls from 49.6 % to 38.3 %. In 2v2 the build takes the sa
 pre-activation rows say that making the possession mechanics and demolition unconditional did not
 change team results.
 
+Against PartyCannon the team formats are lost, on games the tournament below does not reproduce:
+
+| Series | Record | Goals per game | Notes |
+|---|---|---|---|
+| 3v3 against PartyCannon (46 games, 2 failed) | 13–33 | −0.65 | PartyCannon: average speed 1354 against 973 uu/s, zero boost 22 % of the time against 38 %, 21.5 big pads against 1.1 per player per 5 minutes, 30.6 against 23.1 touches; our cars spend 54 % of the time in our defensive third |
+| 2v2 against PartyCannon (43 games completed) | 17–26 | −0.60 | |
+
+In those 3v3 games a car of ours is at zero boost 52 % of the time against 27 % for PartyCannon, and
+when it is empty and not the closest car to the ball a big pad is within 1800 uu of it 18 % of the
+time against 66 % for PartyCannon: its cars that are off the ball stand near the pads, ours stand
+where the rotation puts them.
+
 ### 1v1 series
 
 96 games each. Free space and the other pressure measures are in the third column.
@@ -272,6 +284,19 @@ worse.
 | More eager demolition runs (`Demolition.MinValue=0`, `MinBoost=12`, `MaxRange=3400`) | 50–45 (1 draw) | +0.07 | demolitions 0.21 against 0.18 per player per 5 minutes: runs need a supersonic approach, which needs boost the car rarely has |
 | More eager boost routing (`BoostEconomy.SecondsPerBoost=0.06`, `ReserveTime=0.25`, `MaxSlack=4`) | 46–50 | −0.36 | |
 
+Team boost, head to head against the shipped build in 3v3 (48 games each) and 2v2: giving a support
+car far more slack for a pad trip raised the boost it collects and did not move the score.
+
+| Change (`--tune`) | Record | Goals per game | What moved |
+|---|---|---|---|
+| Support slack 4 s covered, 2 s uncovered, support reserve ×0.3, `MaxSlack` 5 s, 3v3 | 33–14 (1 draw), then 16–32 on fresh seeds: 49–46 over 96 games | +0.69, then −0.42: +0.14 pooled | average boost 21.3 and 21.5 against 18.0 and 20.0, zero boost 30 % and 29 % against 34 % and 32 %, big pads 2.3 and 2.1 against 1.7 and 1.6 |
+| The same in 2v2 | 25–23 | +0.35 | |
+| The support part only (no `MaxSlack`), 3v3 | 21–27 | −0.27 | |
+| Support slack 8 s and 5 s, support reserve 0, `MaxSlack` 8 s, 3v3 | 23–25 | −0.12 | average boost 22.0 against 18.6, zero boost 29.6 % against 33.9 %, big pads 2.5 against 1.4 |
+
+The first of these is the argument for replicating any single series: 33–14 was 2.8 standard errors
+from level and the same change on fresh seeds lost 16–32.
+
 Earlier experiments, each a defence drill or a 24-game series that resolves about ±0.5 goals a game,
 so only the large ones mean anything:
 
@@ -301,6 +326,10 @@ so only the large ones mean anything:
 - The press's gain in 1v1 comes from one head-to-head comparison replicated once (111–79 over 192
   games); it does not show against the previous build or PartyCannon, and the Nexto drill leans the
   other way by 4 points (about 1.3 standard errors).
+- More boost does not buy goals at the scale this routing can reach: raising a 3v3 car's average tank
+  from 18.6 to 22.0 and its big pads from 1.4 to 2.5 per 5 minutes left the score level. The gap to
+  PartyCannon, which takes 21 big pads per player per 5 minutes and plays at 1354 uu/s against our
+  973, is a different way of playing the rotation (cars parked near pads), not a routing threshold.
 - A pad trip near our own net still drives with the generic `Drive`. The slack reserve grows toward
   the net, and dodges are off unless there is time for a flip, but a `DefensiveDrive`-style
   controller inside the defensive third is not built.
