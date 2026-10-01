@@ -44,9 +44,9 @@ namespace Bot
         public static bool FirstManShadow = true;
         /// <summary>
         /// A selected challenge stays committed for as long as it is safe to continue, instead of for
-        /// 0.27–0.36 s after the race last looked won (switch for A/B).
+        /// 0.27–0.36 s after the race last looked won.
         /// </summary>
-        public static bool ChallengeHold = false;
+        public static bool ChallengeHold = true;
 
         private float nextPlan = float.NegativeInfinity;
         private float challengeCommitUntil = float.NegativeInfinity;

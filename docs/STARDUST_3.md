@@ -170,6 +170,7 @@ same flawed goal mouths, so their comparisons stand but not their absolute numbe
 | **Saves rework, air-control roll fix, jump release** (fixed arena) | the build before them | 144 | +0.06 (70-74): level |
 | Roll fix and jump release alone | the build before them | 72 | +0.07 |
 | Jump blocks timed as racing to the point vs coasting from takeoff | each other | 96 | ±0.10: level |
+| **Challenges held while safe to continue (`Stardust.ChallengeHold`, shipped)** (September build) | the same build | 1v1 100, 2v2 72, 3v3 36 | **+1.07 ± 0.25**, +0.79 ± 0.29, +0.58 ± 0.42 |
 
 What these showed:
 
@@ -192,6 +193,16 @@ What these showed:
   3. any clearance;
   4. a best-effort block;
   5. the scripted intercept and goal-line save.
+- **A challenge has to be finished.** A selected challenge used to stay committed for only
+  0.27–0.36 s after the arrival race last looked won. An ETA that jumps after a touch or a
+  prediction resample then dropped it, and the car turned back to the shadow mid-approach. Held
+  until `Defense.CanContinueChallenge` fails (the race clearly lost, or the car no longer
+  goal-side), it wins in every team size. Against Party Cannon in 1v1 it makes +1.32 ± 0.34 goals per
+  game over 96 games, against +0.72 ± 0.29 for the build before on the same seeds. Own goals
+  fall in team play (34 vs 55 in 2v2, 16 vs 23 in 3v3). The decision still switches between
+  attack and defence about 17 times a minute either way; what changes is that the car keeps its
+  shots and plays them out, spending 143 boost a minute against 110. The drills are unchanged or
+  better on the same seeds: saves 91 vs 91 of 150, rollers 139 vs 139, clears 62 vs 57.
 
 ## Tournament against the RLBot v5 bot pack
 
@@ -313,7 +324,7 @@ dotnet build src/Bot/Bot.csproj --configuration Release
 dotnet run --project tests/Stardust.Tests/Stardust.Tests.csproj --configuration Release
 ```
 
-CI builds the bot, runs the ten regression programs in `tests/`, and runs the RocketSim
+CI builds the bot, runs the eleven regression programs in `tests/`, and runs the RocketSim
 physics-model checks.
 
 `Stardust.bot.toml` runs that local build: RLBot starts `Bot.exe` on Windows and `Bot` on Linux.
