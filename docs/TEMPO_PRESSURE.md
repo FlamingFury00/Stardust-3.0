@@ -316,7 +316,8 @@ so only the large ones mean anything:
   build gave, in the builds it is measured against, and nothing more.
 - The measured gain is in 3v3 (35–13 against the previous build, +1.23 goals a game). 2v2 and 1v1
   are level with it (25–23 and 40–56) while taking the same space away, and a 1v1 car still runs at
-  zero boost 39 % of the time. Against PartyCannon, which takes twice our shots, 1v1 is 51–45.
+  zero boost 39 % of the time. Against PartyCannon, which takes twice our shots, 1v1 is 51–45, but
+  3v3 is 13–33 and 2v2 17–26: it is the stronger team, and plays a faster, boost-rich game.
 - 96 games resolve about ±0.25 goals a game in 1v1. Anything the mechanics or the demolition run
   add to a game is smaller: they are measured by drills (`flick` 87 %, `carry` 92 %, the demolition
   drill 72 % of runs) and by the games with every one of them switched on being level with the games
