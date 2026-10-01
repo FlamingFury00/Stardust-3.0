@@ -66,6 +66,31 @@ internal static class DefenseRegression
                 $"midfield solo shadow was too passive/aggressive: {target}");
         });
 
+        test("challenge commitment: timed commits expire, held ones last while safe", () =>
+        {
+            foreach (bool hold in new[] { false, true })
+            {
+                float until = float.NegativeInfinity;
+                Check(!Defense.CommitChallenge(false, true, false, hold, 10f, ref until),
+                    $"hold={hold}: committed without ever winning the race");
+                Check(Defense.CommitChallenge(true, true, false, hold, 10f, ref until),
+                    $"hold={hold}: a won race did not commit");
+                Check(Defense.CommitChallenge(false, true, false, hold, 10.2f, ref until),
+                    $"hold={hold}: the commitment dropped at once");
+                Check(Defense.CommitChallenge(false, true, false, hold, 10.5f, ref until) == hold,
+                    $"hold={hold}: wrong commitment 0.5 s after the last won race");
+                Check(!Defense.CommitChallenge(false, false, false, hold, 10.6f, ref until) &&
+                      !Defense.CommitChallenge(false, true, false, hold, 10.7f, ref until),
+                    $"hold={hold}: an unsafe continuation did not release the challenge for good");
+            }
+
+            float pressured = float.NegativeInfinity;
+            Defense.CommitChallenge(true, true, true, false, 0f, ref pressured);
+            Check(Defense.CommitChallenge(false, true, true, false, 0.33f, ref pressured) &&
+                  !Defense.CommitChallenge(false, true, true, false, 0.37f, ref pressured),
+                "a pressured commitment must last 0.36 s");
+        });
+
         test("last-man line: only the team's last car is held behind it, and only when enabled", () =>
         {
             float previous = Defense.LastManLine, previousPads = Defense.LastManPadLine;

@@ -399,6 +399,22 @@ namespace Bot
         }
 
         /// <summary>
+        /// Commitment to a challenge across planning ticks. A race the car can win (re)commits it;
+        /// otherwise it stays committed while <paramref name="safeToContinue"/> holds, either until
+        /// <paramref name="until"/> (0.27 s after the last win, 0.36 s under pressure) or, held, until
+        /// the continuation becomes unsafe. Updates <paramref name="until"/> and returns the commitment.
+        /// </summary>
+        public static bool CommitChallenge(bool canChallenge, bool safeToContinue, bool pressure,
+            bool hold, float now, ref float until)
+        {
+            if (canChallenge)
+                until = hold ? float.PositiveInfinity : now + (pressure ? 0.36f : 0.27f);
+            else if (now >= until || !safeToContinue)
+                until = float.NegativeInfinity;
+            return canChallenge || (now < until && safeToContinue);
+        }
+
+        /// <summary>
         /// Hysteresis gate for a challenge that has already been selected. ETA estimates can jump by
         /// several tenths after a touch or prediction resample; do not abandon a committed approach
         /// unless the geometry becomes genuinely unsafe or the race becomes clearly lost.

@@ -167,13 +167,8 @@ namespace Bot
                 Situation, Me, Ball.Location, OurGoal.Location);
             bool challengeSafe = Defense.CanContinueChallenge(
                 Situation, Me, Ball.Location, OurGoal.Location);
-            if (RawCanChallenge)
-                challengeCommitUntil = ChallengeHold ? float.PositiveInfinity
-                    : Game.Time + (underPressure ? 0.36f : 0.27f);
-            else if (Game.Time >= challengeCommitUntil || !challengeSafe)
-                challengeCommitUntil = float.NegativeInfinity;
-            ChallengeCommitted = RawCanChallenge ||
-                (Game.Time < challengeCommitUntil && challengeSafe);
+            ChallengeCommitted = Defense.CommitChallenge(RawCanChallenge, challengeSafe,
+                underPressure, ChallengeHold, Game.Time, ref challengeCommitUntil);
 
             if (emergency && PlannedSave(threat))
                 return;
