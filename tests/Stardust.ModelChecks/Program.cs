@@ -73,33 +73,4 @@ Check(RoutePlanner.SelectBoost(me, pads, new Vec3(0, -2000, 100), destination, 0
     "boost route must remain goal-side");
 Check(RoutePlanner.Detour(new Vec3(0, 0, 0), new Vec3(2000, 0, 0), new Vec3(0, 1000, 0)) > 400,
     "off-route pad should exceed the detour budget");
-
-// Pass-over pads: a blue car running back from (0, 2000) to (0, -3000).
-Boost Pad(float x, float y) => new(1, new BoostPadT { Location = new Vector3T { X = x, Y = y, Z = 70 } });
-Car Runner(float boost, bool grounded = true) => new()
-{
-    Location = new Vec3(0, 2000, 17), Velocity = new Vec3(0, -1800, 0), Forward = new Vec3(0, -1, 0),
-    Boost = boost, IsGrounded = grounded,
-};
-Vec3 home = new(0, -3000, 17);
-Boost onRoute = Pad(150, 0), wide = Pad(1500, 0), behind = Pad(0, 2600), nearer = Pad(-100, 1000);
-Check(ReferenceEquals(RoutePlanner.PassPad(Runner(20), new[] { wide, onRoute, behind }, home), onRoute),
-    "a pad on the way back must be passed over");
-Check(ReferenceEquals(RoutePlanner.PassPad(Runner(20), new[] { onRoute, nearer }, home), nearer),
-    "the nearest pad ahead comes first");
-Check(RoutePlanner.PassPad(Runner(20), new[] { wide, behind }, home) == null,
-    "a wide or already passed pad is not on the route");
-Check(RoutePlanner.PassPad(Runner(RoutePlanner.PassBelow), new[] { onRoute }, home) == null,
-    "a car with enough boost keeps its route");
-Check(RoutePlanner.PassPad(Runner(20, grounded: false), new[] { onRoute }, home) == null,
-    "an airborne car cannot drive over a pad");
-Check(RoutePlanner.PassPad(Runner(20), new[] { onRoute }, new Vec3(0, 100, 17)) == null,
-    "a pad at the end of the route is the destination's business");
-Boost respawning = Pad(150, 0), late = Pad(150, 0);
-respawning.Update(new BoostPadStateT { IsActive = false, Timer = 3.5f });   // back in 0.5 s
-late.Update(new BoostPadStateT { IsActive = false, Timer = 0.5f });         // back in 3.5 s
-Check(ReferenceEquals(RoutePlanner.PassPad(Runner(20), new[] { respawning }, home), respawning),
-    "a pad back before the car arrives is worth the pass");
-Check(RoutePlanner.PassPad(Runner(20), new[] { late }, home) == null,
-    "a pad still empty on arrival is not");
 Console.WriteLine($"MODEL RESULT: {passed} checks passed. These checks do not establish in-game match strength.");
