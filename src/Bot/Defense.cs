@@ -93,34 +93,23 @@ namespace Bot
         }
 
         /// <summary>
-        /// How far ahead (s) of the ball a defender in a team reads it when the ball is heading for our
-        /// net. A defender that reads where the ball will be, not where it is, is already there when the
-        /// attacker arrives: 2v2 went 17-7, 18-6 and 19-5 against the previous build at 0.6 s and 10-14
-        /// at 0.2 s, and 3v3 was level (16-8 and 17-7 at 0.2 s, 18-6 at 0.6 s).
+        /// How far ahead (s) of the ball a defender reads it when the ball is heading for our net. A
+        /// defender that reads where the ball will be, not where it is, is already there when the
+        /// attacker arrives. A lone defender reads it the same way: in 1v1 head-to-head series the
+        /// press and this lookahead beat the previous 0.2 s and full gap (see docs/TEMPO_PRESSURE.md).
         /// </summary>
         public static float ReferenceLead = 0.6f;
-        /// <summary>
-        /// The same for a lone defender, who keeps the previous 0.2 s: against PartyCannon in 1v1 a
-        /// 0.6 s lookahead went 13-35 and 15-33 where 0.2 s went 32-16 (48 games on the same seeds).
-        /// </summary>
-        public static float SoloReferenceLead = 0.2f;
-        /// <summary>
-        /// Whether a lone defender keeps its room: the full gap at every depth and <see cref="SoloReferenceLead"/>.
-        /// Off gives it the team's press and lookahead, which only the lab switches on.
-        /// </summary>
-        public static bool SoloCaution = true;
 
         /// <summary>
         /// Use a short future ball sample only when the untouched prediction is moving toward our goal.
         /// This compensates planning latency without letting a retreating ball drag the defense upfield.
         /// </summary>
-        public static Vec3 ReferenceBall(BallPrediction prediction, Vec3 ball, Vec3 goal, float now,
-            bool solo = false)
+        public static Vec3 ReferenceBall(BallPrediction prediction, Vec3 ball, Vec3 goal, float now)
         {
             if (!ControlMath.Finite(ball) || !ControlMath.Finite(goal))
                 return ball;
 
-            if (prediction.TrySample(now + (solo ? SoloReferenceLead : ReferenceLead), out Ball sample) &&
+            if (prediction.TrySample(now + ReferenceLead, out Ball sample) &&
                 sample != null && ControlMath.Finite(sample.location) &&
                 GoalSideProgress(sample.location, ball, goal) > 20f)
                 return sample.location;
@@ -149,9 +138,8 @@ namespace Bot
         /// Gap scale in midfield and their half. A miss there costs a goal only much later, so a
         /// defender presses the carrier instead of holding the reaction room it needs near its net.
         /// At 0.75 the opponent had a free ball (nobody within 1000 uu) 36 % of the time against 51 %
-        /// for the previous build, at level results; 0.55 gave more space back but lost goals. A lone
-        /// defender has no cover behind it and keeps its room (see <c>solo</c> in <see cref="ShadowTarget"/>):
-        /// with the press on, the 1v1 series against PartyCannon went 16-32 against 32-16 without it.
+        /// for the previous build in 3v3; 0.55 gave more space back but lost goals. It applies to a lone
+        /// defender too (see docs/TEMPO_PRESSURE.md).
         /// </summary>
         public static float NeutralGapScale = 0.75f;
         /// <summary>Ball depth (uu into our half) where pressure starts to give way to caution, and how far it takes.</summary>
@@ -175,11 +163,8 @@ namespace Bot
         /// The ball's velocity, when known. The gap stops closing as the ball comes at our goal faster
         /// than a defender can reverse: a defender that closes on such a ball is beaten by the first touch.
         /// </param>
-        /// <param name="solo">
-        /// The defender has no teammate. Nobody covers a miss, so it keeps the full gap at every depth.
-        /// </param>
         public static Vec3 ShadowTarget(Vec3 ball, Vec3 goal, DefensiveRole role,
-            float pressureTime = float.PositiveInfinity, Vec3? ballVelocity = null, bool solo = false)
+            float pressureTime = float.PositiveInfinity, Vec3? ballVelocity = null)
         {
             if (!ControlMath.Finite(goal))
                 goal = new Vec3(0, -5120, 0);
@@ -225,14 +210,12 @@ namespace Bot
                     lateralBias = 650f;
                     break;
                 default:
-                    // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
+                    // A first defender presses in midfield and their half, preserves reaction space nearer our net, and closes it as contact becomes imminent.
                     float attackSpeed = ballVelocity.HasValue
                         ? MathF.Max(0f, ballVelocity.Value.Dot(goalward))
                         : 0f;
                     float fast = ControlMath.SmoothStep((attackSpeed - PressureSpeedStart) / PressureSpeedWidth);
-                    float pressing = solo
-                        ? 1f
-                        : Lerp(NeutralGapScale, 1f, MathF.Max(Caution(flatBall.y * side), fast));
+                    float pressing = Lerp(NeutralGapScale, 1f, MathF.Max(Caution(flatBall.y * side), fast));
                     desiredGap = (Lerp(1425f, 900f, danger) - 420f * urgency) * ShadowGapScale * pressing;
                     desiredGap = System.Math.Clamp(desiredGap, MathF.Min(ShadowMinGap, 1450f), 1450f);
                     minimumProgress = 460f - 120f * urgency;

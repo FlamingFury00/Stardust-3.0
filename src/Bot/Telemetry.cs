@@ -257,7 +257,7 @@ namespace Bot
 
             object actionDetail = ActionDetail(bot.Action);
             Vec3 reference = Defense.ReferenceBall(
-                Ball.Prediction, ball.location, goal, Game.Time, bot.Situation.TeamCount <= 1 && Defense.SoloCaution);
+                Ball.Prediction, ball.location, goal, Game.Time);
 
             object touchData = null;
             BallTouch touch = Ball.LatestTouch;

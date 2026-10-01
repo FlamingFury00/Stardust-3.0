@@ -315,7 +315,7 @@ internal static class DefenseRegression
             Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f).y, -2000f, 0.01f);
         });
 
-        test("defense-v3: a lone defender reads the ball a shorter time ahead than a team does", () =>
+        test("defense-v3: a defender reads an incoming ball ReferenceLead ahead, and only an incoming one", () =>
         {
             Vec3 ball = new(200, -2000, 100);
             var incoming = new RedUtils.BallPrediction
@@ -327,9 +327,15 @@ internal static class DefenseRegression
                 }
             };
             Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f).y, -2000f - 1000f * Defense.ReferenceLead, 0.01f);
-            Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f, solo: true).y,
-                -2000f - 1000f * Defense.SoloReferenceLead, 0.01f);
-            Check(Defense.SoloReferenceLead < Defense.ReferenceLead, "the solo lookahead is not the shorter one");
+            var retreating = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(10f, ball, new Vec3(0, 1000, 0)),
+                    new BallSlice(11f, new Vec3(200, -1000, 100), new Vec3(0, 1000, 0))
+                }
+            };
+            Near(Defense.ReferenceBall(retreating, ball, blueGoal, 10f).y, ball.y, 0.01f);
         });
 
         test("defense-v3: anchor can stop while moving shadow retains terminal mobility", () =>
@@ -365,10 +371,6 @@ internal static class DefenseRegression
                     $"midfield gap {pressedNeutral:F0} did not close from {normalNeutral:F0}");
                 Check(MathF.Abs(pressedDeep - normalDeep) < 5f,
                     $"the gap near our net moved from {normalDeep:F0} to {pressedDeep:F0}");
-                float soloNeutral = attackerNeutral.FlatDist(Defense.ShadowTarget(
-                    attackerNeutral, blueGoal, DefensiveRole.Shadow, float.PositiveInfinity, null, solo: true));
-                Check(MathF.Abs(soloNeutral - normalNeutral) < 5f,
-                    $"a lone defender pressed in midfield: gap {soloNeutral:F0} against {normalNeutral:F0}");
                 Vec3 fast = new(0, -2000, 0), slow = new(0, -400, 0);
                 float pressedFast = attackerNeutral.FlatDist(
                     Defense.ShadowTarget(attackerNeutral, blueGoal, DefensiveRole.Shadow, float.PositiveInfinity, fast));
