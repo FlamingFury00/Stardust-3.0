@@ -63,14 +63,13 @@ var me = new Car { Location = new Vec3(0, -1000, 17), Boost = 10, IsGrounded = t
 var smallPad = new Boost(0); // active default small pad at the origin
 var pads = new[] { smallPad };
 Vec3 ball = new(0, 1000, 100), destination = new(0, 0, 17);
-Check(ReferenceEquals(RoutePlanner.SelectBoost(me, pads, ball, destination, 0, 2, (_, _) => 0.5f), smallPad),
+Func<Car, Vec3, float> Flat = (car, point) => car.Location.FlatDist(point) / 1400f;
+Check(ReferenceEquals(BoostEconomy.Choose(me, pads, ball, destination, 0, 2, Array.Empty<Car>(), Flat), smallPad),
     "small on-route boost must be considered");
-Check(RoutePlanner.SelectBoost(me, pads, ball, destination, 0, 0.4f, (_, _) => 0.5f) == null,
-    "opponent pressure must reject the detour");
-Check(RoutePlanner.SelectBoost(me, pads, ball, destination, 0, 2, (_, _) => float.NaN) == null,
+Check(BoostEconomy.Choose(me, pads, ball, destination, 0, 0f, Array.Empty<Car>(), Flat) == null,
+    "an opponent about to touch (no slack) must reject the detour");
+Check(BoostEconomy.Choose(me, pads, ball, destination, 0, 2, Array.Empty<Car>(), (_, _) => float.NaN) == null,
     "nonfinite travel time must be rejected");
-Check(RoutePlanner.SelectBoost(me, pads, new Vec3(0, -2000, 100), destination, 0, 2, (_, _) => 0.5f) == null,
+Check(BoostEconomy.Choose(me, pads, new Vec3(0, -2000, 100), destination, 0, 2, Array.Empty<Car>(), Flat) == null,
     "boost route must remain goal-side");
-Check(RoutePlanner.Detour(new Vec3(0, 0, 0), new Vec3(2000, 0, 0), new Vec3(0, 1000, 0)) > 400,
-    "off-route pad should exceed the detour budget");
 Console.WriteLine($"MODEL RESULT: {passed} checks passed. These checks do not establish in-game match strength.");

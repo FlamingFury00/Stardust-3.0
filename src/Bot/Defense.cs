@@ -24,12 +24,6 @@ namespace Bot
 
         private static float Side(Vec3 goal) => goal.y < 0 ? -1 : 1;
 
-        private static float SmoothStep(float value)
-        {
-            value = System.Math.Clamp(value, 0f, 1f);
-            return value * value * (3f - 2f * value);
-        }
-
         private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 
         /// <summary>
@@ -93,14 +87,18 @@ namespace Bot
         /// </summary>
         public static bool ShouldAnchor(TacticalFrame frame)
         {
-            if (frame == null || frame.TeamCount <= 1)
-                return false;
-            if (frame.TeamCount == 2)
-                return frame.TeamRank > 0;
-            if (frame.TeamRank >= 2)
-                return true;
-            return frame.TeamRank > 0 && (frame.LastBack || !frame.HasCover);
+            // One anchor at a time: two cars given the same job stack on the same spot. The deepest
+            // support car is never the first man.
+            return frame != null && frame.TeamCount > 1 && frame.DeepestSupport;
         }
+
+        /// <summary>
+        /// How far ahead (s) of the ball a defender reads it when the ball is heading for our net. A
+        /// defender that reads where the ball will be, not where it is, is already there when the
+        /// attacker arrives. A lone defender reads it the same way: in 1v1 head-to-head series the
+        /// press and this lookahead beat the previous 0.2 s and full gap (see docs/TEMPO_PRESSURE.md).
+        /// </summary>
+        public static float ReferenceLead = 0.6f;
 
         /// <summary>
         /// Use a short future ball sample only when the untouched prediction is moving toward our goal.
@@ -111,7 +109,7 @@ namespace Bot
             if (!ControlMath.Finite(ball) || !ControlMath.Finite(goal))
                 return ball;
 
-            if (prediction.TrySample(now + 0.20f, out Ball sample) &&
+            if (prediction.TrySample(now + ReferenceLead, out Ball sample) &&
                 sample != null && ControlMath.Finite(sample.location) &&
                 GoalSideProgress(sample.location, ball, goal) > 20f)
                 return sample.location;
@@ -127,6 +125,31 @@ namespace Bot
         /// <summary>Distance (uu) inside the post that a front-post shadow line aims at.</summary>
         private const float FrontPostInset = 150f;
 
+        /// <summary>Scale on the gap a first defender keeps goal-side of the ball; below one, it stands closer to the carrier.</summary>
+        public static float ShadowGapScale = 1f;
+        /// <summary>Nearest gap (uu) a first defender's scaled shadow may close to.</summary>
+        public static float ShadowMinGap = 560f;
+        /// <summary>Reach (uu) within which an uncovered / a covered first defender meets a carrier near our net.</summary>
+        public static float CarrierRange = 800f, CoveredCarrierRange = 1500f;
+        /// <summary>The same reaches, and the time (s) allowed to make contact, once the play is in midfield or their half.</summary>
+        public static float NeutralCarrierRange = 1500f, NeutralCoveredCarrierRange = 2200f;
+        public static float NeutralHorizon = 1.0f, NeutralCoveredHorizon = 1.5f;
+        /// <summary>
+        /// Gap scale in midfield and their half. A miss there costs a goal only much later, so a
+        /// defender presses the carrier instead of holding the reaction room it needs near its net.
+        /// At 0.75 the opponent had a free ball (nobody within 1000 uu) 36 % of the time against 51 %
+        /// for the previous build in 3v3; 0.55 gave more space back but lost goals. It applies to a lone
+        /// defender too (see docs/TEMPO_PRESSURE.md).
+        /// </summary>
+        public static float NeutralGapScale = 0.75f;
+        /// <summary>Ball depth (uu into our half) where pressure starts to give way to caution, and how far it takes.</summary>
+        public static float PressureZoneStart = 800f, PressureZoneWidth = 2400f;
+        /// <summary>Goalward ball speed (uu/s) from which the first defender stops pressing, and how far that takes.</summary>
+        public static float PressureSpeedStart = 1000f, PressureSpeedWidth = 700f;
+
+        /// <summary>0 in midfield and their half, 1 in our third: how much of the cautious near-net behaviour applies.</summary>
+        public static float Caution(float ballDepth) => ControlMath.SmoothStep((ballDepth - PressureZoneStart) / PressureZoneWidth);
+
         /// <summary>Distance (uu) a support car keeps goal-side of the ball away from our goal; it closes by 290 uu near it.</summary>
         public static float SupportGap = 1050f;
         /// <summary>Keep a first defender's field-side corner shadow outside the goal-mouth anchor bounds.</summary>
@@ -136,8 +159,12 @@ namespace Bot
         /// Continuous ball-to-goal defensive positioning. Every role is constrained to remain goal-side
         /// of the reference ball. The solo shadow compresses under imminent contact instead of parking.
         /// </summary>
+        /// <param name="ballVelocity">
+        /// The ball's velocity, when known. The gap stops closing as the ball comes at our goal faster
+        /// than a defender can reverse: a defender that closes on such a ball is beaten by the first touch.
+        /// </param>
         public static Vec3 ShadowTarget(Vec3 ball, Vec3 goal, DefensiveRole role,
-            float pressureTime = float.PositiveInfinity)
+            float pressureTime = float.PositiveInfinity, Vec3? ballVelocity = null)
         {
             if (!ControlMath.Finite(goal))
                 goal = new Vec3(0, -5120, 0);
@@ -162,9 +189,9 @@ namespace Bot
             float goalDistance = flatBall.FlatDist(flatGoal);
 
             // danger approaches one as the ball enters the defensive third.
-            float danger = 1f - SmoothStep((goalDistance - 650f) / 3500f);
+            float danger = 1f - ControlMath.SmoothStep((goalDistance - 650f) / 3500f);
             float urgency = float.IsFinite(pressureTime)
-                ? 1f - SmoothStep((pressureTime - 0.08f) / 1.15f)
+                ? 1f - ControlMath.SmoothStep((pressureTime - 0.08f) / 1.15f)
                 : 0f;
 
             float desiredGap;
@@ -183,9 +210,14 @@ namespace Bot
                     lateralBias = 650f;
                     break;
                 default:
-                    // A solo/first defender preserves reaction space, then closes it as contact becomes imminent.
-                    desiredGap = Lerp(1425f, 900f, danger) - 420f * urgency;
-                    desiredGap = System.Math.Clamp(desiredGap, 560f, 1450f);
+                    // A first defender presses in midfield and their half, preserves reaction space nearer our net, and closes it as contact becomes imminent.
+                    float attackSpeed = ballVelocity.HasValue
+                        ? MathF.Max(0f, ballVelocity.Value.Dot(goalward))
+                        : 0f;
+                    float fast = ControlMath.SmoothStep((attackSpeed - PressureSpeedStart) / PressureSpeedWidth);
+                    float pressing = Lerp(NeutralGapScale, 1f, MathF.Max(Caution(flatBall.y * side), fast));
+                    desiredGap = (Lerp(1425f, 900f, danger) - 420f * urgency) * ShadowGapScale * pressing;
+                    desiredGap = System.Math.Clamp(desiredGap, MathF.Min(ShadowMinGap, 1450f), 1450f);
                     minimumProgress = 460f - 120f * urgency;
                     lateralBias = 260f;
                     break;
@@ -208,14 +240,14 @@ namespace Bot
             if (role == DefensiveRole.Anchor)
             {
                 float ballDepth = flatBall.y * side;
-                float nearGoal = SmoothStep((ballDepth - (goalDepth - 2400f)) / 1800f);
+                float nearGoal = ControlMath.SmoothStep((ballDepth - (goalDepth - 2400f)) / 1800f);
                 float sign = MathF.Abs(flatBall.x - flatGoal.x) < 60f ? 0f : MathF.Sign(flatBall.x - flatGoal.x);
                 float farPostX = flatGoal.x - sign * (Goal.Width * 0.5f - 220f);
                 target.x = Lerp(target.x, farPostX, nearGoal);
             }
 
             float signedTargetDepth = target.y * side;
-            float funnel = SmoothStep((signedTargetDepth - (goalDepth - 1200f)) / 950f);
+            float funnel = ControlMath.SmoothStep((signedTargetDepth - (goalDepth - 1200f)) / 950f);
             float safeHalfWidth = MathF.Max(0f, Goal.Width * 0.5f - 175f);
             bool wideShadow = role == DefensiveRole.Shadow && WideShadow;
             float halfWidth = wideShadow ? 3200f : Lerp(3200f, safeHalfWidth, funnel);
@@ -234,7 +266,7 @@ namespace Bot
             target.y = side * System.Math.Clamp(target.y * side, -goalDepth + 180f, goalDepth + ShallowNetDepth);
             if (wideShadow)
             {
-                float outsideMouth = SmoothStep((MathF.Abs(target.x - goal.x) - (safeHalfWidth - 140f)) / 140f);
+                float outsideMouth = ControlMath.SmoothStep((MathF.Abs(target.x - goal.x) - (safeHalfWidth - 140f)) / 140f);
                 float maximumDepth = Lerp(goalDepth + ShallowNetDepth, goalDepth - 120f, outsideMouth);
                 target.y = side * MathF.Min(target.y * side, maximumDepth);
                 float cornerWidth = MathF.Min(3200f, Field.CornerIntersection - MathF.Abs(target.y) - 120f);
@@ -304,7 +336,7 @@ namespace Bot
                 desiredProgress = goalDistance + 35f;
 
             Vec3 target = flatBall + goalward * desiredProgress;
-            float farPostBlend = SmoothStep((flatBall.y * side - 1000f) / 2600f);
+            float farPostBlend = ControlMath.SmoothStep((flatBall.y * side - 1000f) / 2600f);
             target.x = Lerp(target.x, farPostX, 0.45f + 0.40f * farPostBlend);
 
             float progress = GoalSideProgress(target, flatBall, flatGoal);
@@ -327,6 +359,13 @@ namespace Bot
         public static float SoloMargin = 0.05f;
         /// <summary>Race margin (s) a challenge needs while a teammate covers the goal; negative allows arriving that much later.</summary>
         public static float CoveredMargin = -0.12f;
+        /// <summary>
+        /// The same margin in midfield and their half, where a lost race with a teammate behind is no
+        /// goal, so the first man commits to a 50/50 he is 0.35 s late for instead of waiting for the
+        /// touch. In 3v3 against the previous build this won 21 of 24 games (+1.6 goals per game) against
+        /// 18 of 24 (+1.0) at the near-net margin; in 2v2 the two were level.
+        /// </summary>
+        public static float NeutralCoveredMargin = -0.35f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, within 3300 uu of our goal.</summary>
         public static float ContinueDeficitNear = 0.38f;
         /// <summary>How late (s) a committed challenge may fall behind before it is abandoned, further out.</summary>
@@ -363,7 +402,7 @@ namespace Bot
 
             float requiredMargin;
             if (frame.HasCover)
-                requiredMargin = CoveredMargin;
+                requiredMargin = Lerp(NeutralCoveredMargin, CoveredMargin, Caution(ball.y * Side(goal)));
             else if (frame.UnderPressure)
                 requiredMargin = frame.TeamCount <= 1 ? SoloPressureMargin : -0.05f;
             else
@@ -422,7 +461,11 @@ namespace Bot
                 return false;
             float distance = car.Location.FlatDist(ball.location);
             bool covered = frame.TeamCount > 1 && frame.HasCover;
-            if (distance > (covered ? 1500f : 800f))
+            float caution = Caution(ball.location.y * Side(goal));
+            float range = covered
+                ? Lerp(NeutralCoveredCarrierRange, CoveredCarrierRange, caution)
+                : Lerp(NeutralCarrierRange, CarrierRange, caution);
+            if (distance > range)
                 return false;
 
             bool carrier = false;
@@ -444,7 +487,9 @@ namespace Bot
             if (!carrier)
                 return false;
 
-            float horizon = covered ? 0.95f : 0.60f;
+            float horizon = covered
+                ? Lerp(NeutralCoveredHorizon, 0.95f, caution)
+                : Lerp(NeutralHorizon, 0.60f, caution);
             for (float t = 0.10f; t <= horizon; t += 0.05f)
             {
                 // Continuous ground contact keeps the carrier's ball moving with the car, unlike
@@ -549,38 +594,6 @@ namespace Bot
                 continuation -= 0.08f;
 
             return System.Math.Clamp(frame.OpponentEta + continuation, 0f, 3f);
-        }
-
-        /// <summary>Ball depth (uu toward our goal; negative is their half) an uncovered support car may refill behind.</summary>
-        public static float SupportRefillDepth = -900f;
-        /// <summary>Opponent arrival time (s) an uncovered support car's refill needs.</summary>
-        public static float SupportRefillWindow = 2.5f;
-
-        public static bool CanRefill(TacticalFrame frame, Car car, Vec3 ball, Vec3 goal, bool pressure)
-        {
-            if (frame == null || car == null || pressure ||
-                !IsGoalSide(car.Location, ball, goal, 20f))
-                return false;
-
-            float side = Side(goal);
-            float defensiveDepth = ball.y * side;
-
-            // In 1v1 there is no second man, so forbidding rank zero refills means the bot has no
-            // intentional boost economy at all. Allow only goal-side, low-risk refills while the
-            // opponent is not about to touch and the ball is outside the dangerous own-box depth.
-            if (frame.TeamCount <= 1)
-                return defensiveDepth < 2500f && frame.OpponentEta > 1.35f &&
-                    (frame.FreeTime > 0.30f || defensiveDepth < 300f);
-
-            if (frame.TeamRank == 0)
-                return false;
-            if (frame.HasCover)
-                return true;
-
-            // Without explicit cover, only a non-first-man may refill when the ball is clearly
-            // out of our half and the opponent contact window is long.
-            bool ballSafelyUpfield = defensiveDepth < SupportRefillDepth;
-            return ballSafelyUpfield && frame.OpponentEta > SupportRefillWindow;
         }
 
         /// <summary>

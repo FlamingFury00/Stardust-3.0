@@ -186,6 +186,88 @@ Test("flick shot: an open flat lane is insufficient when the flight hits the cro
     }
 });
 
+Test("flick: an unchallenged flick whose ball never settles on its spot ends instead of jumping", () =>
+{
+    Set(typeof(Game), nameof(Game.Time), null, 0f);
+    var car = new Car { Index = 0, Team = 0, IsGrounded = true, Location = new Vec3(0, 0, 17),
+        Velocity = new Vec3(1100, 0, 0), Orientation = new Mat3x3(Vec3.Zero), Boost = 40 };
+    var bot = Probe(car);
+    // The ball rides 10 uu ahead of the origin; the power recipe wants it 50 uu ahead.
+    SetBall(car.Location + new Vec3(10, 0, 135), car.Velocity, new BallPrediction { Slices = Array.Empty<BallSlice>() });
+    var flick = new Flick(FlickKind.Power, Vec3.X);
+    bool jumped = false;
+    foreach (float time in new[] { 0f, 0.5f, 1.2f, 2.5f })
+    {
+        Set(typeof(Game), nameof(Game.Time), null, time);
+        bot.Controller = new ControllerStateT();
+        flick.Run(bot);
+        jumped |= bot.Controller.Jump;
+    }
+    Check(flick.Finished && !jumped, "an unchallenged flick launched, or never ended, with the ball off its spot");
+});
+
+Test("flick: a challenged flick goes once its short centring time has passed", () =>
+{
+    Set(typeof(Game), nameof(Game.Time), null, 0f);
+    var car = new Car { Index = 0, Team = 0, IsGrounded = true, Location = new Vec3(0, 0, 17),
+        Velocity = new Vec3(1100, 0, 0), Orientation = new Mat3x3(Vec3.Zero), Boost = 40 };
+    var bot = Probe(car);
+    SetBall(car.Location + new Vec3(10, 0, 135), car.Velocity, new BallPrediction { Slices = Array.Empty<BallSlice>() });
+    var flick = new Flick(FlickKind.Power, Vec3.X, urgent: true);
+    bool jumped = false;
+    foreach (float time in new[] { 0f, 0.05f, 0.3f })
+    {
+        Set(typeof(Game), nameof(Game.Time), null, time);
+        bot.Controller = new ControllerStateT();
+        flick.Run(bot);
+        jumped |= bot.Controller.Jump;
+    }
+    Check(jumped, "a flick under a challenge waited for a ball that was not on its spot");
+});
+
+Test("flick shot: only planned at the carry speeds the impulses were measured over", () =>
+{
+    foreach (int team in new[] { 0, 1 })
+    {
+        float sign = team == 0 ? 1 : -1;
+        Vec3 goal = new(0, 5120 * sign, 0), ownGoal = -goal;
+        foreach ((float speed, bool expected) in new[] { (500f, false), (1200f, true), (2100f, false) })
+        {
+            var car = new Car { Team = (uint)team, IsGrounded = true,
+                Location = new Vec3(0, 4300 * sign, 17), Velocity = new Vec3(0, speed * sign, 0),
+                Orientation = new Mat3x3(new Vec3(0, sign * MathF.PI / 2, 0)) };
+            Ball ball = new(car.Location + car.Forward * 10 + car.Up * 135, car.Velocity);
+            bool planned = PossessionControl.PlanFlick(car, ball, car.Forward, Array.Empty<Car>(), ownGoal, goal, out _) != null;
+            Check(planned == expected, $"team {team}: a flick shot from a {speed:F0} uu/s carry was {(planned ? "planned" : "not planned")}");
+        }
+    }
+});
+
+Test("demolition run: ends as demolished, escaped or car airborne, and says so", () =>
+{
+    foreach ((string expected, Func<Car, Car, bool> arrange) in new (string, Func<Car, Car, bool>)[]
+    {
+        ("demolished", (me, target) => { target.IsDemolished = true; return true; }),
+        // The target drives away as fast as the car closes: no plan, and a closing speed under the hold threshold.
+        ("target escaped", (me, target) => { target.Velocity = new Vec3(0, 2200, 0); return true; }),
+        ("car airborne", (me, target) => { me.IsGrounded = false; return true; }),
+    })
+    {
+        Set(typeof(Game), nameof(Game.Time), null, 0f);
+        var me = new Car { Index = 0, Team = 0, IsGrounded = true, Location = new Vec3(0, -1500, 17),
+            Velocity = new Vec3(0, 2200, 0), Orientation = new Mat3x3(new Vec3(0, MathF.PI / 2, 0)), Boost = 60 };
+        var target = new Car { Index = 1, Team = 1, IsGrounded = true, Location = new Vec3(0, 300, 17),
+            Velocity = new Vec3(0, 400, 0), Orientation = new Mat3x3(new Vec3(0, MathF.PI / 2, 0)) };
+        var bot = Probe(me);
+        arrange(me, target);
+        Set(typeof(Cars), nameof(Cars.AllCars), null, new List<Car> { me, target });
+        var run = new DemoAttack(target);
+        Set(typeof(Game), nameof(Game.Time), null, 0.1f);
+        run.Run(bot);
+        Check(run.Finished && run.Outcome == expected, $"expected '{expected}', got '{run.Outcome}' (finished {run.Finished})");
+    }
+});
+
 Console.WriteLine($"MECHANICS PHYSICS RESULT: {passed} passed, {failed} failed.");
 Environment.ExitCode = failed == 0 ? 0 : 1;
 

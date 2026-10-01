@@ -6,42 +6,25 @@ using RedUtils.Math;
 
 namespace Bot
 {
-    /// <summary>Independent feature switches support in-game ablation against the baseline.</summary>
-    public sealed class StardustOptions
-    {
-        public bool GroundControl { get; init; } = Environment.GetEnvironmentVariable("STARDUST_GROUND_CONTROL") != "0";
-        public bool AerialCarry { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AERIAL_CARRY") != "0";
-        public bool FlipResets { get; init; } = Environment.GetEnvironmentVariable("STARDUST_FLIP_RESETS") == "1";
-        public bool AirDribbles { get; init; } = Environment.GetEnvironmentVariable("STARDUST_AIR_DRIBBLES") == "1";
-        public bool Trace { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE") == "1";
-        /// <summary>Also log the save options weighed on every planning tick (verbose).</summary>
-        public bool TraceSaves { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TRACE_SAVES") == "1";
-        public string TelemetrySetting { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
-        public bool TelemetryConsole { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_CONSOLE") == "1";
-        public string TelemetryFile { get; init; } = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
-        public int TelemetryHz { get; init; } = ReadTelemetryHz();
-
-        public bool TelemetryDisabled => TelemetrySetting == "0";
-        public bool TelemetryExplicit => TelemetrySetting != null;
-
-        private static int ReadTelemetryHz()
-        {
-            string raw = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
-            return int.TryParse(raw, out int hz) ? System.Math.Clamp(hz, 1, 30) : 10;
-        }
-    }
-
     /// <summary>Threat-first planning with explicit goal-side recovery and moving shadow defense.</summary>
     public class Stardust : RUBot
     {
-        public StardustOptions Options { get; } = new();
+        /// <summary>Agent id prefix of the bot processes the simulator starts.</summary>
+        public const string SimulatedAgentPrefix = "stardust-sim/";
+        public StardustOptions Options { get; }
         public TacticalFrame Situation { get; private set; } = new();
         public string Decision { get; private set; } = "startup";
         public bool Shooting { get; set; }
 
-        /// <summary>Independent policy ablations; use STARDUST_TUNE for paired simulator experiments.</summary>
+        /// <summary>Independent policy ablations; set them with --tune for paired simulator experiments.</summary>
         public static bool CarrierChallenges = true;
         public static bool FirstManShadow = true;
+        /// <summary>Seconds between full re-plans while calm, and while an opponent or the ball is about to strike.</summary>
+        public static float PlanInterval = 0.12f, UrgentPlanInterval = 0.05f;
+        /// <summary>Ball speed (uu/s) above which a pad detour before a touch is not considered.</summary>
+        private const float PadBeforeShotBallSpeed = 1800f;
+        /// <summary>Most spare time (s) before the ball a first man may have and still start a demolition run: with more, the ball is his to win.</summary>
+        private const float DemolitionFreeTime = 0.15f;
 
         private float nextPlan = float.NegativeInfinity;
         private float challengeCommitUntil = float.NegativeInfinity;
@@ -53,14 +36,17 @@ namespace Bot
         public bool ChallengeCommitted { get; private set; }
         public float EmergencyThreatTime { get; private set; } = float.PositiveInfinity;
         public float CounterThreatTime { get; private set; } = float.PositiveInfinity;
+        /// <summary>Extra travel (s) the last boost-routing decision could afford; for telemetry.</summary>
+        public float BoostSlack { get; private set; }
 
-        public Stardust(string defaultAgentId = null) : base(defaultAgentId)
+        public Stardust(string defaultAgentId = null, StardustOptions options = null) : base(defaultAgentId)
         {
-            // The packaged RLBot process enables file telemetry by default. Test/probe instances pass
-            // an explicit agent id and remain quiet unless STARDUST_TELEMETRY was explicitly provided.
-            bool productionEntry = defaultAgentId == null;
-            bool telemetryEnabled = !Options.TelemetryDisabled &&
-                (productionEntry || Options.TelemetryExplicit);
+            Options = options ?? new StardustOptions();
+            // A real match writes file telemetry by default. Instances the tests construct (they pass an
+            // explicit agent id) and the ones the simulator starts stay quiet unless asked to record.
+            bool quiet = defaultAgentId != null ||
+                AgentId.StartsWith(SimulatedAgentPrefix, StringComparison.Ordinal);
+            bool telemetryEnabled = Options.Telemetry ?? !quiet;
             telemetry = new StardustTelemetry(
                 telemetryEnabled, Options.TelemetryHz, Options.TelemetryConsole, Options.TelemetryFile);
         }
@@ -79,6 +65,7 @@ namespace Bot
                 ChallengeCommitted = false;
                 EmergencyThreatTime = float.PositiveInfinity;
                 CounterThreatTime = float.PositiveInfinity;
+                BoostSlack = 0f;
                 telemetry.Reset();
             }
 
@@ -153,7 +140,8 @@ namespace Bot
                 return;
 
             Assess(pressureTime);
-            nextPlan = Game.Time + (underPressure || emergency || counterDanger ? 0.05f : 0.12f);
+            BoostSlack = 0f;
+            nextPlan = Game.Time + (underPressure || emergency || counterDanger ? UrgentPlanInterval : PlanInterval);
 
             bool challengeCarrier = Defense.TryChallengeCarrier(Situation, Me, Ball.MainBall,
                 LivingOpponents, OurGoal.Location, out Vec3 carrierContact);
@@ -264,7 +252,7 @@ namespace Bot
                     Vec3 route = counterGoalSide
                         ? Defense.ShadowTarget(
                             counterReference, OurGoal.Location, DefensiveRole.Shadow,
-                            MathF.Min(pressureTime, 0.35f))
+                            MathF.Min(pressureTime, 0.35f), Ball.Velocity)
                         : Defense.RecoveryTarget(Me.Location, counterReference, OurGoal.Location);
                     Vec3 counterSupport = Tactics.GoalReturnTarget(
                         Me, route, OurGoal.Location);
@@ -303,6 +291,9 @@ namespace Bot
             bool finishNow = Tactics.PreferImmediateShot(
                 this, priorityAttack, Situation);
 
+            if (TryDemolition(controlledPossession, finishNow))
+                return;
+
             if (Action is IPossessionAction possession)
             {
                 if (finishNow)
@@ -335,22 +326,11 @@ namespace Bot
                 Action = null;
             }
 
-            if (Action is GetBoost refill)
-            {
-                if (!Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure))
-                    Action = null;
-                else if (!refill.Finished)
-                {
-                    SetDecision(refill.ChosenBoost?.IsLarge == true
-                        ? "support / full-pad refill"
-                        : "support / pad refill");
-                    return;
-                }
-                else
-                    Action = null;
-            }
+            // A pad trip in progress stays alive across plans; the routing below keeps or drops it.
+            if (Action is GetBoost { Finished: true })
+                Action = null;
 
-            if (!(Action is Drive) && !(Action is DefensiveDrive))
+            if (!(Action is Drive) && !(Action is DefensiveDrive) && !(Action is GetBoost))
                 Action = null;
 
             if (!Me.IsGrounded)
@@ -362,7 +342,7 @@ namespace Bot
                     return;
                 }
 
-                bool canPossessAir = Options.AerialCarry &&
+                bool canPossessAir =
                     PossessionControl.CanAcquireAir(Situation, Me, Ball.MainBall, OurGoal.Location);
                 if (canPossessAir &&
                     AerialCarry.CanStart(Me, Ball.MainBall, Situation.OpponentEta))
@@ -382,9 +362,8 @@ namespace Bot
                 return;
             }
 
-            bool canPossessGround = Options.GroundControl &&
-                PossessionControl.CanAcquireGround(
-                    Situation, Me, Ball.MainBall, OurGoal.Location);
+            bool canPossessGround = PossessionControl.CanAcquireGround(
+                Situation, Me, Ball.MainBall, OurGoal.Location);
             bool canDribble = canPossessGround &&
                 GroundDribble.CanStart(Me, Ball.MainBall, Situation.FreeTime);
 
@@ -416,6 +395,8 @@ namespace Bot
             if (attack != null &&
                 (underPressure || catchPlan == null || attack.Slice.Time - Game.Time <= 0.72f))
             {
+                if (TryPadBeforeShot(attack, pressureTime))
+                    return;
                 Action = attack;
                 SetDecision(underPressure
                     ? "attack / pressured intercept"
@@ -443,6 +424,8 @@ namespace Bot
 
             if (attack != null)
             {
+                if (TryPadBeforeShot(attack, pressureTime))
+                    return;
                 Action = attack;
                 SetDecision("attack / economical intercept");
                 return;
@@ -482,13 +465,11 @@ namespace Bot
 
             Vec3 rawSupport = recoveringGoalSide
                 ? Defense.RecoveryTarget(Me.Location, reference, OurGoal.Location)
-                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime);
+                : Defense.ShadowTarget(reference, OurGoal.Location, role, pressureTime, Ball.Velocity);
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
-            if (!recoveringGoalSide && !exitingGoal &&
-                Defense.CanRefill(Situation, Me, Ball.Location, OurGoal.Location, underPressure) &&
-                TryBoostDetour(support))
+            if (!exitingGoal && TryBoostRoute(support, recoveringGoalSide, pressureTime))
                 return;
 
             float cruise;
@@ -596,20 +577,86 @@ namespace Bot
             return true;
         }
 
-        private bool TryBoostDetour(Vec3 destination)
+        /// <summary>Runs a supersonic car into the opponent that matters most, when one can be met in time.</summary>
+        private bool TryDemolition(bool controlledPossession, bool finishNow)
         {
-            if (Ball.Location.y * Field.Side(Team) > 2500f)
+            // The first man who leads the race to the ball owns the touch: no demolition starts, and
+            // none continues, while it does.
+            bool ownsTheTouch = Situation.TeamRank == 0 && Situation.FreeTime > DemolitionFreeTime;
+            if (Action is DemoAttack running && !running.Finished)
+            {
+                if (!finishNow && !ownsTheTouch)
+                {
+                    SetDecision("attack / demolition");
+                    return true;
+                }
+                Action = null;
+            }
+
+            // A touch this car is about to make or is making outranks any demolition.
+            if (finishNow || controlledPossession || Action is IPossessionAction || Action is Shot ||
+                !Me.IsGrounded || Me.Boost < Demolition.MinBoost || ownsTheTouch)
                 return false;
 
-            Boost pad = RoutePlanner.SelectBoost(Me, Field.Boosts, Ball.Location,
-                destination, Team, Situation.OpponentEta);
+            var pick = Demolition.Choose(Me, LivingOpponents, Ball.Location, OurGoal.Location, LivingTeammates);
+            if (pick == null)
+                return false;
+
+            Action = new DemoAttack(pick.Value.Target);
+            SetDecision("attack / demolition");
+            return true;
+        }
+
+        /// <summary>
+        /// Spends the time a won race leaves before a planned touch on a pad along the way. The shot
+        /// is re-planned once the pad is taken, so the touch is only ever delayed within the slack.
+        /// </summary>
+        private bool TryPadBeforeShot(Shot shot, float pressureTime)
+        {
+            if (!Me.IsGrounded || shot?.Slice == null || Ball.Velocity.Length() > PadBeforeShotBallSpeed)
+                return false;
+
+            float contact = shot.Slice.Time - Game.Time;
+            float slack = BoostEconomy.SlackBeforeContact(Situation, contact,
+                Ball.Location.y * Field.Side(Team), pressureTime);
+            Boost pad = BoostEconomy.Choose(Me, Field.Boosts, Ball.Location, shot.Slice.Location, Team, slack,
+                LivingOpponents, null, CurrentPad, LivingTeammates);
+            return FollowPad(pad, slack, "boost / pad before touch");
+        }
+
+        /// <summary>Bends the trip to <paramref name="destination"/> through a pad when the play leaves time for it.</summary>
+        private bool TryBoostRoute(Vec3 destination, bool recovering, float pressureTime)
+        {
+            if (!Me.IsGrounded || !BoostEconomy.Wanted(Me.Boost))
+                return false;
+
+            float toDestination = Drive.GetEta(Me, destination);
+            float slack = BoostEconomy.Slack(Situation, toDestination,
+                Ball.Location.y * Field.Side(Team), recovering, pressureTime);
+            Boost pad = BoostEconomy.Choose(Me, Field.Boosts, Ball.Location, destination, Team, slack,
+                LivingOpponents, null, CurrentPad, LivingTeammates);
+            return FollowPad(pad, slack, "boost / pad on route");
+        }
+
+        /// <summary>The pad this car is driving to, when a trip is under way.</summary>
+        private Boost CurrentPad => Action is GetBoost { Finished: false } trip ? trip.ChosenBoost : null;
+
+        /// <summary>
+        /// Drives to <paramref name="pad"/>, keeping a trip already headed there. A trip may only dodge
+        /// while the slack covers the flip, because a flip cannot be called off.
+        /// </summary>
+        private bool FollowPad(Boost pad, float slack, string decision)
+        {
+            BoostSlack = slack;
             if (pad == null)
                 return false;
 
-            Action = new GetBoost(Me, pad.Index, interruptible: true);
-            SetDecision(pad.IsLarge
-                ? "support / full-pad refill"
-                : "support / small-pad route");
+            bool dodges = BoostEconomy.MayDodge(slack);
+            if (!(Action is GetBoost trip) || trip.Finished || trip.ChosenBoost?.Index != pad.Index)
+                Action = new GetBoost(Me, pad.Index, interruptible: true, allowDodges: dodges);
+            else
+                trip.AllowDodges = dodges;
+            SetDecision(decision);
             return true;
         }
 
@@ -679,7 +726,38 @@ namespace Bot
             Situation.PressureTime = pressureTime;
         }
 
-        protected override void OnOutputReady() => telemetry.Sample(this);
+        protected override void OnOutputReady()
+        {
+            telemetry.Sample(this);
+            TraceAction();
+        }
+
+        private Type tracedAction;
+        private DemoAttack tracedRun;
+
+        /// <summary>With <c>--trace</c>, prints each change of the running action: the mechanics switch inside one decision.</summary>
+        private void TraceAction()
+        {
+            if (!Options.Trace)
+                return;
+
+            DemoAttack run = Action as DemoAttack;
+            if (!ReferenceEquals(run, tracedRun))
+            {
+                if (tracedRun != null)
+                    Console.WriteLine(FormattableString.Invariant(
+                        $"stardust t={Game.Time:F3} car={Index} demolition_run={tracedRun.Outcome}"));
+                tracedRun = run;
+            }
+
+            Type running = Action?.GetType();
+            if (running == tracedAction)
+                return;
+
+            tracedAction = running;
+            Console.WriteLine(FormattableString.Invariant(
+                $"stardust t={Game.Time:F3} car={Index} action={running?.Name ?? "-"}"));
+        }
 
         // Retained for compatibility with the original Shadow action.
         public bool IsBack() => CanDefend(Me, OurGoal.Location) || Situation.FirstMan == Index;

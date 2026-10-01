@@ -38,7 +38,9 @@ internal static class DefenseRegression
         LastInput = new ControllerStateT()
     };
 
-    private static Stardust World(Vec3 ball, params Car[] cars)
+    private static Stardust World(Vec3 ball, params Car[] cars) => World(null, ball, cars);
+
+    private static Stardust World(StardustOptions? options, Vec3 ball, params Car[] cars)
     {
         Set(typeof(Cars), "AllCars", null!, cars.ToList());
         Set(typeof(Ball), "Location", null!, ball);
@@ -46,7 +48,7 @@ internal static class DefenseRegression
         Set(typeof(Ball), "Prediction", null!,
             new RedUtils.BallPrediction { Slices = Array.Empty<BallSlice>() });
 
-        var bot = new Stardust("defense-regression");
+        var bot = new Stardust("defense-regression", options);
         Set(typeof(RLBot.Manager.Bot), "Index", bot, 0);
         Set(typeof(RLBot.Manager.Bot), "Team", bot, (int)cars[0].Team);
         return bot;
@@ -296,19 +298,44 @@ internal static class DefenseRegression
         test("defense-v3: reference ball only leads movement toward own goal", () =>
         {
             Vec3 ball = new(200, -2000, 100);
+            // The second slice sits at twice the lead, so the reference is the midpoint whatever the lead.
+            float later = 10f + 2f * Defense.ReferenceLead;
             var incoming = new RedUtils.BallPrediction
             {
                 Slices = new[]
                 {
                     new BallSlice(10f, ball, new Vec3(0, -1000, 0)),
-                    new BallSlice(10.4f, new Vec3(200, -2400, 100), new Vec3(0, -1000, 0))
+                    new BallSlice(later, new Vec3(200, -2400, 100), new Vec3(0, -1000, 0))
                 }
             };
             Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f).y, -2200f, 0.01f);
 
             incoming.Slices[1] = new BallSlice(
-                10.4f, new Vec3(200, -1600, 100), new Vec3(0, 1000, 0));
+                later, new Vec3(200, -1600, 100), new Vec3(0, 1000, 0));
             Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f).y, -2000f, 0.01f);
+        });
+
+        test("defense-v3: a defender reads an incoming ball ReferenceLead ahead, and only an incoming one", () =>
+        {
+            Vec3 ball = new(200, -2000, 100);
+            var incoming = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(10f, ball, new Vec3(0, -1000, 0)),
+                    new BallSlice(11f, new Vec3(200, -3000, 100), new Vec3(0, -1000, 0))
+                }
+            };
+            Near(Defense.ReferenceBall(incoming, ball, blueGoal, 10f).y, -2000f - 1000f * Defense.ReferenceLead, 0.01f);
+            var retreating = new RedUtils.BallPrediction
+            {
+                Slices = new[]
+                {
+                    new BallSlice(10f, ball, new Vec3(0, 1000, 0)),
+                    new BallSlice(11f, new Vec3(200, -1000, 100), new Vec3(0, 1000, 0))
+                }
+            };
+            Near(Defense.ReferenceBall(retreating, ball, blueGoal, 10f).y, ball.y, 0.01f);
         });
 
         test("defense-v3: anchor can stop while moving shadow retains terminal mobility", () =>
@@ -324,6 +351,71 @@ internal static class DefenseRegression
                 $"reaction distance did not reduce approach speed: {fastClosing} >= {far}");
         });
 
+        test("pressure zones: the first defender presses in midfield and keeps its room near the net", () =>
+        {
+            float original = Defense.NeutralGapScale;
+            try
+            {
+                Defense.NeutralGapScale = 0.6f;
+                Vec3 attackerNeutral = new(0, 0, 100), attackerDeep = new(0, -3600, 100);
+                float Gap(Vec3 ball)
+                {
+                    Vec3 target = Defense.ShadowTarget(ball, blueGoal, DefensiveRole.Shadow);
+                    return ball.FlatDist(target);
+                }
+                Defense.NeutralGapScale = 1f;
+                float normalNeutral = Gap(attackerNeutral), normalDeep = Gap(attackerDeep);
+                Defense.NeutralGapScale = 0.6f;
+                float pressedNeutral = Gap(attackerNeutral), pressedDeep = Gap(attackerDeep);
+                Check(pressedNeutral < normalNeutral - 250f,
+                    $"midfield gap {pressedNeutral:F0} did not close from {normalNeutral:F0}");
+                Check(MathF.Abs(pressedDeep - normalDeep) < 5f,
+                    $"the gap near our net moved from {normalDeep:F0} to {pressedDeep:F0}");
+                Vec3 fast = new(0, -2000, 0), slow = new(0, -400, 0);
+                float pressedFast = attackerNeutral.FlatDist(
+                    Defense.ShadowTarget(attackerNeutral, blueGoal, DefensiveRole.Shadow, float.PositiveInfinity, fast));
+                float pressedSlow = attackerNeutral.FlatDist(
+                    Defense.ShadowTarget(attackerNeutral, blueGoal, DefensiveRole.Shadow, float.PositiveInfinity, slow));
+                Check(MathF.Abs(pressedFast - normalNeutral) < 5f,
+                    $"a fast attack was pressed: gap {pressedFast:F0} against {normalNeutral:F0}");
+                Check(MathF.Abs(pressedSlow - pressedNeutral) < 5f,
+                    $"a slow attack was not pressed: gap {pressedSlow:F0} against {pressedNeutral:F0}");
+                Check(Defense.Caution(-2000f) < 0.01f && Defense.Caution(4500f) > 0.99f,
+                    "caution is not 0 in their half and 1 deep in ours");
+                float previous = 0f;
+                for (float depth = -1000f; depth <= 5000f; depth += 250f)
+                {
+                    float caution = Defense.Caution(depth);
+                    Check(caution >= previous - 1e-6f, $"caution fell at depth {depth}");
+                    previous = caution;
+                }
+            }
+            finally { Defense.NeutralGapScale = original; }
+        });
+
+        test("pressure zones: a covered first man commits to a late race in midfield, not near the net", () =>
+        {
+            // 0.25 s late: inside the midfield margin (0.35 s), outside the near-net one (0.12 s).
+            var frame = new TacticalFrame
+            {
+                MyEta = 0.65f, OpponentEta = 0.4f, TeamRank = 0, TeamCount = 2, HasCover = true, LastBack = false
+            };
+            Car midfield = CarAt(0, -800), deep = CarAt(0, -4200);
+            Vec3 midfieldBall = new(0, 0, 100), deepBall = new(0, -3600, 100);
+            Check(Defense.CanChallenge(frame, midfield, midfieldBall, blueGoal),
+                "a covered first man let a 50/50 in midfield go");
+            Check(!Defense.CanChallenge(frame, deep, deepBall, blueGoal),
+                "a covered first man committed to a lost race in front of our net");
+            float original = Defense.NeutralCoveredMargin;
+            try
+            {
+                Defense.NeutralCoveredMargin = Defense.CoveredMargin;
+                Check(!Defense.CanChallenge(frame, midfield, midfieldBall, blueGoal),
+                    "the midfield margin did not come from NeutralCoveredMargin");
+            }
+            finally { Defense.NeutralCoveredMargin = original; }
+        });
+
         test("defense-v3: shadow terminal speed tracks goalward ball motion within bounds", () =>
         {
             float stationary = Defense.ShadowTerminalSpeed(
@@ -336,27 +428,25 @@ internal static class DefenseRegression
                 $"incoming terminal speed did not scale: {incoming}");
         });
 
-        test("defense-v3: uncovered defender cannot leave own-half shape for boost", () =>
+        test("defense-v3: an uncovered defender's boost trip is bounded by the opponent's arrival", () =>
         {
-            Car support = CarAt(0, -3000, 2, 0);
             var frame = new TacticalFrame
             {
                 TeamCount = 2,
                 TeamRank = 1,
-                OpponentEta = 4f,
+                OpponentEta = 1.0f,
                 HasCover = false
             };
-            Check(!Defense.CanRefill(frame, support, new Vec3(0, -1500, 100),
-                    blueGoal, false),
-                "own-half defense allowed an uncovered boost diversion");
+            float ownHalf = BoostEconomy.Slack(frame, 0.6f, 3000f, false);
+            Check(ownHalf < 0.1f, $"an own-half defender with the opponent 1 s out kept {ownHalf:F2} s of slack");
 
+            frame.OpponentEta = 2.5f;
+            float uncovered = BoostEconomy.Slack(frame, 0.6f, 3000f, false);
             frame.HasCover = true;
-            Check(Defense.CanRefill(frame, support, new Vec3(0, -1500, 100),
-                    blueGoal, false),
-                "covered support could not take a safe refill");
-            Check(!Defense.CanRefill(frame, support, new Vec3(0, -1500, 100),
-                    blueGoal, true),
-                "pressure did not cancel refill");
+            float covered = BoostEconomy.Slack(frame, 0.6f, 3000f, false);
+            Check(covered > uncovered, "cover did not free the support car to take boost");
+            Check(BoostEconomy.Slack(frame, 0.6f, 3000f, false, pressureTime: 0.5f) < 0.1f,
+                "pressure did not cancel the refill");
         });
 
         test("counter defence: recovery follows a changed ball path on the next planning tick", () =>
@@ -575,23 +665,22 @@ internal static class DefenseRegression
                 "wrong-side car was allowed to attack an emergency ball");
         });
 
-        test("log-v5: solo shadow may take a safe refill but never in the deep box", () =>
+        test("log-v5: solo shadow may take a safe refill but not while the ball is at its net", () =>
         {
-            Car car = CarAt(0, -2400);
             var frame = new TacticalFrame
             {
                 MyEta = 0.8f,
-                OpponentEta = 2.0f,
+                OpponentEta = 2.6f,
                 TeamRank = 0,
                 TeamCount = 1,
                 LastBack = true
             };
 
-            Check(Defense.CanRefill(frame, car, new Vec3(0, 300, 100), blueGoal, false),
-                "1v1 rank-zero rule still disabled all intentional boost economy");
-            Check(!Defense.CanRefill(frame, car, new Vec3(0, -3300, 100), blueGoal, false),
-                "deep own-box ball allowed a solo refill");
-            Check(!Defense.CanRefill(frame, car, new Vec3(0, 300, 100), blueGoal, true),
+            float open = BoostEconomy.Slack(frame, 0.4f, -300f, false);
+            Check(open > 0.8f, $"1v1 rank-zero rule still disabled all intentional boost economy: {open:F2} s");
+            float deep = BoostEconomy.Slack(frame, 0.4f, 4600f, false);
+            Check(deep < open - 0.4f, "a deep own-box ball left a solo refill as much slack as an open ball");
+            Check(BoostEconomy.Slack(frame, 0.4f, -300f, false, pressureTime: 0.3f) == 0f,
                 "opponent pressure did not cancel solo refill");
         });
 
@@ -742,76 +831,60 @@ internal static class DefenseRegression
 
         test("telemetry: file JSONL is rate-limited and includes actual control/target", () =>
         {
-            string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
-            string? oldHz = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_HZ");
-            string? oldFile = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
             string path = Path.Combine(Path.GetTempPath(),
                 $"stardust-telemetry-regression-{Guid.NewGuid():N}.jsonl");
 
-            try
-            {
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", "10");
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", path);
-                Set(typeof(Game), nameof(Game.Time), null, 10f);
+            Set(typeof(Game), nameof(Game.Time), null, 10f);
 
-                var car = CarAt(0, -3000);
-                var bot = World(new Vec3(0, -2000, 100), car);
-                bot.Action = new DefensiveDrive(
-                    car, new Vec3(0, -4100, 17), 2200f, 500f,
-                    holdPosition: false, allowDodges: true);
-                bot.Controller.Throttle = 0.75f;
-                bot.Controller.Steer = -0.25f;
+            var car = CarAt(0, -3000);
+            var options = StardustOptions.FromArguments(new[] { "--telemetry", "--telemetry-hz=10", $"--telemetry-file={path}" });
+            var bot = World(options, new Vec3(0, -2000, 100), car);
+            bot.Action = new DefensiveDrive(
+                car, new Vec3(0, -4100, 17), 2200f, 500f,
+                holdPosition: false, allowDodges: true);
+            bot.Controller.Throttle = 0.75f;
+            bot.Controller.Steer = -0.25f;
 
-                MethodInfo hook = typeof(Stardust).GetMethod(
-                    "OnOutputReady", BindingFlags.NonPublic | BindingFlags.Instance)
-                    ?? throw new Exception("post-output telemetry hook not found");
+            MethodInfo hook = typeof(Stardust).GetMethod(
+                "OnOutputReady", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new Exception("post-output telemetry hook not found");
 
-                hook.Invoke(bot, null);
-                hook.Invoke(bot, null); // same timestamp: must be suppressed
-                Set(typeof(Game), nameof(Game.Time), null, 10.11f);
-                hook.Invoke(bot, null);
+            hook.Invoke(bot, null);
+            hook.Invoke(bot, null); // same timestamp: must be suppressed
+            Set(typeof(Game), nameof(Game.Time), null, 10.11f);
+            hook.Invoke(bot, null);
 
-                // Telemetry remains open for writing. Windows requires the reader to share that
-                // access too, even though the writer itself allows concurrent readers.
-                using var reader = new StreamReader(new FileStream(path, FileMode.Open,
-                    FileAccess.Read, FileShare.ReadWrite));
-                string[] lines = reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                Check(lines.Length == 2, $"10 Hz telemetry wrote {lines.Length} lines for 0.11 s");
+            // Telemetry remains open for writing. Windows requires the reader to share that
+            // access too, even though the writer itself allows concurrent readers.
+            using var reader = new StreamReader(new FileStream(path, FileMode.Open,
+                FileAccess.Read, FileShare.ReadWrite));
+            string[] lines = reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Check(lines.Length == 2, $"10 Hz telemetry wrote {lines.Length} lines for 0.11 s");
 
-                using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
-                var root = first.RootElement;
-                Check(root.GetProperty("schema").GetInt32() == 5, "telemetry schema missing");
-                Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
-                Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
-                    "telemetry did not capture actual sanitized controller output");
-                Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
-                    "telemetry did not capture defensive action target");
-                Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
-                    "telemetry omitted possession state");
-                Check(root.GetProperty("car_state").TryGetProperty("forward", out _),
-                    "telemetry omitted car orientation");
-                Check(root.GetProperty("tactics").TryGetProperty("raw_can_challenge", out _),
-                    "telemetry omitted raw challenge state");
-                Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
-                    "telemetry omitted committed challenge state");
-                Check(root.GetProperty("action_detail").GetProperty("allow_dodges").GetBoolean(),
-                    "telemetry omitted defensive fast-travel state");
-                Check(root.GetProperty("action_detail").TryGetProperty("mobility_action", out _),
-                    "telemetry omitted defensive mobility subaction");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_HZ", oldHz);
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
-            }
+            using var first = System.Text.Json.JsonDocument.Parse(lines[0]);
+            var root = first.RootElement;
+            Check(root.GetProperty("schema").GetInt32() == 5, "telemetry schema missing");
+            Check(root.TryGetProperty("build", out _), "telemetry build fingerprint missing");
+            Check(root.GetProperty("controller").GetProperty("throttle").GetSingle() == 0.75f,
+                "telemetry did not capture actual sanitized controller output");
+            Check(root.GetProperty("target").GetProperty("p")[1].GetSingle() == -4100f,
+                "telemetry did not capture defensive action target");
+            Check(root.GetProperty("possession").TryGetProperty("controlled", out _),
+                "telemetry omitted possession state");
+            Check(root.GetProperty("car_state").TryGetProperty("forward", out _),
+                "telemetry omitted car orientation");
+            Check(root.GetProperty("tactics").TryGetProperty("raw_can_challenge", out _),
+                "telemetry omitted raw challenge state");
+            Check(root.GetProperty("tactics").TryGetProperty("can_challenge", out _),
+                "telemetry omitted committed challenge state");
+            Check(root.GetProperty("action_detail").GetProperty("allow_dodges").GetBoolean(),
+                "telemetry omitted defensive fast-travel state");
+            Check(root.GetProperty("action_detail").TryGetProperty("mobility_action", out _),
+                "telemetry omitted defensive mobility subaction");
         });
 
         test("telemetry: opening a file prunes the oldest telemetry beyond 256 MB", () =>
         {
-            string? oldTelemetry = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY");
-            string? oldFile = Environment.GetEnvironmentVariable("STARDUST_TELEMETRY_FILE");
             string directory = Path.Combine(Path.GetTempPath(), $"stardust-prune-{Guid.NewGuid():N}");
             Directory.CreateDirectory(directory);
             try
@@ -828,10 +901,11 @@ internal static class DefenseRegression
                 string other = Path.Combine(directory, "notes.jsonl");
                 File.WriteAllText(other, "{}");
 
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", "1");
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE",
-                    Path.Combine(directory, "stardust-telemetry-current.jsonl"));
-                World(new Vec3(0, 0, 100), CarAt(0, -3000));
+                var options = StardustOptions.FromArguments(new[]
+                {
+                    "--telemetry", $"--telemetry-file={Path.Combine(directory, "stardust-telemetry-current.jsonl")}",
+                });
+                World(options, new Vec3(0, 0, 100), CarAt(0, -3000));
 
                 Check(!File.Exists(matches[0]), "the oldest match beyond the budget was kept");
                 Check(File.Exists(matches[1]) && File.Exists(matches[2]),
@@ -840,8 +914,6 @@ internal static class DefenseRegression
             }
             finally
             {
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY", oldTelemetry);
-                Environment.SetEnvironmentVariable("STARDUST_TELEMETRY_FILE", oldFile);
                 try { Directory.Delete(directory, true); }
                 catch (IOException) { } // the bot's telemetry file stays open until exit
             }

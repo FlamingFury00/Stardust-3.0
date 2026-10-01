@@ -26,6 +26,9 @@ The [counterattack recovery evaluation](docs/COUNTER_RECOVERY.md) records a stal
 replay-based defence failures, and rejected anchor experiments.
 The [dodge and kickoff evaluation](docs/DODGE_KICKOFF.md) covers corrected directional impulses,
 safe boost-action termination, and full-team kickoff follow-through.
+The [tempo and pressure evaluation](docs/TEMPO_PRESSURE.md) covers value-priced boost routing, the
+single-anchor role split, zone-aware pressing, the new possession measures in simulator reports and
+the kickoff and boost experiments that were rejected.
 For the competition archive, qualification preset and remaining submission steps, see the
 [RLBC 2026 handoff](docs/RLBC_2026.md).
 

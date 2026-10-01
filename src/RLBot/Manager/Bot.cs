@@ -32,6 +32,8 @@ public abstract class Bot
     private bool _hasPlayerMapping = false;
 
     private readonly Interface _gameInterface;
+    /// <summary>The agent id RLBot (or the simulator) started this bot with.</summary>
+    public string AgentId => _gameInterface.AgentId;
     private GamePacketT? _latestPacket;
     private BallPredictionT _latestPrediction = new();
 

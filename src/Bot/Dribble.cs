@@ -87,12 +87,21 @@ namespace Bot
         private readonly HoodCarry carry;
         private float stableSince = float.NaN;
         private float flickReadySince = float.NaN;
+        private readonly bool allowAirDribble;
         public bool Finished { get; private set; }
         public bool Interruptible => true;
         public float ClaimTime => Game.Time + 0.25f;
 
         /// <param name="carry">Carry controller to continue with, e.g. from the catch that settled the ball.</param>
-        public GroundDribble(HoodCarry carry = null) { this.carry = carry ?? new HoodCarry(); }
+        /// <param name="allowAirDribble">
+        /// Whether a stable carry may be popped into an air dribble. A drill that measures the ground
+        /// carry or the flick itself turns it off, so the carry is not cut short by the next mechanic.
+        /// </param>
+        public GroundDribble(HoodCarry carry = null, bool allowAirDribble = true)
+        {
+            this.carry = carry ?? new HoodCarry();
+            this.allowAirDribble = allowAirDribble;
+        }
 
         public static bool CanStart(Car car, Ball ball, float freeTime)
         {
@@ -131,7 +140,7 @@ namespace Bot
                 return;
             }
 
-            if (carried && Game.Time - stableSince >= 0.25f && bot is Stardust { Options.AirDribbles: true } &&
+            if (allowAirDribble && carried && Game.Time - stableSince >= 0.25f &&
                 PossessionControl.ShouldAirDribble(car, Ball.MainBall, lane, bot.LivingOpponents, bot.TheirGoal.Location))
             {
                 bot.Action = new AirDribbleSetup(lane, carry);
