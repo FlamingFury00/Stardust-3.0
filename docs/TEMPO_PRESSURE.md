@@ -175,45 +175,52 @@ is a 1v1 that has not improved, not one that has regressed. In the series agains
 takes twice our shots (11.7 against 6.1 per 5 minutes) and spends 62 % of its time at zero boost
 against our 43 %, and the score stays close.
 
-### Tournament of an earlier build
+### Tournament of the final build
 
-Round robin, four games per pair (two per side), 180 s games, Bradley–Terry Elo, played on the
-build before the possession mechanics and demolition were made unconditional and before the lone
-defender pressed (the 1v1 round had the lone defender keeping its room). Only four games per pair:
-the ratings are ordered, not separated, and a gap under about 100 Elo is not a result. The roster is
-the previous build, PartyCannon, Phoenix and Beast, plus Nexto, Necto and NoobBlack in 1v1. It is
-kept as a picture of the field; the [final tournament](#tournament-of-the-final-build) below
-replaces it as the test of the shipped build.
+Round robin of the shipped build against the field, four games per pair (two per side), 180 s
+games, Bradley–Terry Elo, on seeds 22100 (1v1), 22200 (2v2) and 22300 (3v3). Four games per pair:
+the ratings are ordered, not separated, and a gap under about 100 Elo is not a result. The 1v1
+roster adds the pre-activation build. PartyCannon's connection timed out in some team games
+(4 of the 3v3 games and 3 of the 2v2 games were excluded, a failure that belongs to that bot).
 
-| 3v3 | Elo | W–L | Goal difference per game | against the previous build |
-|---|---|---|---|---|
-| PartyCannon | 1899 | 12–1 | +3.31 | +2.67 |
-| **Stardust** | **1759** | 12–3 | +2.60 | **+3.25** |
-| Phoenix | 1478 | 7–8 | −1.13 | −0.50 |
-| Previous build | 1422 | 6–9 | −0.20 | |
-| Beast | 942 | 0–16 | −3.88 | −4.00 |
+| 3v3 | Elo | W–L | Goals per game | Conceded per game | Goal difference |
+|---|---|---|---|---|---|
+| PartyCannon | 1812 | 10–2 | 5.75 | 2.00 | +3.75 |
+| **Stardust** | **1703** | 11–4 | 3.80 | 1.93 | **+1.87** |
+| Previous build | 1639 | 10–6 | 3.38 | 2.19 | +1.19 |
+| Phoenix | 1389 | 5–9 | 1.36 | 2.86 | −1.50 |
+| Beast | 957 | 0–15 | 0.33 | 5.07 | −4.73 |
 
-| 2v2 | Elo | W–L | Goal difference per game | against the previous build |
-|---|---|---|---|---|
-| PartyCannon | 1826 | 13–3 | +3.25 | +1.50 |
-| Previous build | 1772 | 12–4 | +2.50 | |
-| **Stardust** | **1720** | 11–5 | +2.31 | **+0.75** |
-| Phoenix | 1283 | 4–12 | −2.00 | −4.50 |
-| Beast | 898 | 0–16 | −6.06 | −7.75 |
+Stardust against the previous build: +1.00 goals a game; against PartyCannon −0.67.
 
-| 1v1 | Elo | W–L | Goal difference per game | against the previous build |
-|---|---|---|---|---|
-| Nexto | 2320 | 24–0 | +13.88 | +12.25 |
-| Necto | 1943 | 20–4 | +6.88 | +8.75 |
-| Previous build | 1531 | 13–11 | −1.42 | |
-| PartyCannon | 1531 | 13–11 | −2.46 | −0.75 |
-| **Stardust** | **1388** | 10–14 | −2.50 | **−0.50** |
-| Beast | 968 | 3–21 | −6.92 | −6.75 |
-| Phoenix | 820 | 1–23 | −7.46 | −4.50 |
+| 2v2 | Elo | W–L | Goals per game | Conceded per game | Goal difference |
+|---|---|---|---|---|---|
+| **Stardust** | **1735** | 11–3 | 4.00 | 1.71 | **+2.29** |
+| PartyCannon | 1726 | 10–3 | 4.62 | 2.08 | +2.54 |
+| Previous build | 1687 | 11–5 | 3.56 | 1.75 | +1.81 |
+| Phoenix | 1392 | 5–10 | 1.60 | 3.33 | −1.73 |
+| Beast | 960 | 0–16 | 0.75 | 5.00 | −4.25 |
 
-PartyCannon's connection timed out in four 3v3 games (excluded; a failure that belongs to that bot)
-and NoobBlack exited during startup in every 1v1 game (28 games excluded, no rating). Nexto and
-Necto beat every other bot, Stardust included, in nearly every game.
+Stardust against the previous build: +2.00 goals a game; against PartyCannon 0.00.
+
+| 1v1 | Elo | W–L | Goals per game | Conceded per game | Goal difference |
+|---|---|---|---|---|---|
+| Nexto | 2364 | 28–0 | 14.07 | 0.57 | +13.50 |
+| Necto | 1988 | 24–4 | 9.36 | 2.00 | +7.36 |
+| Previous build | 1523 | 15–13 | 3.32 | 4.93 | −1.61 |
+| Pre-activation build | 1523 | 15–13 | 3.36 | 5.14 | −1.79 |
+| PartyCannon | 1485 | 14–14 | 3.64 | 5.96 | −2.32 |
+| **Stardust** | **1409** | 12–16 | 3.61 | 5.32 | **−1.71** |
+| Phoenix | 929 | 3–25 | 1.00 | 7.71 | −6.71 |
+| Beast | 781 | 1–27 | 0.50 | 7.21 | −6.71 |
+
+In 3v3 Stardust is second to PartyCannon and ahead of the previous build; in 2v2 it is first by
+Elo, level with PartyCannon (0.00 head to head) and ahead of the previous build; in 1v1 it is
+sixth of eight, between the previous build and the two weakest bots, and indistinguishable from the
+previous build, the pre-activation build and PartyCannon (Elo 1409 against 1485–1523; head to head
++0.25, +0.25 and +0.75 goals a game). Nexto and Necto beat every other bot, Stardust included, in
+every game or nearly every game, by 8 to 16 goals a game. The round robin ranks ratings inside a
+thin sample; the paired series above are the measure.
 
 ### Boost
 
