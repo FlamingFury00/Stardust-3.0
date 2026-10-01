@@ -216,8 +216,10 @@ its own, longer series (see [Against Nexto](#against-nexto-where-the-goals-come-
 | Mirror | scripted, Python | 6-0-0 | +16.33 (touches the ball 7.7 times per 5 min: it barely plays) |
 
 Bowie Knife does not function in the simulator and is left out. Party Cannon, a scripted C# bot on
-RedUtils like Stardust, is level with it: it takes 14.9 shots per 5 minutes to Stardust's 6.2, and
-0.99 of Stardust's goals against per 5 minutes are its own touches.
+RedUtils like Stardust that in 1v1 always shoots or drives at the ball with boost, is level with it
+over these six games: it takes 14.9 shots per 5 minutes to Stardust's 6.2, and 0.99 of Stardust's
+goals against per 5 minutes are its own touches. A longer 1v1 series on the September build gives
++0.72 ± 0.29 goals per game over 96 games, and 56 of the 343 goals Stardust concedes are its own.
 
 The first round, on the arena before its fix, gave the same picture: Stardust beat the scripted
 bots and TensorBot and lost heavily to the strong learned bots. Its match statistics show where:
@@ -291,9 +293,11 @@ Nexto. None survived:
 | Stricter or looser solo challenge margins | vs Nexto, 12 games each; self-play, 51 | −13.75 and −14.25 against −14.3 to −14.9: not resolvable; stricter −0.24 ± 0.45 |
 | Shadow matches the attacker's full speed, up to 1800 uu/s (instead of 0.8 of it, up to 1350) | self-play, 85 games | +0.07 ± 0.29 |
 | Planning rollouts keep driving a directed approach past a misaligned pass, as the controller does | roller, save and clear drills | 130 / 125 / 63 vs 130 / 125 / 66: in an emergency the clear planner finds a clear on under 3 % of planning ticks either way, because against an incoming ball no approach arrives at the contact with the right heading in time |
-| Ground blocks that would push a rolling ball in are skipped, and an overshot block point is backed onto (`BlockPlanner.RejectPushes`, `Block.ReverseOntoPoint`) | roller drill, 150; self-play on the September build: 1v1 144, 2v2 72, 3v3 36 games; an earlier 1v1 series, 144 | 135 vs 133 kept out; own goals 142 vs 191 over the three sizes, but goals per game +0.25 ± 0.21, −0.14 ± 0.33, +0.17 ± 0.30, and +0.29 ± 0.27 earlier: +0.18 ± 0.13 pooled. Most balls the fix stops pushing in still go in another way. Left off (switches kept) |
+| Ground blocks that would push a rolling ball in are skipped, and an overshot block point is backed onto (`BlockPlanner.RejectPushes`, `Block.ReverseOntoPoint`) | roller drill, 150; self-play on the September build: 1v1 144, 2v2 72, 3v3 36 games; an earlier and a later 1v1 series, 144 each; against Party Cannon in 1v1, 96 games each way | 135 vs 133 kept out; own goals 142 vs 191 over the three sizes, 73 vs 91 in the later 1v1 series and 42 vs 56 against Party Cannon, but goals per game +0.25 ± 0.21, −0.14 ± 0.33, +0.17 ± 0.30, +0.29 ± 0.27 earlier and +0.10 ± 0.24 later: +0.16 ± 0.12 pooled; against Party Cannon +0.45 ± 0.32 against +0.72 ± 0.29 without. Most balls the fix stops pushing in still go in another way. Left off (switches kept) |
 | The team's last car held behind midfield: positioning, counter shadow and boost detours (`Defense.LastManLine` and `Defense.LastManPadLine` = 0) | 2v2 self-play on the September build, stopped at 38 of 72 games; 3v3, 36 | 2v2 −0.58 ± 0.33: the second car stops following the play, and the lost pressure costs more than the long clearances it covers. 3v3 +0.33 ± 0.44, within noise (own goals 24 vs 31). Left off |
 | On a counter, the team's last car takes the anchor gap instead of the shadow gap (`Stardust.CounterAnchor`) | 2v2 self-play on the September build, 74 games over three seeds | +0.08 ± 0.32 (own goals 54 vs 61): no measurable effect. Left off |
+| The team's last car takes boost pads only behind midfield (`Defense.LastManPadLine` = 0) | 2v2 self-play on the September build, 71 games over two seeds | +0.04 ± 0.30: no measurable effect. Left off |
+| Shadow and recovery drives under 70 boost pass over a pad that adds at most 180 uu to the route (`RoutePlanner.PassPads`) | 1v1: self-play, 102 games; against Party Cannon, 96 | Pads passed while recovering 1.2 → 0.3 a minute. Self-play +0.51 ± 0.25, but against Party Cannon +0.18 ± 0.24 against +0.72 ± 0.29 without, with 76 own goals against 56: a recovery aimed at a pad instead of the goal-side line drives through the ball's path toward our net. Left off |
 
 The drill baseline is 35–38 % of attacks conceded within 6 s, against a defence that starts
 goal-side with 20–100 boost. The gap to Nexto is not one misjudged threshold: each rule above fixes
