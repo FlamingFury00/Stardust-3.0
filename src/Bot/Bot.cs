@@ -650,10 +650,12 @@ namespace Bot
         public static float SupportRefuelBelow = 30f;
         public static bool AnchorRefuels = false;
         /// <summary>
-        /// How far (uu) into the opponent half the ball must be for an anchor that does not otherwise refuel
-        /// to go for a pad; infinite never.
+        /// How far (uu) into the opponent half the ball must be for an anchor with an empty tank to leave the
+        /// net for a pad (infinite never). In 2v2, where the second car is always the anchor, this is what
+        /// lets the team refuel at all: head to head 52-44 over two seed sets, and against PartyCannon it
+        /// lifted 16-28 to about level on the same seeds; in 3v3, on top of the support refuel, 29-19.
         /// </summary>
-        public static float AnchorRefuelDepth = float.PositiveInfinity;
+        public static float AnchorRefuelDepth = 1000f;
         private const string SupportRefuelDecision = "boost / support refuel";
 
         /// <summary>

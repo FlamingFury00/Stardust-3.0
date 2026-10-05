@@ -195,7 +195,7 @@ internal static class DefenseRegression
                 "long goal-side recovery did not enable fast-travel dodges");
         });
 
-        test("team boost: an empty support car refuels from a big pad, the anchor and the first man do not", () =>
+        test("team boost: an empty support car refuels, the anchor only with the ball deep in their half", () =>
         {
             var property = typeof(Field).GetProperty(nameof(Field.Boosts))!;
             var original = Field.Boosts;
@@ -233,10 +233,18 @@ internal static class DefenseRegression
                     full.Run();
                     Check(full.Decision != "boost / support refuel", $"team {team}: a full support car went to refuel");
 
-                    var anchor = World(ball, Teammate(0, -4500, 0, 10), Teammate(0, 500, 1, 60), Teammate(2500, -1500, 2, 60),
-                        Opponent(0, 2600, 3), Opponent(-1000, 3200, 4), Opponent(1000, 3600, 5));
+                    // The anchor holds the net until the ball is deep in their half, then refuels too.
+                    Vec3 midfield = new(0, side * 400, 93);
+                    var anchor = World(midfield, Teammate(0, -4500, 0, 10), Teammate(0, -600, 1, 60), Teammate(2500, -2500, 2, 60),
+                        Opponent(0, 1600, 3), Opponent(-1000, 2200, 4), Opponent(1000, 2600, 5));
                     anchor.Run();
                     Check(anchor.Decision != "boost / support refuel", $"team {team}: the anchor left the net to refuel: {anchor.Decision}");
+                    Vec3 deep = new(0, side * 3000, 93);
+                    var deepAnchor = World(deep, Teammate(0, -4500, 0, 10), Teammate(0, 2000, 1, 60), Teammate(2500, 0, 2, 60),
+                        Opponent(0, 4000, 3), Opponent(-1000, 4300, 4), Opponent(1000, 4600, 5));
+                    deepAnchor.Run();
+                    Check(deepAnchor.Decision == "boost / support refuel",
+                        $"team {team}: an empty anchor stayed in net with the ball deep in their half: {deepAnchor.Decision}");
                 }
             }
             finally { property.SetValue(null, original); }
