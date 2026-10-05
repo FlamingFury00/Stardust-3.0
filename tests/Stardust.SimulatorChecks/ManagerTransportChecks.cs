@@ -22,6 +22,12 @@ internal static class ManagerTransportChecks
         }
     }
 
+    /// <summary>
+    /// Longest wait (ms) for one message from the manager. The check is about order and content, not
+    /// latency: a loaded CI runner has taken over 3 s to answer the frame after a logged controller fault.
+    /// </summary>
+    private const int ReadTimeout = 15000;
+
     public static void Run(bool fail)
     {
         const int count = 64;
@@ -39,7 +45,7 @@ internal static class ManagerTransportChecks
             if (!accept.Wait(5000)) throw new Exception("manager did not connect");
             peer = accept.Result;
             using var server = new RLBotConnection(peer);
-            if (server.Read(3000).Message.Type != InterfaceMessage.ConnectionSettings)
+            if (server.Read(ReadTimeout).Message.Type != InterfaceMessage.ConnectionSettings)
                 throw new Exception("manager did not send connection settings");
             server.Queue(CoreMessageUnion.FromControllableTeamInfo(new ControllableTeamInfoT
             {
@@ -57,7 +63,7 @@ internal static class ManagerTransportChecks
             }));
             server.Queue(CoreMessageUnion.FromFieldInfo(new FieldInfoT { BoostPads = [], Goals = [], Tiles = [] }));
             server.Flush();
-            if (server.Read(3000).Message.Type != InterfaceMessage.InitComplete)
+            if (server.Read(ReadTimeout).Message.Type != InterfaceMessage.InitComplete)
                 throw new Exception("manager did not initialize");
 
             NetworkStream wire = peer.GetStream();
@@ -85,7 +91,7 @@ internal static class ManagerTransportChecks
                     Index = 1, Team = 0, Content = [(byte)frame], TeamOnly = true
                 }), (int)frame + 1);
                 InterfacePacketT output;
-                do { output = server.Read(3000); }
+                do { output = server.Read(ReadTimeout); }
                 while (output.Message.Type == InterfaceMessage.MatchComm);
                 if (output.Message.Type != InterfaceMessage.PlayerInput)
                     throw new Exception($"frame {frame} had no controller response");
@@ -97,7 +103,7 @@ internal static class ManagerTransportChecks
             }
             server.Queue(CoreMessageUnion.FromPingRequest(new PingRequestT { Cookie = 42 }));
             server.Flush();
-            if (server.Read(3000).Message.Type != InterfaceMessage.PingResponse)
+            if (server.Read(ReadTimeout).Message.Type != InterfaceMessage.PingResponse)
                 throw new Exception("extra controller or lost ping after lockstep sequence");
             server.Queue(CoreMessageUnion.FromDisconnectSignal(new DisconnectSignalT()));
             server.Flush();
