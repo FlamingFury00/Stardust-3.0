@@ -195,6 +195,53 @@ internal static class DefenseRegression
                 "long goal-side recovery did not enable fast-travel dodges");
         });
 
+        test("team boost: an empty support car refuels from a big pad, the anchor and the first man do not", () =>
+        {
+            var property = typeof(Field).GetProperty(nameof(Field.Boosts))!;
+            var original = Field.Boosts;
+            try
+            {
+                foreach (int team in new[] { 0, 1 })
+                {
+                    float side = team == 0 ? 1 : -1;   // the attacking direction of the team under test
+                    var pads = new List<Boost>();
+                    int index = 0;
+                    foreach ((float x, float y) in new[] { (-3072f, -4096f), (3072f, -4096f), (-3584f, 0f), (3584f, 0f), (-3072f, 4096f), (3072f, 4096f) })
+                        pads.Add(new Boost(index++, new BoostPadT { Location = new Vector3T { X = x, Y = y, Z = 73 }, IsFullBoost = true }));
+                    property.SetValue(null, pads);
+
+                    Car Teammate(float x, float y, int i, float boost)
+                    {
+                        Car car = CarAt(x, side * y, i, team);
+                        car.Boost = boost;
+                        car.Orientation = new Mat3x3(new Vec3(0, side * MathF.PI / 2, 0));
+                        return car;
+                    }
+                    Car Opponent(float x, float y, int i) => CarAt(x, side * y, i, 1 - team);
+                    Vec3 ball = new(0, side * 1500, 93);
+
+                    // The support car: neither the nearest to the ball nor the deepest.
+                    var support = World(ball, Teammate(2500, -1500, 0, 10), Teammate(0, 500, 1, 60), Teammate(0, -4500, 2, 60),
+                        Opponent(0, 2600, 3), Opponent(-1000, 3200, 4), Opponent(1000, 3600, 5));
+                    Set(typeof(Game), nameof(Game.Time), null!, 30f);
+                    support.Run();
+                    Check(support.Decision == "boost / support refuel" && support.Action is GetBoost { ChosenBoost.IsLarge: true },
+                        $"team {team}: an empty support car did not refuel: {support.Decision}");
+
+                    var full = World(ball, Teammate(2500, -1500, 0, 80), Teammate(0, 500, 1, 60), Teammate(0, -4500, 2, 60),
+                        Opponent(0, 2600, 3), Opponent(-1000, 3200, 4), Opponent(1000, 3600, 5));
+                    full.Run();
+                    Check(full.Decision != "boost / support refuel", $"team {team}: a full support car went to refuel");
+
+                    var anchor = World(ball, Teammate(0, -4500, 0, 10), Teammate(0, 500, 1, 60), Teammate(2500, -1500, 2, 60),
+                        Opponent(0, 2600, 3), Opponent(-1000, 3200, 4), Opponent(1000, 3600, 5));
+                    anchor.Run();
+                    Check(anchor.Decision != "boost / support refuel", $"team {team}: the anchor left the net to refuel: {anchor.Decision}");
+                }
+            }
+            finally { property.SetValue(null, original); }
+        });
+
         test("defense-v3: first man cannot attack from ahead of the ball", () =>
         {
             var frame = new TacticalFrame

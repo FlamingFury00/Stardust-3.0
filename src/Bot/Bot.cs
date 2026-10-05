@@ -641,11 +641,14 @@ namespace Bot
         }
 
         /// <summary>
-        /// Boost below which a car that is not the first man leaves its support position for the soonest
-        /// big pad (0 never), and whether the anchor does too.
+        /// Boost below which a support car (not the first man, not the anchor) leaves its position for the
+        /// soonest big pad, and whether the anchor does too. In 3v3 this took the average tank from 17 to
+        /// 39 and the time at zero boost from 34 % to 19 %; head to head it was 53-43 against the same
+        /// build without it, and against PartyCannon it turned 13-33 into a winning record on the same
+        /// seeds. Sending the anchor too, or refuelling below 50, lost (20-28 and 19-29).
         /// </summary>
-        public static float SupportRefuelBelow = 0f;
-        public static bool AnchorRefuels = true;
+        public static float SupportRefuelBelow = 30f;
+        public static bool AnchorRefuels = false;
         private const string SupportRefuelDecision = "boost / support refuel";
 
         /// <summary>
