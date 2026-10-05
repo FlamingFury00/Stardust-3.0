@@ -252,6 +252,25 @@ Test("boost economy: pads upfield of the ball, dark pads and pads the opponent r
         Straight(), null, new[] { high }), pad), "the lower-indexed of two equal cars gave the pad up");
 });
 
+Test("boost economy: a refuel takes the soonest lit big pad that no teammate reaches first, upfield or not", () =>
+{
+    Car car = GroundCar(new Vec3(0, -1000, 17), 5);
+    Boost far = PadAt(0, 3584, 0, true), near = PadAt(1, -3072, -4096, true), small = PadAt(2, 0, -900, false);
+    Boost upfield = PadAt(3, 0, 1200, true);
+    Check(ReferenceEquals(BoostEconomy.SoonestLargePad(car, new[] { far, near, small }, null, Straight()), far),
+        "the refuel did not take the nearest big pad, or took a small one");
+    Check(ReferenceEquals(BoostEconomy.SoonestLargePad(car, new[] { far, upfield }, null, Straight()), upfield),
+        "the refuel refused a big pad upfield of the car");
+    var dark = PadAt(4, 0, 1200, true);
+    dark.Update(new BoostPadStateT { IsActive = false, Timer = 1f });
+    Check(ReferenceEquals(BoostEconomy.SoonestLargePad(car, new[] { dark, far }, null, Straight()), far),
+        "the refuel went for a pad that will be dark on arrival");
+    Car mate = GroundCar(new Vec3(0, 1000, 17), 5, index: 2);
+    Check(ReferenceEquals(BoostEconomy.SoonestLargePad(car, new[] { upfield, far }, new[] { mate }, Straight()), far),
+        "the refuel duplicated a teammate's trip to the pad it reaches first");
+    Check(BoostEconomy.SoonestLargePad(car, new[] { small }, null, Straight()) == null, "a small pad counted as a refuel");
+});
+
 Test("boost economy: a pad being driven to is kept unless another is clearly better", () =>
 {
     Car car = GroundCar(new Vec3(0, -1000, 17), 10);

@@ -230,6 +230,36 @@ namespace Bot
         }
 
         /// <summary>
+        /// The big pad this car reaches soonest that will be lit when it gets there and that no teammate
+        /// who wants boost reaches clearly first, or null. A refuel goes for the tank, not for a pad on
+        /// the way, so it is not priced against a detour.
+        /// </summary>
+        public static Boost SoonestLargePad(Car car, IEnumerable<Boost> pads, IEnumerable<Car> teammates,
+            Func<Car, Vec3, float> travelTime = null)
+        {
+            if (car == null || pads == null || car.IsDemolished)
+                return null;
+            travelTime ??= (c, target) => Drive.GetEta(c, target);
+            Boost best = null;
+            float bestEta = float.PositiveInfinity;
+            foreach (Boost pad in pads)
+            {
+                if (pad == null || !pad.IsLarge || !ControlMath.Finite(pad.Location))
+                    continue;
+                float eta = travelTime(car, pad.Location);
+                if (!float.IsFinite(eta) || eta >= bestEta)
+                    continue;
+                if (!pad.IsActive && pad.TimeUntilActive > eta)
+                    continue;
+                if (TakenFirst(teammates, pad, eta, travelTime, car))
+                    continue;
+                best = pad;
+                bestEta = eta;
+            }
+            return best;
+        }
+
+        /// <summary>
         /// Whether any of <paramref name="others"/> reaches the pad clearly before the car at
         /// <paramref name="mine"/> seconds. Among teammates (<paramref name="self"/> given) a car that
         /// no longer wants boost is not on its way to the pad, and of two cars within the margin the

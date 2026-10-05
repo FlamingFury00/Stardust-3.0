@@ -469,6 +469,8 @@ namespace Bot
             Vec3 support = Tactics.GoalReturnTarget(Me, rawSupport, OurGoal.Location);
             bool exitingGoal = support.FlatDist(rawSupport) > 1f;
 
+            if (!exitingGoal && TrySupportRefuel(role))
+                return;
             if (!exitingGoal && TryBoostRoute(support, recoveringGoalSide, pressureTime))
                 return;
 
@@ -636,6 +638,30 @@ namespace Bot
             Boost pad = BoostEconomy.Choose(Me, Field.Boosts, Ball.Location, destination, Team, slack,
                 LivingOpponents, null, CurrentPad, LivingTeammates);
             return FollowPad(pad, slack, "boost / pad on route");
+        }
+
+        /// <summary>
+        /// Boost below which a car that is not the first man leaves its support position for the soonest
+        /// big pad (0 never), and whether the anchor does too.
+        /// </summary>
+        public static float SupportRefuelBelow = 0f;
+        public static bool AnchorRefuels = true;
+        private const string SupportRefuelDecision = "boost / support refuel";
+
+        /// <summary>
+        /// A car behind the play with an empty tank refuels from the soonest big pad, wherever it is, and
+        /// keeps the trip until the pad is taken.
+        /// </summary>
+        private bool TrySupportRefuel(DefensiveRole role)
+        {
+            if (SupportRefuelBelow <= 0f || Situation.TeamCount <= 1 || Situation.TeamRank == 0 || !Me.IsGrounded ||
+                (role == DefensiveRole.Anchor && !AnchorRefuels))
+                return false;
+            bool underWay = Action is GetBoost { Finished: false } && Decision == SupportRefuelDecision;
+            if (!underWay && Me.Boost >= SupportRefuelBelow)
+                return false;
+            Boost pad = BoostEconomy.SoonestLargePad(Me, Field.Boosts, LivingTeammates);
+            return FollowPad(pad, BoostEconomy.DodgeSlack, SupportRefuelDecision);
         }
 
         /// <summary>The pad this car is driving to, when a trip is under way.</summary>
