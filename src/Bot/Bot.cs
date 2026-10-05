@@ -649,6 +649,11 @@ namespace Bot
         /// </summary>
         public static float SupportRefuelBelow = 30f;
         public static bool AnchorRefuels = false;
+        /// <summary>
+        /// How far (uu) into the opponent half the ball must be for an anchor that does not otherwise refuel
+        /// to go for a pad; infinite never.
+        /// </summary>
+        public static float AnchorRefuelDepth = float.PositiveInfinity;
         private const string SupportRefuelDecision = "boost / support refuel";
 
         /// <summary>
@@ -657,8 +662,11 @@ namespace Bot
         /// </summary>
         private bool TrySupportRefuel(DefensiveRole role)
         {
-            if (SupportRefuelBelow <= 0f || Situation.TeamCount <= 1 || Situation.TeamRank == 0 || !Me.IsGrounded ||
-                (role == DefensiveRole.Anchor && !AnchorRefuels))
+            if (SupportRefuelBelow <= 0f || Situation.TeamCount <= 1 || Situation.TeamRank == 0 || !Me.IsGrounded)
+                return false;
+            // The anchor holds the net unless the ball is deep enough in their half to leave it.
+            if (role == DefensiveRole.Anchor && !AnchorRefuels &&
+                !(Ball.Location.y * Field.Side(Team) < -AnchorRefuelDepth))
                 return false;
             bool underWay = Action is GetBoost { Finished: false } && Decision == SupportRefuelDecision;
             if (!underWay && Me.Boost >= SupportRefuelBelow)
