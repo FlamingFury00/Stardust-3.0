@@ -283,7 +283,8 @@ namespace Bot
             bool canChallenge = ChallengeCommitted;
             float attackDeadline = Defense.AttackDeadline(Situation, controlledPossession);
 
-            bool canOwnAttack = canChallenge || controlledPossession;
+            bool secondManJoins = SecondManJoins();
+            bool canOwnAttack = canChallenge || controlledPossession || secondManJoins;
             Shot priorityAttack = canOwnAttack
                 ? Tactics.SelectShot(
                     this, false, Situation.OpponentEta, HasClaim, attackDeadline)
@@ -319,7 +320,7 @@ namespace Bot
 
             if (Action is Shot shot)
             {
-                if (canChallenge && shot.IsPredictionValid() &&
+                if ((canChallenge || secondManJoins) && shot.IsPredictionValid() &&
                     shot.Slice.Time - Game.Time <= attackDeadline &&
                     !HasTeammateEarlierShot(shot.Slice.Time))
                     return;
@@ -578,6 +579,19 @@ namespace Bot
             SetDecision(decision);
             return true;
         }
+
+        /// <summary>
+        /// How far (uu) into the opponent half the ball must be for the second man to join the attack with
+        /// a touch of its own (infinite never), and the lead (s) over the opponents it needs to reach it.
+        /// A touch the first man has claimed is never taken: the second man plays the next one.
+        /// </summary>
+        public static float SecondManAttackDepth = float.PositiveInfinity, SecondManLead = 0.3f;
+
+        private bool SecondManJoins() =>
+            Situation.TeamCount > 1 && Situation.TeamRank == 1 && Me.IsGrounded &&
+            -Ball.Location.y * Field.Side(Team) >= SecondManAttackDepth &&
+            Situation.FreeTime >= SecondManLead &&
+            Defense.IsGoalSide(Me.Location, Ball.Location, OurGoal.Location, 10f);
 
         /// <summary>Runs a supersonic car into the opponent that matters most, when one can be met in time.</summary>
         private bool TryDemolition(bool controlledPossession, bool finishNow)
