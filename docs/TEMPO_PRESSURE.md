@@ -100,6 +100,14 @@ started a run in 83 % of the episodes and ended 72 % of the runs in a demolition
 required. In traced 1v1 games it is rare (about one run in ten games) and nearly every run
 demolishes; its effect on results is below what a series resolves ([Limits](#limits)).
 
+**Refuelling** (`Stardust.TrySupportRefuel`, `BoostEconomy.SoonestLargePad`). PartyCannon, the
+strongest team bot in the field, sends any car that is not its attacker and holds under 30 boost to
+the big pad it reaches soonest, wherever that is. Stardust's support car now does the same: under
+30 boost it takes the soonest big pad that will be lit when it arrives and that no teammate who
+wants boost reaches first, and keeps the trip until the pad is taken. The anchor does it only once
+the ball is at least 1000 uu into the opponent half. In 2v2, where the second car is always the
+anchor, that is the only refuel there is. See [Refuelling](#refuelling).
+
 ## Results
 
 All series are paired and side-swapped, 120 s games unless noted, on independent seeds. "Previous
@@ -134,29 +142,58 @@ where 0.6 s comes from. Challenge margins (`SoloTieDeficit` 0.4, `ContinueDefici
 
 | Series, 48 games each | Record | Goals per game | Free space (ours / theirs) | Time spent defending (ours / theirs) |
 |---|---|---|---|---|
-| 3v3 against the previous build | **35–13** | **+1.23** | 38.3 % / 49.6 % | 22.3 % / 26.4 % |
-| 2v2 against the previous build | 25–23 | +0.23 | 43.2 % / 51.5 % | 23.3 % / 25.5 % |
-| 3v3 against the pre-activation build | 26–22 | +0.33 | 39.5 % / 41.5 % | 24.1 % / 25.3 % |
-| 2v2 against the pre-activation build | 24–24 | +0.06 | 41.4 % / 41.2 % | 23.8 % / 24.1 % |
+| **3v3 against the previous build, shipped build (with refuelling)** | **39–9** | **+1.83** | | |
+| 3v3 against the previous build, before refuelling | 35–13 | +1.23 | 38.3 % / 49.6 % | 22.3 % / 26.4 % |
+| **2v2 against the previous build, shipped build** | 23–25 | −0.19 | | |
+| 2v2 against the previous build, before refuelling | 25–23 | +0.23 | 43.2 % / 51.5 % | 23.3 % / 25.5 % |
+| 3v3 against the pre-activation build, before refuelling | 26–22 | +0.33 | 39.5 % / 41.5 % | 24.1 % / 25.3 % |
+| 2v2 against the pre-activation build, before refuelling | 24–24 | +0.06 | 41.4 % / 41.2 % | 23.8 % / 24.1 % |
 
-In 3v3 the gain is clear: 35–13 is about 3 standard errors from level, shots are 3.84 against 2.17 per
-player per 5 minutes, the gap to the ball while the opponent has it is 896 uu against 1033, and the
-opponent's free space falls from 49.6 % to 38.3 %. In 2v2 the build takes the same space away
-(43 % against 52 % free) and does not win more games than the previous build (25–23). The
-pre-activation rows say that making the possession mechanics and demolition unconditional did not
-change team results.
+The two rows of each format were played on the same seeds. In 3v3 the gain is clear and grew with
+refuelling: 39–9 is about 4 standard errors from level, and before refuelling 35–13 already showed
+shots of 3.84 against 2.17 per player per 5 minutes, a gap to the ball of 896 uu against 1033 while
+the opponent has it, and the opponent's free space down from 49.6 % to 38.3 %. In 2v2 the build
+takes the same space away (43 % against 52 % free) and does not win more games than the previous
+build. The pre-activation rows say that making the possession mechanics and demolition unconditional
+did not change team results.
 
-Against PartyCannon the team formats are lost, on games the tournament below does not reproduce:
+Against PartyCannon the team formats were lost before refuelling; on the same seeds:
 
-| Series | Record | Goals per game | Notes |
+| Series | Before refuelling | Support refuel only | Shipped (support and anchor refuel) |
 |---|---|---|---|
-| 3v3 against PartyCannon (46 games, 2 failed) | 13–33 | −0.65 | PartyCannon: average speed 1354 against 973 uu/s, zero boost 22 % of the time against 38 %, 21.5 big pads against 1.1 per player per 5 minutes, 30.6 against 23.1 touches; our cars spend 54 % of the time in our defensive third |
-| 2v2 against PartyCannon (43 games completed) | 17–26 | −0.60 | |
+| 3v3 against PartyCannon (seeds from 23200, 45–46 games) | 13–33 (−0.65) | **26–19 (+0.22)** | 18–27 (−0.31) |
+| 2v2 against PartyCannon (seeds from 23400, 43–45 games) | 17–26 (−0.60) and 16–28 (−0.73) | (does not refuel in 2v2) | 18–27 (−0.53) |
 
-In those 3v3 games a car of ours is at zero boost 52 % of the time against 27 % for PartyCannon, and
-when it is empty and not the closest car to the ball a big pad is within 1800 uu of it 18 % of the
-time against 66 % for PartyCannon: its cars that are off the ball stand near the pads, ours stand
-where the rotation puts them.
+Before refuelling PartyCannon's cars averaged 1354 uu/s against our 973, were at zero boost 22 % of
+the time against our 38 %, and took 21.5 big pads per player per 5 minutes against our 1.1; our cars
+spent 54 % of the time in our defensive third. In those 3v3 games a car of ours was at zero boost
+52 % of the time against 27 % for PartyCannon, and when it was empty and not the closest car to the
+ball a big pad was within 1800 uu of it 18 % of the time against 66 % for PartyCannon: its off-ball
+cars stood near the pads, ours stood where the rotation put them. That is what the refuel rule
+copies; see [Refuelling](#refuelling) for what it did and did not change.
+
+### Refuelling
+
+Head to head against the same build without the rule, 48 games each, the variant first:
+
+| Variant | Format | Record | Goals per game | Average boost | Zero boost % | Big pads per 5 min |
+|---|---|---|---|---|---|---|
+| Support car refuels under 30, anchor and first man never | 3v3 | 27–21, then 26–22 on fresh seeds | +0.38, +0.19 | 39 / 17 | 18–19 / 34–35 | 8.8 / 1.4 |
+| Every car but the first man refuels under 30 | 3v3 | 20–28 | −0.15 | 48 / 19 | 14 / 34 | 11.8 / 1.4 |
+| Every car but the first man refuels under 50 | 3v3 | 19–29 | −0.56 | 57 / 17 | 11 / 35 | 15.3 / 1.0 |
+| The anchor also refuels once the ball is 1000 uu into their half | 2v2 | 26–22, then 26–22 on fresh seeds | +0.46, −0.04 | 32–34 / 18 | 25–26 / 34–36 | 7.3–7.7 / 2.0 |
+| The same with the ball anywhere in their half | 2v2 | 24–24 | +0.35 | 35 / 17 | 26 / 35 | 8.8 / 1.7 |
+| The anchor at 1000 uu, on top of the support refuel | 3v3 | 29–19 | +0.48 | 42 / 37 | 17 / 20 | 10.4 / 8.5 |
+
+Boost alone does not win: refuelling every off-ball car fills the tanks most and loses, because the
+anchor leaves the net. Refuelling the support car, and the anchor only when the ball is deep in their
+half, wins head to head (53–43 and 52–44 over two seed sets each) and keeps the net covered. Against
+third parties the picture is mixed: the support refuel alone turned 13–33 against PartyCannon in
+3v3 into 26–19, while with the anchor refuel added it was 18–27 on the same seeds; in 2v2 against
+PartyCannon the anchor refuel moved 16–28 to 18–27, and against the previous build 3v3 went from
+35–13 to 39–9 and 2v2 from 25–23 to 23–25. Six comparisons of the anchor refuel average about +0.1
+goals a game, within noise; it is kept because the two head-to-head series favour it and because it
+is the only refuel a 2v2 team has.
 
 ### 1v1 series
 
@@ -239,22 +276,26 @@ thin sample; the paired series above are the measure.
 
 ### Boost
 
-Boost per player, our build against the previous build, shipped build, 120 s games:
+Boost per player, our build against the previous build, 120 s games:
 
 | Series | Average boost | Zero boost % | Big pads per 5 min | Boost used per min |
 |---|---|---|---|---|
-| 1v1, 96 games | 17.0 / 17.0 | 38.9 / 37.3 | 3.6 / 3.1 | 228 / 220 |
-| 2v2, 48 games | 18.3 / 18.5 | 34.0 / 34.5 | 2.0 / 1.9 | 176 / 170 |
-| 3v3, 48 games | 19.8 / 22.3 | 32.9 / 28.4 | 1.8 / 1.7 | 150 / 136 |
+| 1v1, 96 games (no refuel in 1v1) | 17.0 / 17.0 | 38.9 / 37.3 | 3.6 / 3.1 | 228 / 220 |
+| 2v2, 48 games, shipped build | 31.9 / 16.5 | 27.1 / 37.7 | 7.5 / 1.7 | 234 / 165 |
+| 3v3, 48 games, shipped build | 45.5 / 19.3 | 14.7 / 30.8 | 11.2 / 1.2 | 266 / 140 |
+| 2v2, 48 games, before refuelling | 18.3 / 18.5 | 34.0 / 34.5 | 2.0 / 1.9 | 176 / 170 |
+| 3v3, 48 games, before refuelling | 19.8 / 22.3 | 32.9 / 28.4 | 1.8 / 1.7 | 150 / 136 |
 
-The boost economy collects what the previous build did, and it did not raise the totals (an earlier
-build with a kickoff pad run did, and lost the kickoff drill). In 1v1 a car spends about 225 boost
-a minute and the pads it reaches give about as much, so a 1v1 tank stays low whichever way the pads
-are routed: both builds are at zero boost 37–39 % of the time, against Nexto's 24 % and 22.7 big
-pads per 5 minutes to our 3. Replays of 24 1v1 games show why: a car with an empty tank is at a
-median 750 uu from the ball and 2500 uu from the nearest big pad, in the thick of the play, and only
-about a twentieth of its empty time (0.18 × 0.25) has the ball more than 1500 uu away, the opponent
-nearer to it and a big pad within 1800 uu. There is little free time to spend on a pad.
+The boost economy on its own collected what the previous build did: pricing pad detours against
+slack never finds the time, and four settings that gave support cars far more slack raised the tank
+by 2–3 units and left the score level ([Tried and rejected](#tried-and-rejected)). The refuel rule
+doubles the team tanks instead: the support car leaves its post for the soonest big pad. In 1v1 a
+car spends about 225 boost a minute and the pads it reaches give about as much, so a 1v1 tank stays
+low: both builds are at zero boost 37–39 % of the time, against Nexto's 24 % and 22.7 big pads per 5
+minutes to our 3. Replays of 24 1v1 games show why: a car with an empty tank is at a median 750 uu
+from the ball and 2500 uu from the nearest big pad, in the thick of the play, and only about a
+twentieth of its empty time (0.18 × 0.25) has the ball more than 1500 uu away, the opponent nearer to
+it and a big pad within 1800 uu. A lone car has no teammate to cover a trip.
 
 ### Kickoff drill
 
@@ -314,10 +355,10 @@ so only the large ones mean anything:
   than a third of Nexto's attacks and clears almost none (the ball is back in our half six seconds after the
   attack, because Nexto keeps it there). This change narrows how much room and time the previous
   build gave, in the builds it is measured against, and nothing more.
-- The measured gain is in 3v3 (35–13 against the previous build, +1.23 goals a game). 2v2 and 1v1
-  are level with it (25–23 and 40–56) while taking the same space away, and a 1v1 car still runs at
-  zero boost 39 % of the time. Against PartyCannon, which takes twice our shots, 1v1 is 51–45, but
-  3v3 is 13–33 and 2v2 17–26: it is the stronger team, and plays a faster, boost-rich game.
+- The measured gain is in 3v3 (39–9 against the previous build, +1.83 goals a game). 2v2 and 1v1
+  are level with it (23–25 and 40–56) while taking the same space away, and a 1v1 car still runs at
+  zero boost 39 % of the time. Against PartyCannon, which takes twice our shots, 1v1 is 51–45 and 3v3
+  went from 13–33 to 18–27 and 26–19 with refuelling; 2v2 is still lost (18–27).
 - 96 games resolve about ±0.25 goals a game in 1v1. Anything the mechanics or the demolition run
   add to a game is smaller: they are measured by drills (`flick` 87 %, `carry` 92 %, the demolition
   drill 72 % of runs) and by the games with every one of them switched on being level with the games
@@ -327,10 +368,10 @@ so only the large ones mean anything:
 - The press's gain in 1v1 comes from one head-to-head comparison replicated once (111–79 over 192
   games); it does not show against the previous build or PartyCannon, and the Nexto drill leans the
   other way by 4 points (about 1.3 standard errors).
-- More boost does not buy goals at the scale this routing can reach: raising a 3v3 car's average tank
-  from 18.6 to 22.0 and its big pads from 1.4 to 2.5 per 5 minutes left the score level. The gap to
-  PartyCannon, which takes 21 big pads per player per 5 minutes and plays at 1354 uu/s against our
-  973, is a different way of playing the rotation (cars parked near pads), not a routing threshold.
+- Boost alone does not buy goals: tanks filled by sending every off-ball car to the pads lost head to
+  head (20–28 and 19–29), because the anchor left the net. What wins is refuelling the car whose
+  absence the team can afford, and how much of the refuel's gain survives against third parties
+  varies from series to series ([Refuelling](#refuelling)).
 - A pad trip near our own net still drives with the generic `Drive`. The slack reserve grows toward
   the net, and dodges are off unless there is time for a flip, but a `DefensiveDrive`-style
   controller inside the defensive third is not built.
