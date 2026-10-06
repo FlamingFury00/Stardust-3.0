@@ -230,30 +230,34 @@ against our 43 %, and the score stays close.
 ### Tournament of the final build
 
 Round robin of the shipped build against the field, four games per pair (two per side), 180 s
-games, Bradley–Terry Elo, on seeds 22100 (1v1), 22200 (2v2) and 22300 (3v3). Four games per pair:
-the ratings are ordered, not separated, and a gap under about 100 Elo is not a result. The 1v1
-roster adds the pre-activation build. PartyCannon's connection timed out in some team games
-(4 of the 3v3 games and 3 of the 2v2 games were excluded, a failure that belongs to that bot).
+games, Bradley–Terry Elo. Four games per pair: the ratings are ordered, not separated, and a gap
+under about 100 Elo is not a result. The team rounds (seeds 27300 for 3v3 and 27200 for 2v2) were
+played on the shipped build with refuelling; the 1v1 round (seed 22100) on the build before it,
+which plays 1v1 identically because a lone car never refuels. The 1v1 roster adds the
+pre-activation build.
 
 | 3v3 | Elo | W–L | Goals per game | Conceded per game | Goal difference |
 |---|---|---|---|---|---|
-| PartyCannon | 1812 | 10–2 | 5.75 | 2.00 | +3.75 |
-| **Stardust** | **1703** | 11–4 | 3.80 | 1.93 | **+1.87** |
-| Previous build | 1639 | 10–6 | 3.38 | 2.19 | +1.19 |
-| Phoenix | 1389 | 5–9 | 1.36 | 2.86 | −1.50 |
-| Beast | 957 | 0–15 | 0.33 | 5.07 | −4.73 |
+| **Stardust** | **1706** | 12–4 | 4.44 | 1.50 | **+2.94** |
+| PartyCannon | 1706 | 12–4 | 5.31 | 2.06 | +3.25 |
+| Previous build | 1659 | 11–5 | 3.38 | 2.62 | +0.75 |
+| Phoenix | 1313 | 4–12 | 1.19 | 3.19 | −2.00 |
+| Beast | 1116 | 1–15 | 0.31 | 5.25 | −4.94 |
 
-Stardust against the previous build: +1.00 goals a game; against PartyCannon −0.67.
+Stardust against the previous build: +2.75 goals a game; against PartyCannon −1.00. Before
+refuelling it was second (1703 against PartyCannon's 1812).
 
 | 2v2 | Elo | W–L | Goals per game | Conceded per game | Goal difference |
 |---|---|---|---|---|---|
-| **Stardust** | **1735** | 11–3 | 4.00 | 1.71 | **+2.29** |
-| PartyCannon | 1726 | 10–3 | 4.62 | 2.08 | +2.54 |
-| Previous build | 1687 | 11–5 | 3.56 | 1.75 | +1.81 |
-| Phoenix | 1392 | 5–10 | 1.60 | 3.33 | −1.73 |
-| Beast | 960 | 0–16 | 0.75 | 5.00 | −4.25 |
+| **Stardust** | **1790** | 13–3 | 4.19 | 2.12 | **+2.06** |
+| PartyCannon | 1739 | 12–4 | 4.75 | 2.31 | +2.44 |
+| Previous build | 1642 | 10–6 | 4.31 | 2.94 | +1.38 |
+| Phoenix | 1378 | 5–11 | 1.38 | 3.31 | −1.94 |
+| Beast | 951 | 0–16 | 0.56 | 4.50 | −3.94 |
 
-Stardust against the previous build: +2.00 goals a game; against PartyCannon 0.00.
+Stardust against the previous build: +0.75 goals a game; against PartyCannon +0.25. The 45-game
+2v2 series against PartyCannon above (18–27) says it is still the stronger 2v2 team; four games do
+not overturn that.
 
 | 1v1 | Elo | W–L | Goals per game | Conceded per game | Goal difference |
 |---|---|---|---|---|---|
@@ -266,13 +270,11 @@ Stardust against the previous build: +2.00 goals a game; against PartyCannon 0.0
 | Phoenix | 929 | 3–25 | 1.00 | 7.71 | −6.71 |
 | Beast | 781 | 1–27 | 0.50 | 7.21 | −6.71 |
 
-In 3v3 Stardust is second to PartyCannon and ahead of the previous build; in 2v2 it is first by
-Elo, level with PartyCannon (0.00 head to head) and ahead of the previous build; in 1v1 it is
-sixth of eight, between the previous build and the two weakest bots, and indistinguishable from the
-previous build, the pre-activation build and PartyCannon (Elo 1409 against 1485–1523; head to head
-+0.25, +0.25 and +0.75 goals a game). Nexto and Necto beat every other bot, Stardust included, in
-every game or nearly every game, by 8 to 16 goals a game. The round robin ranks ratings inside a
-thin sample; the paired series above are the measure.
+In 1v1 Stardust is sixth of eight, between the previous build and the two weakest bots, and
+indistinguishable from the previous build, the pre-activation build and PartyCannon (Elo 1409
+against 1485–1523; head to head +0.25, +0.25 and +0.75 goals a game). Nexto and Necto beat every
+other bot, Stardust included, in every game or nearly every game, by 8 to 16 goals a game. The
+round robin ranks ratings inside a thin sample; the paired series above are the measure.
 
 ### Boost
 
