@@ -13,6 +13,8 @@ namespace Bot
         public float PressureTime = float.PositiveInfinity;
         public int FirstMan, TeamRank, TeamCount = 1;
         public bool LastBack, HasCover;
+        /// <summary>Not the first man, and the deepest of the cars that are not: the one that anchors the net.</summary>
+        public bool DeepestSupport;
         public float FreeTime => OpponentEta - MyEta;
         public bool UnderPressure => float.IsFinite(PressureTime);
     }
@@ -95,19 +97,15 @@ namespace Bot
                 : 6f;
         }
 
+        /// <summary>A living teammate as the role split sees it.</summary>
+        /// <param name="Depth">How far the car stands into our half (uu; negative in theirs).</param>
+        public readonly record struct TeamMember(int Index, float Eta, float Depth, bool CoversGoal);
+
         public static TacticalFrame Evaluate(RUBot bot)
         {
-            var result = new TacticalFrame
-            {
-                MyEta = GroundEta(bot.Me),
-                FirstMan = bot.Index,
-                LastBack = true
-            };
-
-            float best = result.MyEta;
             int side = Field.Side(bot.Team);
-            int myDepth = (int)MathF.Floor(bot.Me.Location.y * side / 100f);
-
+            float opponentEta = 6f;
+            var mates = new List<TeamMember>();
             foreach (Car car in Cars.AllLivingCars)
             {
                 if (car == null || car.Index == bot.Index)
@@ -115,29 +113,58 @@ namespace Bot
 
                 float eta = GroundEta(car);
                 if (car.Team != bot.Team)
-                {
-                    result.OpponentEta = MathF.Min(result.OpponentEta, eta);
-                    continue;
-                }
+                    opponentEta = MathF.Min(opponentEta, eta);
+                else
+                    mates.Add(new TeamMember(car.Index, eta, car.Location.y * side,
+                        Defense.CoversGoal(car, Ball.Location, bot.OurGoal.Location)));
+            }
 
+            TacticalFrame result = Rank(bot.Index, GroundEta(bot.Me), bot.Me.Location.y * side, mates);
+            result.OpponentEta = opponentEta;
+            return result;
+        }
+
+        /// <summary>
+        /// Splits the team into first man, anchor and support from one snapshot. Every car runs this
+        /// on the same numbers, so they agree without talking: the first man goes for the ball, the
+        /// deepest of the others anchors the net, and the remainder support the play.
+        /// </summary>
+        public static TacticalFrame Rank(int myIndex, float myEta, float myDepth, IReadOnlyList<TeamMember> mates)
+        {
+            var result = new TacticalFrame { MyEta = myEta, FirstMan = myIndex, LastBack = true };
+            float best = myEta;
+            // Stable depth buckets prevent cars at effectively identical depth from both deciding
+            // that the other car is last back.
+            int myBucket = (int)MathF.Floor(myDepth / 100f);
+
+            foreach (TeamMember mate in mates)
+            {
                 result.TeamCount++;
-                result.TeammateEta = MathF.Min(result.TeammateEta, eta);
-                result.HasCover |= Defense.CoversGoal(car, Ball.Location, bot.OurGoal.Location);
+                result.TeammateEta = MathF.Min(result.TeammateEta, mate.Eta);
+                result.HasCover |= mate.CoversGoal;
 
-                // Stable depth buckets prevent cars at effectively identical depth from both deciding
-                // that the other car is last back.
-                int otherDepth = (int)MathF.Floor(car.Location.y * side / 100f);
-                if (otherDepth > myDepth || (otherDepth == myDepth && car.Index < bot.Index))
+                int bucket = (int)MathF.Floor(mate.Depth / 100f);
+                if (bucket > myBucket || (bucket == myBucket && mate.Index < myIndex))
                     result.LastBack = false;
 
-                if (WinsTie(eta, car.Index, result.MyEta, bot.Index))
+                if (WinsTie(mate.Eta, mate.Index, myEta, myIndex))
                     result.TeamRank++;
 
-                if (WinsTie(eta, car.Index, best, result.FirstMan))
+                if (WinsTie(mate.Eta, mate.Index, best, result.FirstMan))
                 {
-                    best = eta;
-                    result.FirstMan = car.Index;
+                    best = mate.Eta;
+                    result.FirstMan = mate.Index;
                 }
+            }
+
+            result.DeepestSupport = result.FirstMan != myIndex;
+            foreach (TeamMember mate in mates)
+            {
+                if (mate.Index == result.FirstMan)
+                    continue;
+                int bucket = (int)MathF.Floor(mate.Depth / 100f);
+                if (bucket > myBucket || (bucket == myBucket && mate.Index < myIndex))
+                    result.DeepestSupport = false;
             }
 
             return result;

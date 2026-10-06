@@ -49,8 +49,8 @@ namespace Bot
                 Finished = true;
                 return;
             }
-            if (bot is Stardust stardust && stardust.Options.FlipResets &&
-                stardust.Situation.OpponentEta > 1.2f && FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
+            if (bot is Stardust stardust && stardust.Situation.OpponentEta > 1.2f &&
+                FlipReset.CanStart(car, Ball.MainBall, bot.Jump))
             { bot.Action = new FlipReset(bot.Jump); return; }
             const float horizon = 0.12f;
             Ball prediction = Ball.Prediction.TrySample(Game.Time + horizon, out Ball sample) ? sample : Ball.MainBall.Predict(horizon);
@@ -78,7 +78,6 @@ namespace Bot
         }
     }
 
-    /// <summary>Experimental, evidence-gated acquisition. Enable with STARDUST_FLIP_RESETS=1.</summary>
     /// <summary>
     /// Flip reset: put the wheels on a high ball to get the flip back, then use it on the ball.
     ///

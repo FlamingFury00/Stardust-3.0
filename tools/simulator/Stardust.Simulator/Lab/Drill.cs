@@ -90,6 +90,7 @@ public abstract class Drill : Scenario
     /// <summary>Per-episode setup: reset measurements and set the director.</summary>
     protected virtual void Start(MatchSession session, EpisodeSetup setup) { }
 
+
     /// <summary>Per-tick measurement.</summary>
     protected virtual void Measure(MatchSession session, EpisodeTrace trace) { }
 

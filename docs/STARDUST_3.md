@@ -9,7 +9,7 @@ showed.
 
 | Layer | Where | What it does |
 |---|---|---|
-| Decision layer | `src/Bot` | Threat-first supervision, possession play (ground catches, hood carries, pressure flicks, aerial carries), shot selection, shadow/anchor/support defence, goal-line saves, boost refills, team claims |
+| Decision layer | `src/Bot` | Threat-first supervision, possession play (ground catches, hood carries, pressure flicks, aerial carries), shot selection, shadow/anchor/support defence with zone-aware pressing, goal-line saves, value-priced boost routing, team claims |
 | Kickoff | `src/RedUtils/Actions/Kickoff.cs`, `src/RedUtils/Bot.cs` | Speed-flip kickoffs; the kickoff lasts until the ball is first touched |
 | Scripted mechanics | `src/RedUtils/Actions` | Ground/jump/double-jump/aerial shots, dodges, speed flips, half flips, wavedashes, recovery |
 | Physics core | `src/RedUtils/Physics` | Ground dynamics and navigation, jumps, dodges, flips, air control, aerial guidance, car–ball impacts — each validated against RocketSim |
@@ -101,9 +101,11 @@ $SIM physics-check --model all
 $SIM tournament --roster roster.txt --games 6 --seconds 180 --parallel 3 --out tournament
 
 # Loose balls in our third (clear), slow balls rolling into our goal (roller), Nexto's attacks
-# (defense), kickoffs (kickoff-follow) and a time profile (profile) are extra drills, run by name.
+# (defense), kickoffs (kickoff-follow), a full 2v2 kickoff against --opponent (team-kickoff), a run
+# at a chaser that wins a loose ball (demolition) and a time profile (profile) are extra drills,
+# run by name.
 # Mechanics drills with the bot in-process; --trace N prints episode N tick by tick,
-# --set Type.Field=value (any command) overrides a tuning field (as STARDUST_TUNE does in a match)
+# --set Type.Field=value (any command) overrides a tuning field (as `--tune` does in a match)
 $SIM mechanics-lab --drill all --episodes 60
 $SIM mechanics-lab --drill defense --opponent nexto.toml --episodes 60
 $SIM mechanics-lab --drill profile --opponent <bot> --episodes 12
@@ -120,7 +122,7 @@ non-zero when one fails.
 
 Series are paired: every seed is played twice with the builds swapping colours. Kickoff spawns are
 jittered by a few units so deterministic bots do not replay one identical game. Scenario episodes
-are generated from a seed, so two builds face identical fixtures. With `STARDUST_TRACE=1` the bot
+are generated from a seed, so two builds face identical fixtures. With `--trace` the bot
 logs its decisions, and the series report then attributes every goal to the decision the conceding
 car was running half a second before it (own goals marked), next to each build's time share per
 decision.
@@ -165,7 +167,7 @@ same flawed goal mouths, so their comparisons stand but not their absolute numbe
 | Kickoff fix + planned saves only, before the flip-execution fixes | kickoff fix | 72 | −0.06 |
 | Possession rework: carry, catch, first flicks, stale-touch fix | shipped build before it | 96 (300 s) | +0.39 |
 | Possession rework with flick decisions and catch fixes | shipped build before the rework | 96 | **+0.77** (61-35) |
-| Air dribbles and flip resets switched on | the same build | 96 | −0.03 (left off) |
+| Air dribbles and flip resets switched on (before every mechanic became unconditional) | the same build | 96 | −0.03: level, so they stayed off until the possession mechanics were made unconditional; see [Possession mechanics](#possession-mechanics) |
 | Refuelling from pads on defensive routes | the same build | 53 of 96, stopped | −0.58 (not shipped) |
 | **Saves rework, air-control roll fix, jump release** (fixed arena) | the build before them | 144 | +0.06 (70-74): level |
 | Roll fix and jump release alone | the build before them | 72 | +0.07 |
@@ -315,27 +317,27 @@ The native build plays identically to the JIT build (the same matches, frame for
 simulator). To check the packaging without Docker, run the dockerfile's two `dotnet publish`
 commands from `src/Bot`.
 
-## Runtime switches
+## Start-up arguments
 
-Set environment variables **before starting the bot process**:
+Every mechanic always runs: there is no switch for catches, carries, flicks, aerial carries, flip
+resets, air dribbles, demolition runs or pad routing, and the bot reads no `STARDUST_*` environment
+variable. (RLBot itself starts a bot with `RLBOT_AGENT_ID` and `RLBOT_SERVER_PORT`; those belong to
+the framework.) A bot process can be started with these arguments, which only add diagnostics or
+run a parameter variant in the simulator:
 
-| Variable | Default | Behavior |
+| Argument | Default | Behavior |
 |---|---|---|
-| `STARDUST_GROUND_CONTROL` | enabled | Set `0` to disable catch/carry/flick selection |
-| `STARDUST_AERIAL_CARRY` | enabled | Set `0` to disable aerial possession control |
-| `STARDUST_FLIP_RESETS` | disabled | Set `1` to let an aerial carry go for a flip reset (lab: 72 % acquired, 51 % used) |
-| `STARDUST_AIR_DRIBBLES` | disabled | Set `1` to pop a controlled hood carry into an air dribble (lab: 60/60 set up, 1.8 s carried; no match gain, see Results) |
-| `STARDUST_TRACE` | disabled | Set `1` to log strategy transitions and ETA estimates |
-| `STARDUST_TRACE_SAVES` | disabled | Set `1` to also log the clearance and block weighed on every emergency planning tick |
-| `STARDUST_TUNE` | unset | `Type.Field=value,...` overrides tuning fields (e.g. `Kickoff.DodgeJump=0.1`), so one build plays as several variants; a bot config whose run command sets it is a variant the `match` command can play. JIT builds only: the native build ignores it |
-| `STARDUST_TELEMETRY` | enabled | Structured `STARDUST_JSON` frame/decision telemetry, written to `logs/` next to the executable; set `0` to disable. Test and probe instances stay quiet unless it is set; the simulator sets `0` for bots it starts unless it is set in its own environment |
-| `STARDUST_TELEMETRY_HZ` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
-| `STARDUST_TELEMETRY_FILE` | `logs/stardust-telemetry-<time>-pid<pid>.jsonl` | Telemetry file; if it cannot be opened the bot falls back to the system temp directory, then to the console |
-| `STARDUST_TELEMETRY_CONSOLE` | disabled | Set `1` to also print every telemetry line |
+| `--trace` | off | Log strategy transitions and ETA estimates |
+| `--trace-saves` | off | Also log the clearance and block weighed on every emergency planning tick |
+| `--tune=Type.Field=value,...` | none | Override tuning fields (e.g. `--tune=Kickoff.DodgeJump=0.1`), so one build plays as several variants; a bot config whose run command carries it is a variant the `match` command can play. JIT builds only: the native build ignores it |
+| `--telemetry` / `--no-telemetry` | on in a real match | Structured `STARDUST_JSON` frame/decision telemetry, written to `logs/` next to the executable. Test instances and the bots the simulator starts (agent ids beginning `stardust-sim/`) stay quiet unless `--telemetry` is given |
+| `--telemetry-hz=N` | `10` | Telemetry samples per second; clamped to 1–30 Hz |
+| `--telemetry-file=PATH` | `logs/stardust-telemetry-<time>-pid<pid>.jsonl` | Telemetry file; if it cannot be opened the bot falls back to the system temp directory, then to the console |
+| `--telemetry-console` | off | Also print every telemetry line |
 
 Structured telemetry is designed for real-match debugging without per-tick console spam. Each
 line is one JSON object (prefixed with `STARDUST_JSON ` on the console). Decision changes emit
-immediately; frame snapshots are rate-limited by `STARDUST_TELEMETRY_HZ`. Frames are recorded after
+immediately; frame snapshots are rate-limited by `--telemetry-hz`. Frames are recorded after
 the action runs and after controller sanitization, so `controller` is the command actually returned.
 A file rotates at 64 MB, and on opening one the bot deletes the oldest telemetry files in that
 directory beyond 256 MB, so a bot that plays many matches does not fill the disk.
@@ -343,17 +345,27 @@ directory beyond 256 MB, so a bot that plays many matches does not fill the disk
 ## Possession mechanics
 
 Every possession mechanic has a drill in the mechanics lab (see [Evaluation harness](#evaluation-harness)),
-with the pass criteria a pro execution should meet. Numbers are lab results, shipped build against
-the mechanics before this rework:
+with the pass criteria a pro execution should meet. All of them run in every match; none has a
+switch. Numbers are lab results of the shipped build (60 episodes per drill, 400 for `flick`), and
+"before" is the mechanics before the possession rework:
 
 | Drill | Before | Now |
 |---|---|---|
-| `carry`: keep a balanced ball 4 s while turning onto the lane | 3/60 held | 141/150 held (120/120 from a rolling start), lane error p90 1.9° |
-| `flick`: power flick from a 900–1500 uu/s carry | median 1528 uu/s, aim error 11° | median 2177 uu/s, aim error 1.3° |
-| `catch`: cushion a dropping ball and settle it for 1 s | 5/60 settled | 18/22 committed catches settle |
-| `dribble-duel`: carry against a defender who challenges, shadows or chases | flicked into 76 % of shadowing defenders | good outcome 58 % vs challengers, 85 % vs shadows, 76 % vs chasers; ball lost 17 % |
-| `flip-reset`: regain the flip on a high ball and use it | 8 % acquired, never used | 72 % acquired, 100 % of those confirmed, 51 % used on the ball |
-| `air-dribble`: keep a nose-carried ball in reach in the air | — | median 2.6 s carried at 1390 uu/s toward goal |
+| `carry`: keep a balanced ball 4 s while turning onto the lane | 3/60 held | 55/60 held, lane error p90 1.9° |
+| `flick`: power and lob flicks from a 900–1500 uu/s carry | median 1528 uu/s, aim error 11° | 347/400 succeed (87 %): median power gain 918 uu/s, aim error median 1.4° and p90 4.0°, lob lift median 576 uu/s |
+| `catch`: cushion a dropping ball and settle it for 1 s | 5/60 settled | 11/60 settled: the planner commits to a catch from 22 % of the start states, the rest are out of reach, and 85 % of the committed catches settle |
+| `pickup`: lift a rolling ball onto the roof | — | 36/60 |
+| `dribble-duel`: carry against a defender who challenges, shadows or chases | flicked into 76 % of shadowing defenders | 49/60: good outcome 77 % vs challengers, 88 % vs shadows, 81 % vs chasers; ball lost 5 % |
+| `flip-reset`: regain the flip on a high ball and use it | 8 % acquired, never used | 78 % acquired, 100 % of those confirmed, 45 % used on the ball (the criterion is 60 %) |
+| `air-dribble`: keep a nose-carried ball in reach in the air | — | 41/60: median 2.1 s carried at 922 uu/s toward goal |
+| `hood-to-air`: take a carry into the air | — | 59/60 |
+| `save`: stop shots at our goal | 29 % | 41/60 (68 %) here; 126/200 (63 %) on the scenario suite below |
+
+In matches these mechanics are rare. In traced 1v1 games against the previous build (18 distinct
+games) a car started a ground carry about 6 times a game, flicked about once in six games,
+started an aerial carry about once in three, and essentially never reached a flip reset or an air
+dribble; a demolition run started about once in ten games. They are measured as mechanics, and a
+series cannot resolve their effect on results: see [TEMPO_PRESSURE.md](TEMPO_PRESSURE.md#results).
 
 - **Hood carry** (`HoodCarry`). The ball's velocity is the slow state of a carry: the roof can only
   nudge it through friction, so the car stays underneath. Position and velocity errors of the ball
@@ -371,16 +383,25 @@ the mechanics before this rework:
   programs in RocketSim from carries settled by the bot's own controller. It scores each program on
   its 10th-percentile gain when the ball sits up to 6 uu off its spot. The flick turns the carry
   onto the aim, centres the ball on the recipe's spot, then runs the program with no flip cancel.
-  The power flick (ball 50 uu forward, nose-down rolling jump, diagonal front flip) adds 1000 uu/s at
-  p10 and leaves 20° up. Back-flip lobs reach 35–48° but only with the ball within 3 uu of the
-  centre line, which a carry does not hold, so they are not used.
+  An unchallenged flick whose ball will not settle on the spot within a second ends and the carry
+  plans again; a challenged flick goes after a tenth of a second. What a flick does to the ball is
+  measured in the lab under the bot's own carry (the `flick` drill, 400 episodes, carries of
+  900–1500 uu/s): the ball keeps the carry's speed and gains a *push* along the aim and a *lift*.
+  The power flick (ball 50 uu forward, nose-down rolling jump, diagonal front flip) pushes
+  550–830 uu/s and lifts 640–930 (10th to 90th percentile), about 20° up. The lob (ball 10 uu
+  forward) pushes 5–270 and lifts 530–870: it leaves 20° up from a fast carry and 31° from a slow
+  one, so it is judged on its lift, not on a speed gain that cannot exist when most of the impulse
+  goes upward. The shot planner requires a flick to score at both ends of that range, and plans
+  one only at carry speeds of 850–1800 uu/s, the range measured. Back-flip lobs reach 35–48° but
+  only with the ball within 3 uu of the centre line, which a carry does not hold, so they are not
+  used.
 - **When to flick** (`PossessionControl.PlanFlick`). The dribbler reads the most imminent opponent:
   its time to the ball at its closing speed and where it comes from. It flicks when a challenger
   commits from the front: a power flick 0.25–0.45 s before contact (the 20° climb clears the
   challenger's roof), a lob closer in. It also flicks at the goal from within 3000 uu when no
   defender can reach the line. It keeps carrying against a defender who hangs back or a chaser from
   behind, with the ball already on the flick's spot once a challenger is on the way.
-- **Flip resets** (`FlipReset`, behind `STARDUST_FLIP_RESETS=1`). In RocketSim the wheels are
+- **Flip resets** (`FlipReset`). In RocketSim the wheels are
   suspension rays that also land on the ball. Three touching wheels count as grounded, which clears
   the used jump and flip, and they leave no ball touch. So the reset is confirmed from the packet
   flags alone: the flip was unavailable while airborne, then jump, double jump and dodge are all

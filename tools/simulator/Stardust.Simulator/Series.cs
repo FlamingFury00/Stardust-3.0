@@ -181,6 +181,12 @@ public static class Series
         yield return ("Behind ball %", F(a.Percent(a.BehindBallSeconds)), F(b.Percent(b.BehindBallSeconds)));
         yield return ("Last back %", F(a.Percent(a.LastBackSeconds)), F(b.Percent(b.LastBackSeconds)));
         yield return ("Closest to ball %", F(a.Percent(a.ClosestToBallSeconds)), F(b.Percent(b.ClosestToBallSeconds)));
+        double Ratio(double part, double whole) => whole > 0 ? part / whole : double.NaN;
+        yield return ("Opponent has the ball, % of time", F(Ratio(100 * a.PressureSeconds, a.Seconds)), F(Ratio(100 * b.PressureSeconds, b.Seconds)));
+        yield return ("Gap to ball while they have it (uu)", F(Ratio(a.PressureGapIntegral, a.PressureSeconds), "F0"), F(Ratio(b.PressureGapIntegral, b.PressureSeconds), "F0"));
+        yield return ("Free space (nobody within 1000 uu) %", F(Ratio(100 * a.PressureFreeSeconds, a.PressureSeconds)), F(Ratio(100 * b.PressureFreeSeconds, b.PressureSeconds)));
+        yield return ("Possessions contested %", F(Ratio(100.0 * a.PressureContested, a.PressureEpisodes)), F(Ratio(100.0 * b.PressureContested, b.PressureEpisodes)));
+        yield return ("Response to a possession (s)", F(Ratio(a.PressureResponseSeconds, a.PressureEpisodes), "F2"), F(Ratio(b.PressureResponseSeconds, b.PressureEpisodes), "F2"));
         double KickoffTime(PlayerStats s) => s.KickoffFirstTouches > 0 ? s.KickoffTimeToBall / s.KickoffFirstTouches : double.NaN;
         yield return ("Kickoff time to first touch (s)", F(KickoffTime(a), "F2"), F(KickoffTime(b), "F2"));
     }

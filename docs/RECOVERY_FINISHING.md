@@ -135,7 +135,7 @@ against Necto). It did not justify disabling either pressure policy:
 | Both disabled | 5–3, 23–21 | 0–4, 1–28 |
 
 These are small screening samples. Failed games were excluded and their complete series rerun
-with corrected transport. The two switches remain available through `STARDUST_TUNE` as
+with corrected transport. The two switches remain available through `--tune` as
 `Stardust.CarrierChallenges` and `Stardust.FirstManShadow`; defaults remain enabled.
 
 The [RLGym PPO development guide](https://github.com/ZealanL/RLGym-PPO-Guide/blob/main/making_a_good_bot.md)

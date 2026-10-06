@@ -16,6 +16,13 @@ namespace Bot
         }
         public static Vec3 FlatUnit(Vec3 v, Vec3 fallback) => Unit(new Vec3(v.x, v.y, 0), fallback);
 
+        /// <summary>Cubic ease from 0 to 1 as <paramref name="value"/> runs from 0 to 1, clamped outside.</summary>
+        public static float SmoothStep(float value)
+        {
+            value = System.Math.Clamp(value, 0f, 1f);
+            return value * value * (3f - 2f * value);
+        }
+
         /// <summary>Shortest SO(3) rotation in car-local coordinates, including exactly inverted cars.</summary>
         public static Vec3 RotationError(Car car, Vec3 forward, Vec3 roof)
         {

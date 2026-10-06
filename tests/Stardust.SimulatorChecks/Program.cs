@@ -118,17 +118,13 @@ try
         games[1].Error = "bot disconnected";
         Check(!Tournament.CanReuse(key, key, games), "failed game counted as a completed tournament");
     });
-    Test("tournament experiment identity includes tuning overrides", () =>
+    Test("tournament build identity includes the tuning in its run command", () =>
     {
-        string? before = Environment.GetEnvironmentVariable("STARDUST_TUNE");
-        try
-        {
-            Environment.SetEnvironmentVariable("STARDUST_TUNE", null);
-            string original = Tournament.ExperimentFingerprint();
-            Environment.SetEnvironmentVariable("STARDUST_TUNE", "Defense.SoloMargin=0.2");
-            Check(original != Tournament.ExperimentFingerprint(), "tuning did not invalidate cached experiment");
-        }
-        finally { Environment.SetEnvironmentVariable("STARDUST_TUNE", before); }
+        string directory = AppContext.BaseDirectory;
+        string plain = Tournament.BuildFingerprint(new BotBuild("plain", "dotnet", ["Bot.dll"], directory, "plain"));
+        string tuned = Tournament.BuildFingerprint(new BotBuild("tuned", "dotnet",
+            ["Bot.dll", "--tune=Defense.SoloMargin=0.2"], directory, "tuned"));
+        Check(plain != tuned, "a tuning argument did not change the build's cached identity");
     });
     Test("in-process bots emit the same match communication without a socket", () =>
     {

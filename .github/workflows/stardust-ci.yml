@@ -98,7 +98,7 @@ jobs:
           test -x "$pack/x86_64-linux/Bot"
           test -f "$pack/x86_64-windows/Bot.exe"
           sed -e 's|^run_command = .*|run_command = "x86_64-windows\\\\Bot.exe"|' \
-              -e 's|^run_command_linux = .*|run_command_linux = "x86_64-linux/Bot"|' \
+              -e 's|^run_command_linux = .*|run_command_linux = "x86_64-linux/Bot --telemetry"|' \
               Stardust.bot.toml > "$pack/Stardust.bot.toml"
           cp loadout.toml logo.png "$pack/"
       - name: Build the local bot
@@ -106,8 +106,6 @@ jobs:
       - name: Build RocketSim bridge and simulator
         run: tools/simulator/build.sh
       - name: Play the packaged build against the local build
-        env:
-          STARDUST_TELEMETRY: '1'
         run: |
           dotnet tools/simulator/Stardust.Simulator/bin/Release/net8.0/Stardust.Simulator.dll match \
             --a "$RUNNER_TEMP/pack/Stardust.bot.toml" --a-label pack --b Stardust.bot.toml --b-label local \

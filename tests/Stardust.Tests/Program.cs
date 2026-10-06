@@ -23,6 +23,41 @@ JumpState Jump(bool jumped = false, bool doubled = false, bool dodged = false,
     float timeout = -1, AirState state = AirState.InAir) => new(new PlayerInfoT
     { HasJumped = jumped, HasDoubleJumped = doubled, HasDodged = dodged, DodgeTimeout = timeout, AirState = state });
 
+Test("options: start-up arguments set diagnostics and tuning, and nothing else", () =>
+{
+    var unknown = new List<string>();
+    StardustOptions options = StardustOptions.FromArguments(new[]
+    {
+        "--trace", "--trace-saves", "--telemetry", "--telemetry-console", "--telemetry-hz=99",
+        "--telemetry-file=/tmp/x.jsonl", "--tune=Defense.SoloMargin=0.2,Kickoff.DodgeJump=0.1", "--enable-flip-resets",
+    }, unknown.Add);
+    Check(options.Trace && options.TraceSaves && options.TelemetryConsole, "a diagnostic flag was lost");
+    Check(options.Telemetry == true && options.TelemetryFile == "/tmp/x.jsonl", "telemetry arguments were lost");
+    Check(options.TelemetryHz == 30, "the telemetry rate was not clamped to 30 Hz");
+    Check(options.Tune == "Defense.SoloMargin=0.2,Kickoff.DodgeJump=0.1", "the tuning list was cut at its first equals sign");
+    Check(unknown.SequenceEqual(new[] { "--enable-flip-resets" }), "an unknown argument was accepted silently");
+    StardustOptions defaults = StardustOptions.FromArguments(Array.Empty<string>());
+    Check(!defaults.Trace && defaults.Telemetry == null && defaults.TelemetryHz == 10 && defaults.Tune == null,
+        "the defaults are not quiet and untuned");
+    Check(StardustOptions.FromArguments(new[] { "--no-telemetry" }).Telemetry == false, "--no-telemetry was ignored");
+    Check(StardustOptions.FromArguments(new[] { "--telemetry-hz=0" }).TelemetryHz == 1, "a zero rate was not raised to 1 Hz");
+});
+
+Test("options: the bot reads no environment variable of its own", () =>
+{
+    string directory = AppContext.BaseDirectory;
+    while (directory != null && !File.Exists(Path.Combine(directory, "src", "Bot", "Bot.csproj")))
+        directory = Path.GetDirectoryName(directory);
+    Check(directory != null, "the repository root was not found from the test binaries");
+    foreach (string file in Directory.EnumerateFiles(Path.Combine(directory!, "src", "Bot"), "*.cs", SearchOption.AllDirectories))
+    {
+        if (file.Contains(Path.Combine("src", "Bot", "obj")) || file.Contains(Path.Combine("src", "Bot", "bin")))
+            continue;
+        Check(!File.ReadAllText(file).Contains("GetEnvironmentVariable"),
+            $"{Path.GetFileName(file)} reads an environment variable");
+    }
+});
+
 Test("clock: current dt, duplicate packet, rewind, and pause", () =>
 {
     var clock = new TickClock();

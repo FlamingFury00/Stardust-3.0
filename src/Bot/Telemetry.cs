@@ -339,6 +339,8 @@ namespace Bot
                     ["first_man"] = frame.FirstMan,
                     ["last_back"] = frame.LastBack,
                     ["has_cover"] = frame.HasCover,
+                    ["deepest_support"] = frame.DeepestSupport,
+                    ["boost_slack"] = Num(bot.BoostSlack),
                     ["raw_can_challenge"] = bot.RawCanChallenge,
                     ["can_challenge"] = bot.ChallengeCommitted
                 },
@@ -430,7 +432,13 @@ namespace Bot
                     return new Dictionary<string, object>
                     {
                         ["pad_index"] = boost.BoostIndex,
-                        ["large"] = boost.ChosenBoost?.IsLarge
+                        ["large"] = boost.ChosenBoost?.IsLarge,
+                        ["eta"] = Num(boost.Eta)
+                    };
+                case DemoAttack demo:
+                    return new Dictionary<string, object>
+                    {
+                        ["target_car"] = demo.TargetIndex
                     };
                 case Shot shot:
                     return new Dictionary<string, object>
@@ -466,6 +474,10 @@ namespace Bot
             if (decision.Contains("second-man", StringComparison.Ordinal) ||
                 decision.Contains("wide lane", StringComparison.Ordinal))
                 return "support";
+            if (decision.StartsWith("boost /", StringComparison.Ordinal))
+                return "boost";
+            if (decision.Contains("demolition", StringComparison.Ordinal))
+                return "pressure";
             if (decision.Contains("recover behind ball", StringComparison.Ordinal) ||
                 decision.Contains("exit net", StringComparison.Ordinal) ||
                 decision.Contains("goal-line save", StringComparison.Ordinal) ||
